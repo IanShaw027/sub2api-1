@@ -86,7 +86,7 @@
 
       <Button
         native-type="submit"
-        size="md"
+        size="lg"
         class="login-submit"
         :disabled="authActionDisabled || (turnstileWidgetActive && !turnstileToken)"
         :loading="isLoading"
@@ -901,11 +901,6 @@ function handle2FACancel(): void {
 
 .login-submit {
   width: 100%;
-  height: 42px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 12px 28px -12px var(--accent);
 }
 
 .login-divider {

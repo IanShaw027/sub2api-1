@@ -1,12 +1,30 @@
 <template>
  <AuthLayout>
- <div class="space-y-6">
+ <CallbackStatusCard
+   v-if="isProcessing"
+   status="loading"
+   :title="t('auth.dingtalk.callbackTitle')"
+   :description="t('auth.dingtalk.callbackProcessing')"
+ />
+
+ <CallbackStatusCard
+   v-else-if="hasTerminalError"
+   status="error"
+   :title="t('auth.dingtalk.callbackTitle')"
+   :description="errorMessage"
+ >
+   <Button variant="primary" size="lg" nativeType="button" @click="router.replace('/login')">
+     {{ t('auth.dingtalk.backToLogin') }}
+   </Button>
+ </CallbackStatusCard>
+
+ <div v-else class="space-y-6">
  <div class="text-center">
  <h2 class="text-2xl font-bold text-foreground">
  {{ t('auth.dingtalk.callbackTitle') }}
  </h2>
  <p class="mt-2 text-sm text-muted">
- {{ isProcessing ? t('auth.dingtalk.callbackProcessing') : t('auth.dingtalk.callbackHint') }}
+ {{ t('auth.dingtalk.callbackHint') }}
  </p>
  </div>
 
@@ -239,6 +257,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
+import CallbackStatusCard from '@/components/auth/CallbackStatusCard.vue'
+import Button from '@/components/ui/Button.vue'
 import PendingOAuthCreateAccountForm, {
   type PendingOAuthCreateAccountPayload
 } from '@/components/auth/PendingOAuthCreateAccountForm.vue'
@@ -301,6 +321,17 @@ const providerName = t('auth.dingtalkProviderName')
 const needsCreateAccount = computed(() => pendingAccountAction.value === 'create_account')
 const needsChooser = computed(() => pendingAccountAction.value === 'choose_account_action')
 const needsBindLogin = computed(() => pendingAccountAction.value === 'bind_login')
+// A generic, terminal OAuth failure: no interactive recovery flow is active, so render the
+// CallbackStatus error card instead of leaving the header/hint text with no visible feedback.
+const hasTerminalError = computed(
+  () =>
+    !isProcessing.value &&
+    !!errorMessage.value &&
+    pendingAccountAction.value === 'none' &&
+    !needsInvitation.value &&
+    !needsAdoptionConfirmation.value &&
+    !needsTotpChallenge.value
+)
 
 watch(invitationError, value => {
   if (value) {

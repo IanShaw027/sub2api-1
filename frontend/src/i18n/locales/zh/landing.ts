@@ -16,7 +16,7 @@ export default {
     goToDashboard: '进入控制台',
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
-    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
+    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务。',
     tags: {
       subscriptionToApi: '订阅转 API',
       stickySession: '会话保持',
@@ -60,6 +60,8 @@ export default {
     // 优势对比
     comparison: {
       title: '为什么选择我们？',
+      heading: '对比官方订阅',
+      headingDesc: '智能调度多个上游账号，自动切换和负载均衡；按实际使用量计费，支持配额上限，团队用量一目了然。',
       headers: {
         feature: '对比项',
         official: '官方订阅',
@@ -179,6 +181,8 @@ export default {
     placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',
     query: '查询',
     querying: '查询中...',
+    showKey: '显示 Key',
+    hideKey: '隐藏 Key',
     privacyNote: '您的 Key 仅在浏览器本地处理，不会被存储',
     dateRange: '统计范围:',
     dateRangeToday: '今日',
@@ -245,6 +249,13 @@ export default {
     queryFailed: '查询失败',
     queryFailedRetry: '查询失败，请稍后重试',
     noDailyUsage: '暂无按日用量数据',
+  },
+
+  // 404 Not Found Page
+  notFound: {
+    description: '您访问的页面不存在或已被移动。',
+    backHome: '返回首页',
+    goBack: '返回上一页',
   },
 
   // Setup Wizard

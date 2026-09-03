@@ -113,7 +113,7 @@ describe('OAuthCallbackView', () => {
     expect(wrapper.find('input[value="oauth-state"]').exists()).toBe(true)
   })
 
-  it('sends callback errors to toast instead of rendering inline red text', () => {
+  it('sends callback errors to toast and renders a CallbackStatusCard error state', () => {
     routeState.query = {
       error: 'oauth failed',
     }
@@ -121,7 +121,8 @@ describe('OAuthCallbackView', () => {
     const wrapper = mount(OAuthCallbackView)
 
     expect(showErrorMock).toHaveBeenCalledWith('oauth failed')
-    expect(wrapper.text()).not.toContain('oauth failed')
+    expect(wrapper.find('[data-testid="callback-status-card"]').attributes('data-status')).toBe('error')
+    expect(wrapper.text()).toContain('oauth failed')
     expect(wrapper.find('.bg-red-50').exists()).toBe(false)
   })
 

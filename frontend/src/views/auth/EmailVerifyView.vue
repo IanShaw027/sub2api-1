@@ -9,18 +9,11 @@
         </p>
       </div>
 
-      <div
-        v-if="!hasRegisterData"
-        class="rounded-xl border border-[color-mix(in_oklch,var(--warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--warning)_12%,transparent)] p-4"
-      >
-        <div class="flex items-start gap-3">
-          <div class="flex-shrink-0">
-            <Icon name="exclamationCircle" size="md" class="text-[var(--warning-text)]" />
-          </div>
-          <div class="text-sm text-[var(--warning-text)]">
-            <p class="font-medium">{{ t('auth.sessionExpired') }}</p>
-            <p class="mt-1">{{ t('auth.sessionExpiredDesc') }}</p>
-          </div>
+      <div v-if="!hasRegisterData" class="notice notice-warning">
+        <Icon name="exclamationCircle" size="sm" class="notice-icon" />
+        <div>
+          <p class="notice-title">{{ t('auth.sessionExpired') }}</p>
+          <p>{{ t('auth.sessionExpiredDesc') }}</p>
         </div>
       </div>
 
@@ -35,7 +28,7 @@
             type="password"
             required
             autocomplete="new-password"
-            class="field"
+            class="field input-lg"
             :placeholder="t('auth.createPasswordPlaceholder')"
           />
           <p class="mt-1 text-xs text-muted">{{ t('auth.passwordHint') }}</p>
@@ -54,25 +47,16 @@
             inputmode="numeric"
             maxlength="6"
             :disabled="isLoading"
-            class="field py-3 text-center font-mono text-xl tracking-[0.5em]"
+            class="field h-12 text-center font-mono text-[22px] tracking-[0.4em]"
             :class="{ 'input-error': errors.code }"
             placeholder="000000"
           />
           <p class="mt-1 text-center text-xs text-muted">{{ t('auth.verificationCodeHint') }}</p>
         </div>
 
-        <div
-          v-if="codeSent"
-          class="rounded-xl border border-[color-mix(in_oklch,var(--success)_35%,transparent)] bg-[color-mix(in_oklch,var(--success)_12%,transparent)] p-4"
-        >
-          <div class="flex items-start gap-3">
-            <div class="flex-shrink-0">
-              <Icon name="checkCircle" size="md" class="text-[var(--success-text)]" />
-            </div>
-            <p class="text-sm text-[var(--success-text)]">
-              {{ t('auth.codeSentSuccess') }}
-            </p>
-          </div>
+        <div v-if="codeSent" class="notice notice-success">
+          <Icon name="checkCircle" size="sm" class="notice-icon" />
+          <p>{{ t('auth.codeSentSuccess') }}</p>
         </div>
 
         <div v-if="actionCaptchaEnabled || (turnstileWidgetActive && showResendTurnstile)">
@@ -115,40 +99,36 @@
 
         <Button
           native-type="submit"
-          size="md"
-          class="w-full"
+          size="lg"
+          class="verify-submit"
           :disabled="isLoading || !verifyCode || (pendingOAuthCreateTurnstileRequired && !createAccountTurnstileToken)"
           :loading="isLoading"
         >
-          <Icon v-if="!isLoading" name="checkCircle" size="md" />
+          <Icon v-if="!isLoading" name="checkCircle" size="sm" />
           {{ isLoading ? t('auth.verifying') : t('auth.verifyAndCreate') }}
         </Button>
 
-        <div class="text-center">
-          <button
-            v-if="countdown > 0"
-            type="button"
-            disabled
-            class="cursor-not-allowed text-sm text-muted"
-          >
+        <div class="verify-resend">
+          <Button v-if="countdown > 0" variant="ghost" size="sm" disabled>
             {{ t('auth.resendCountdown', { countdown }) }}
-          </button>
-          <button
+          </Button>
+          <Button
             v-else
-            type="button"
-            @click="handleResendCode"
+            variant="ghost"
+            size="sm"
             :disabled="
               isSendingCode ||
               (turnstileWidgetActive && showResendTurnstile && !resendTurnstileToken)
             "
-            class="text-sm text-accent disabled:cursor-not-allowed disabled:opacity-50"
+            :loading="isSendingCode"
+            @click="handleResendCode"
           >
             <span v-if="isSendingCode">{{ t('auth.sendingCode') }}</span>
             <span v-else-if="captchaEnabled && !showResendTurnstile">
               {{ t('auth.clickToResend') }}
             </span>
             <span v-else>{{ t('auth.resendCode') }}</span>
-          </button>
+          </Button>
         </div>
       </form>
     </div>
@@ -929,6 +909,15 @@ function buildRegistrationErrorMessage(error: unknown, fallback: string): string
   font-size: 12.5px;
   font-weight: 600;
   color: var(--foreground);
+}
+
+.verify-submit {
+  width: 100%;
+}
+
+.verify-resend {
+  display: flex;
+  justify-content: center;
 }
 
 .fade-enter-active,

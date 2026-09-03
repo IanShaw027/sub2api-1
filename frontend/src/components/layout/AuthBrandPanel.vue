@@ -60,9 +60,9 @@ const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle
 const brandTitle = computed(() => t('home.heroSubtitle'))
 const brandDescription = computed(() => siteSubtitle.value || t('home.heroDescription'))
 const brandFeatures = computed(() => [
-  `${t('home.features.unifiedGateway')} · ${t('home.features.unifiedGatewayDesc')}`,
-  `${t('home.features.multiAccount')} · ${t('home.features.multiAccountDesc')}`,
-  `${t('home.features.balanceQuota')} · ${t('home.features.balanceQuotaDesc')}`
+  t('auth.brand.features.unifiedGateway'),
+  t('auth.brand.features.multiAccount'),
+  t('auth.brand.features.balanceQuota')
 ])
 
 /**
@@ -161,6 +161,7 @@ onMounted(() => {
 
 .auth-brand-copy :deep(p) {
   margin: 0;
+  max-width: 500px; /* prototype wraps the description at ~500px */
   font-size: 15px;
   line-height: 1.65;
   color: var(--muted);

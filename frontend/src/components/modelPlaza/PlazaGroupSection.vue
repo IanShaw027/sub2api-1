@@ -1,11 +1,9 @@
 <template>
- <section
- class="overflow-hidden rounded-2xl border bg-surface shadow-card"
- :class="[platformBorderStrongClass(group.platform)]"
- >
- <!-- 分组头部:名称/平台/倍率徽章/专属/订阅徽章 + 描述 -->
- <header class="border-b border-line px-5 py-4">
- <div class="flex flex-wrap items-center gap-2">
+ <section class="glass-card overflow-hidden !p-0">
+ <!-- 分组头部:平台底板/名称/倍率徽章/专属/订阅徽章 + 描述 -->
+ <header class="card-header flex-col items-start gap-2 !py-4">
+ <div class="flex w-full flex-wrap items-center gap-2">
+ <PlatformCell :platform="group.platform" />
  <GroupBadge
  :name="group.name"
  :platform="group.platform as GroupPlatform"
@@ -18,27 +16,18 @@
  :peak-rate-multiplier="group.peak_rate_multiplier"
  always-show-rate
  />
- <span
- v-if="group.is_exclusive"
- class="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-0.5 text-xs font-medium text-purple-600"
- >
+ <span v-if="group.is_exclusive" class="tag tag-accent">
  <Icon name="shield" size="xs" class="h-3 w-3" />
  {{ t('modelPlaza.badges.exclusive') }}
  </span>
- <span
- v-if="group.subscription_type === 'subscription'"
- class="inline-flex items-center rounded-md bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-600"
- >
+ <span v-if="group.subscription_type === 'subscription'" class="tag tag-accent">
  {{ t('modelPlaza.badges.subscription') }}
  </span>
  </div>
- <p v-if="group.description" class="mt-2 text-sm text-muted">
+ <p v-if="group.description" class="text-sm text-muted">
  {{ group.description }}
  </p>
- <p
- v-if="peakNote"
- class="mt-1.5 inline-flex items-center gap-1 text-xs text-amber-600"
- >
+ <p v-if="peakNote" class="tag tag-warning">
  <Icon name="clock" size="xs" class="h-3 w-3" />
  {{ peakNote }}
  </p>
@@ -76,10 +65,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
+import PlatformCell from '@/components/common/cells/PlatformCell.vue'
 import PlazaModelPricingTable from './PlazaModelPricingTable.vue'
 import type { ModelPlazaGroup } from '@/api/modelPlaza'
 import type { GroupPlatform, SubscriptionType } from '@/types'
-import { platformBorderStrongClass } from '@/utils/platformColors'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { useAppStore } from '@/stores/app'
 

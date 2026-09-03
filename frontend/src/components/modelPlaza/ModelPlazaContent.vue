@@ -2,16 +2,12 @@
  <div class="space-y-5">
  <!-- 页头(独立形态下展示标题;后台形态 AppHeader 已有页面标题) -->
  <div v-if="!embedded">
- <h1 class="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{{ t('modelPlaza.title') }}</h1>
- <p class="mt-1.5 text-sm text-muted">{{ t('modelPlaza.description') }}</p>
+ <h1 class="section-title">{{ t('modelPlaza.title') }}</h1>
+ <p class="page-description">{{ t('modelPlaza.description') }}</p>
  </div>
 
  <!-- 全局价格说明(管理员配置,Markdown) -->
- <div
- v-if="descriptionHtml"
- class="plaza-description rounded-2xl border border-line bg-surface px-5 py-4 text-sm shadow-card"
- v-html="descriptionHtml"
- ></div>
+ <div v-if="descriptionHtml" class="plaza-description glass-card" v-html="descriptionHtml"></div>
 
  <!-- 未登录提示 -->
  <p
@@ -24,12 +20,9 @@
 
  <!-- 加载/错误/空 -->
  <div v-if="loading" class="flex min-h-[240px] items-center justify-center">
- <div class="h-8 w-8 animate-spin rounded-full border-2 border-accent/25 border-t-accent"></div>
+ <div class="spinner text-accent"></div>
  </div>
- <div
- v-else-if="error"
- class="rounded-2xl border border-red-200 bg-red-50 px-5 py-8 text-center text-sm text-red-600"
- >
+ <div v-else-if="error" class="notice notice-danger">
  {{ t('modelPlaza.loadFailed') }}
  </div>
  <template v-else>
@@ -52,11 +45,10 @@
  <div v-if="filteredGroups.length > 0" class="space-y-5">
  <PlazaGroupSection v-for="g in filteredGroups" :key="g.id" :group="g" />
  </div>
- <div
- v-else
- class="rounded-2xl border border-dashed border-line px-5 py-12 text-center text-sm text-muted"
- >
+ <div v-else class="empty-state">
+ <p class="empty-state-title">
  {{ searchActive ? t('modelPlaza.noSearchResult') : t('modelPlaza.empty') }}
+ </p>
  </div>
  </template>
  </div>

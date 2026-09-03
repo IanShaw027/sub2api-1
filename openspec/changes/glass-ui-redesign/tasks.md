@@ -60,25 +60,25 @@
 
 ## 5. 公开页（2 个代理：A 首页像素 diff；B 其余公开页）
 
-- [ ] 5.1 首页像素 diff：用 `scripts/pixel-diff.mjs`（pixelmatch）对比 `reference/light/01_首页.png` 与 `/home` 1440 截图，输出差异热图；逐区块修正：导航（登录 / 立即开始按钮尺寸与间距；语言 / 主题切换保留但按 34px 图标按钮排版并登记偏离）、Hero 副文案与社证行（接站点副标题 / 公开统计，无数据时用 i18n 默认文案）、控制台预览 URL、"对比官方订阅"区标题与表格、页脚 服务条款 / 隐私政策 链接（来自 `login_agreement_documents`）；验证差异像素 < 0.5%（排除动态文案区域）、`HomeView*.spec` 通过
-- [ ] 5.2 首页暗色与 390：对照 `reference/dark/01_首页.png` 与 `08_移动端` 首页画板（顶栏 + 汉堡、Hero 单列、卡片纵向、CTA 全宽）；验证两张截图 + 偏离登记
-- [ ] 5.3 `components/home/*`（ConsolePreview / HomeCodeTabs / 定价表 / 对比表 / CTA / 页脚）抽成组件并写结构测试；验证 spec 通过
-- [ ] 5.4 `/model-plaza`（`ModelPlazaView.vue` + `components/modelPlaza/*`）：公开页壳 + 30/800 标题 + 分组玻璃卡表格（42 表头、20px 底板、tabular 价格、`.tag` 倍率）、嵌入模式无壳；验证亮 / 暗 / 390 截图 + spec
-- [ ] 5.5 `/key-usage`（`KeyUsageView.vue`）：公开页壳、40px 密钥字段 + 42px 主按钮、结果统计卡 + 表格；验证截图 + spec
-- [ ] 5.6 `/legal/:documentId`：公开页壳 + 玻璃卡 Markdown（`announcement-markdown` 令牌化）；验证截图
-- [ ] 5.7 `/:pathMatch(.*)*`（`NotFoundView.vue`）：64/800 主色渐变 404 + 返回按钮；验证截图
-- [ ] 5.8 提交 `feat(glass): public pages (tasks 5.1–5.7)`
+- [x] 5.1 首页像素 diff：用 `scripts/pixel-diff.mjs`（pixelmatch）对比 `reference/light/01_首页.png` 与 `/home` 1440 截图，输出差异热图；逐区块修正：导航（登录 / 立即开始按钮尺寸与间距；语言 / 主题切换保留但按 34px 图标按钮排版并登记偏离）、Hero 副文案与社证行（接站点副标题 / 公开统计，无数据时用 i18n 默认文案）、控制台预览 URL、"对比官方订阅"区标题与表格、页脚 服务条款 / 隐私政策 链接（来自 `login_agreement_documents`）；验证差异像素 < 0.5%（排除动态文案区域）、`HomeView*.spec` 通过
+- [x] 5.2 首页暗色与 390：对照 `reference/dark/01_首页.png` 与 `08_移动端` 首页画板（顶栏 + 汉堡、Hero 单列、卡片纵向、CTA 全宽）；验证两张截图 + 偏离登记
+- [x] 5.3 `components/home/*`（ConsolePreview / HomeCodeTabs / 定价表 / 对比表 / CTA / 页脚）抽成组件并写结构测试；验证 spec 通过
+- [x] 5.4 `/model-plaza`（`ModelPlazaView.vue` + `components/modelPlaza/*`）：公开页壳 + 30/800 标题 + 分组玻璃卡表格（42 表头、20px 底板、tabular 价格、`.tag` 倍率）、嵌入模式无壳；验证亮 / 暗 / 390 截图 + spec
+- [x] 5.5 `/key-usage`（`KeyUsageView.vue`）：公开页壳、40px 密钥字段 + 42px 主按钮、结果统计卡 + 表格；验证截图 + spec
+- [x] 5.6 `/legal/:documentId`：公开页壳 + 玻璃卡 Markdown（`announcement-markdown` 令牌化）；验证截图
+- [x] 5.7 `/:pathMatch(.*)*`（`NotFoundView.vue`）：64/800 主色渐变 404 + 返回按钮；验证截图
+- [x] 5.8 提交 `feat(glass): public pages (tasks 5.1–5.7)`
 
 ## 6. 认证、回调、安装向导（2 个代理：A 登录/注册/密码/验证；B 回调/向导）
 
-- [ ] 6.1 `/login` 像素 diff（`reference/light/02_登录.png`）：品牌面板 `48px 56px`、46/800 标题、特性行、底部徽章；卡片 440 / 36 / r20 / `.glass-ring`、字段 40、主按钮 42、OAuth 40 排布（首个全宽其余两列）、页脚条款；验证差异 < 0.5%、暗色 + 390 截图、`views/auth/__tests__` 全绿
-- [ ] 6.2 `/register`：同卡片配方，邀请码 / 优惠码内联校验态、条款勾选；验证截图 + spec
-- [ ] 6.3 `/forgot-password`、`/reset-password`：同卡片配方，成功态 `.notice-success`；验证截图
-- [ ] 6.4 `/email-verify`、`/auth/dingtalk/email-completion`：48px 6 位码字段（mono 22 tracking .4em）、重发倒计时 ghost 按钮；验证截图
-- [ ] 6.5 新建 `components/auth/CallbackStatusCard.vue` 并用于 6 个回调视图：44px tone 圆、20/800、13.5 muted、42 按钮、`.code-block`；验证每个回调 成功 / 失败 / 加载 三态截图 + spec
-- [ ] 6.6 `/setup`（`SetupWizardView.vue`）：640 卡、4 步步进器、`SettingRow`、34 连接测试 + 内联徽章、42 完成；验证截图（mock 返回 `needs_setup:true` 分支）
-- [ ] 6.7 `components/auth/{EmailOAuthButtons,LinuxDoOAuthSection,DingTalkOAuthSection,OidcOAuthSection,WechatOAuthSection,LoginAgreementPrompt,TotpLoginModal}.vue`：40px secondary + 18px 品牌标、`UiModal` 44px 码字段；验证 `components/auth/__tests__` 全绿
-- [ ] 6.8 提交 `feat(glass): auth and public status pages (tasks 6.1–6.7)`
+- [x] 6.1 `/login` 像素 diff（`reference/light/02_登录.png`）：品牌面板 `48px 56px`、46/800 标题、特性行、底部徽章；卡片 440 / 36 / r20 / `.glass-ring`、字段 40、主按钮 42、OAuth 40 排布（首个全宽其余两列）、页脚条款；验证差异 < 0.5%、暗色 + 390 截图、`views/auth/__tests__` 全绿
+- [x] 6.2 `/register`：同卡片配方，邀请码 / 优惠码内联校验态、条款勾选；验证截图 + spec
+- [x] 6.3 `/forgot-password`、`/reset-password`：同卡片配方，成功态 `.notice-success`；验证截图
+- [x] 6.4 `/email-verify`、`/auth/dingtalk/email-completion`：48px 6 位码字段（mono 22 tracking .4em）、重发倒计时 ghost 按钮；验证截图
+- [x] 6.5 新建 `components/auth/CallbackStatusCard.vue` 并用于 6 个回调视图：44px tone 圆、20/800、13.5 muted、42 按钮、`.code-block`；验证每个回调 成功 / 失败 / 加载 三态截图 + spec
+- [x] 6.6 `/setup`（`SetupWizardView.vue`）：640 卡、4 步步进器、`SettingRow`、34 连接测试 + 内联徽章、42 完成；验证截图（mock 返回 `needs_setup:true` 分支）
+- [x] 6.7 `components/auth/{EmailOAuthButtons,LinuxDoOAuthSection,DingTalkOAuthSection,OidcOAuthSection,WechatOAuthSection,LoginAgreementPrompt,TotpLoginModal}.vue`：40px secondary + 18px 品牌标、`UiModal` 44px 码字段；验证 `components/auth/__tests__` 全绿
+- [x] 6.8 提交 `feat(glass): auth and public status pages (tasks 6.1–6.7)`
 
 ## 7. 管理员仪表盘 · 原型 03（1 个代理）
 

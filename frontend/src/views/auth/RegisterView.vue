@@ -179,7 +179,7 @@
       <!-- Submit Button -->
       <Button
         native-type="submit"
-        size="md"
+        size="lg"
         class="register-submit"
         :disabled="registrationActionDisabled || (turnstileWidgetActive && !turnstileToken)"
         :loading="isLoading"
@@ -1189,11 +1189,6 @@ function buildRegistrationErrorMessage(error: unknown, fallback: string): string
 
 .register-submit {
   width: 100%;
-  height: 42px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 600;
-  box-shadow: 0 12px 28px -12px var(--accent);
 }
 
 .register-divider {

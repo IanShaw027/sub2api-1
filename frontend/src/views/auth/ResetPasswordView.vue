@@ -6,83 +6,55 @@
         <p>{{ t('auth.resetPasswordHint') }}</p>
       </div>
 
-      <div v-if="isInvalidLink" class="space-y-6">
-        <div class="rounded-xl border border-[color-mix(in_oklch,var(--warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--warning)_12%,transparent)] p-6">
-          <div class="flex flex-col items-center gap-4 text-center">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]">
-              <Icon name="exclamationCircle" size="lg" class="text-[var(--warning-text)]" />
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold text-foreground">
-                {{ t('auth.invalidResetLink') }}
-              </h3>
-              <p class="mt-2 text-sm text-muted">
-                {{ t('auth.invalidResetLinkHint') }}
-              </p>
-            </div>
+      <div v-if="isInvalidLink" class="forgot-result">
+        <div class="notice notice-warning">
+          <Icon name="exclamationCircle" size="sm" class="notice-icon" />
+          <div>
+            <p class="notice-title">{{ t('auth.invalidResetLink') }}</p>
+            <p>{{ t('auth.invalidResetLinkHint') }}</p>
           </div>
         </div>
 
-        <div class="text-center">
-          <router-link to="/forgot-password" class="login-link inline-flex items-center gap-2">
+        <div class="forgot-result-back">
+          <router-link to="/forgot-password" class="login-link">
             {{ t('auth.requestNewResetLink') }}
           </router-link>
         </div>
       </div>
 
-      <div v-else-if="isSuccess" class="space-y-6">
-        <div class="rounded-xl border border-[color-mix(in_oklch,var(--success)_35%,transparent)] bg-[color-mix(in_oklch,var(--success)_12%,transparent)] p-6">
-          <div class="flex flex-col items-center gap-4 text-center">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_18%,transparent)]">
-              <Icon name="checkCircle" size="lg" class="text-[var(--success-text)]" />
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold text-foreground">
-                {{ t('auth.passwordResetSuccess') }}
-              </h3>
-              <p class="mt-2 text-sm text-muted">
-                {{ t('auth.passwordResetSuccessHint') }}
-              </p>
-            </div>
+      <div v-else-if="isSuccess" class="forgot-result">
+        <div class="notice notice-success">
+          <Icon name="checkCircle" size="sm" class="notice-icon" />
+          <div>
+            <p class="notice-title">{{ t('auth.passwordResetSuccess') }}</p>
+            <p>{{ t('auth.passwordResetSuccessHint') }}</p>
           </div>
         </div>
 
-        <div class="text-center">
-          <Button to="/login" size="lg" class="inline-flex items-center gap-2">
-            <Icon name="login" size="md" />
+        <div class="forgot-result-back">
+          <Button to="/login" size="lg" class="forgot-submit">
+            <Icon name="login" size="sm" />
             {{ t('auth.signIn') }}
           </Button>
         </div>
       </div>
 
       <form v-else @submit.prevent="handleSubmit" class="login-form">
-        <div>
-          <label for="email" class="login-label">
-            {{ t('auth.emailLabel') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="mail" size="md" class="text-muted" />
-            </div>
-            <input
-              id="email"
-              :value="email"
-              type="email"
-              readonly
-              disabled
-              class="field pl-11"
-            />
-          </div>
-        </div>
+        <label class="login-field" for="email">
+          <span class="login-label">{{ t('auth.emailLabel') }}</span>
+          <input
+            id="email"
+            :value="email"
+            type="email"
+            readonly
+            disabled
+            class="field input-lg"
+          />
+        </label>
 
-        <div>
-          <label for="password" class="login-label">
-            {{ t('auth.newPassword') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-muted" />
-            </div>
+        <label class="login-field" for="password">
+          <span class="login-label">{{ t('auth.newPassword') }}</span>
+          <div class="login-field-input">
             <input
               id="password"
               v-model="formData.password"
@@ -90,29 +62,24 @@
               required
               autocomplete="new-password"
               :disabled="isLoading"
-              class="field pl-11 pr-11"
+              class="field input-lg login-field-affix"
               :class="{ 'input-error': errors.password }"
               :placeholder="t('auth.newPasswordPlaceholder')"
             />
             <button
               type="button"
               @click="showPassword = !showPassword"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-muted"
+              class="login-eye"
             >
-              <Icon v-if="showPassword" name="eyeOff" size="md" />
-              <Icon v-else name="eye" size="md" />
+              <Icon v-if="showPassword" name="eyeOff" size="sm" />
+              <Icon v-else name="eye" size="sm" />
             </button>
           </div>
-        </div>
+        </label>
 
-        <div>
-          <label for="confirmPassword" class="login-label">
-            {{ t('auth.confirmPassword') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="lock" size="md" class="text-muted" />
-            </div>
+        <label class="login-field" for="confirmPassword">
+          <span class="login-label">{{ t('auth.confirmPassword') }}</span>
+          <div class="login-field-input">
             <input
               id="confirmPassword"
               v-model="formData.confirmPassword"
@@ -120,29 +87,29 @@
               required
               autocomplete="new-password"
               :disabled="isLoading"
-              class="field pl-11 pr-11"
+              class="field input-lg login-field-affix"
               :class="{ 'input-error': errors.confirmPassword }"
               :placeholder="t('auth.confirmPasswordPlaceholder')"
             />
             <button
               type="button"
               @click="showConfirmPassword = !showConfirmPassword"
-              class="absolute inset-y-0 right-0 flex items-center pr-3.5 text-muted"
+              class="login-eye"
             >
-              <Icon v-if="showConfirmPassword" name="eyeOff" size="md" />
-              <Icon v-else name="eye" size="md" />
+              <Icon v-if="showConfirmPassword" name="eyeOff" size="sm" />
+              <Icon v-else name="eye" size="sm" />
             </button>
           </div>
-        </div>
+        </label>
 
         <Button
           native-type="submit"
-          size="md"
-          class="w-full"
+          size="lg"
+          class="forgot-submit"
           :disabled="isLoading"
           :loading="isLoading"
         >
-          <Icon v-if="!isLoading" name="checkCircle" size="md" />
+          <Icon v-if="!isLoading" name="checkCircle" size="sm" />
           {{ isLoading ? t('auth.resettingPassword') : t('auth.resetPassword') }}
         </Button>
       </form>
@@ -321,6 +288,55 @@ async function handleSubmit(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.forgot-result {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.forgot-result-back {
+  display: flex;
+  justify-content: center;
+}
+
+.forgot-submit {
+  width: 100%;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.login-field-input {
+  position: relative;
+  display: block;
+}
+
+.login-field-affix {
+  padding-right: 38px;
+}
+
+.login-eye {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 40px;
+  width: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.login-eye:hover {
+  color: var(--foreground);
 }
 
 .login-label {

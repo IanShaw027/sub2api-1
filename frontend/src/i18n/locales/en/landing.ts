@@ -60,6 +60,8 @@ export default {
     // Comparison section
     comparison: {
       title: 'Why Choose Us?',
+      heading: 'Compare vs. Official Subscriptions',
+      headingDesc: 'Smart routing across multiple upstream accounts with automatic failover and load balancing; usage-based billing with quota limits gives your team full visibility.',
       headers: {
         feature: 'Comparison',
         official: 'Official Subscriptions',
@@ -179,6 +181,8 @@ export default {
     placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',
     query: 'Query',
     querying: 'Querying...',
+    showKey: 'Show Key',
+    hideKey: 'Hide Key',
     privacyNote: 'Your Key is processed locally in the browser and will not be stored',
     dateRange: 'Date Range:',
     dateRangeToday: 'Today',
@@ -245,6 +249,13 @@ export default {
     queryFailed: 'Query failed',
     queryFailedRetry: 'Query failed, please try again later',
     noDailyUsage: 'No daily usage data',
+  },
+
+  // 404 Not Found Page
+  notFound: {
+    description: 'The page you are looking for doesn\'t exist or has been moved.',
+    backHome: 'Back to Home',
+    goBack: 'Go Back',
   },
 
   // Setup Wizard

@@ -211,47 +211,28 @@
       <section class="home-compare">
         <div class="home-compare-copy">
           <p class="section-kicker">{{ t('home.comparison.title') }}</p>
-          <h2 class="section-title">{{ t('home.features.multiAccount') }}</h2>
-          <p class="home-compare-desc">{{ t('home.features.multiAccountDesc') }} {{ t('home.features.balanceQuotaDesc') }}</p>
+          <h2 class="section-title">{{ t('home.comparison.heading') }}</h2>
+          <p class="home-compare-desc">{{ t('home.comparison.headingDesc') }}</p>
         </div>
-        <div class="home-compare-table glass-card">
-          <div class="home-compare-head">
-            <span>{{ t('home.comparison.headers.feature') }}</span>
-            <span>{{ t('home.comparison.headers.official') }}</span>
-            <span class="text-accent">{{ t('home.comparison.headers.us') }}</span>
-          </div>
-          <div v-for="row in comparisonRows" :key="row.feature" class="home-compare-row">
-            <span class="home-compare-feature">{{ row.feature }}</span>
-            <span class="text-muted">{{ row.official }}</span>
-            <span class="home-compare-us">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-              {{ row.us }}
-            </span>
-          </div>
-        </div>
+        <HomeCompareTable :rows="comparisonRows" />
       </section>
 
       <!-- CTA -->
-      <section class="home-cta-banner">
-        <div>
-          <h2>{{ t('home.cta.title') }}</h2>
-          <p>{{ t('home.cta.description') }}</p>
-        </div>
-        <router-link :to="isAuthenticated ? dashboardPath : '/register'" class="btn btn-primary home-cta-btn">
-          {{ isAuthenticated ? t('home.goToDashboard') : t('home.cta.button') }}
-        </router-link>
-      </section>
+      <HomeCtaBanner
+        class="home-cta-slot"
+        :to="isAuthenticated ? dashboardPath : '/register'"
+        :label="isAuthenticated ? t('home.goToDashboard') : t('home.cta.button')"
+      />
     </main>
 
-    <footer class="home-footer">
-      <span>&copy; {{ currentYear }} {{ siteName }}. {{ t('home.footer.allRightsReserved') }}</span>
-      <div class="home-footer-links">
-        <router-link v-for="doc in legalDocuments" :key="doc.id" :to="`/legal/${doc.id}`">{{ doc.title }}</router-link>
-        <a v-if="docUrl" :href="docUrl" target="_blank" rel="noopener noreferrer">{{ t('home.nav.docs') }}</a>
-        <a :href="githubUrl" target="_blank" rel="noopener noreferrer">GitHub</a>
-        <span v-if="contactInfo" :title="contactInfo">{{ t('home.footerLinks.contact') }}</span>
-      </div>
-    </footer>
+    <HomeFooter
+      :current-year="currentYear"
+      :site-name="siteName"
+      :legal-documents="legalDocuments"
+      :doc-url="docUrl"
+      :github-url="githubUrl"
+      :contact-info="contactInfo"
+    />
   </div>
 </template>
 
@@ -264,6 +245,9 @@ import Icon from '@/components/icons/Icon.vue'
 import ConsolePreview from '@/components/home/ConsolePreview.vue'
 import HomeCodeTabs from '@/components/home/HomeCodeTabs.vue'
 import HomePricingTable, { type PricingRow } from '@/components/home/HomePricingTable.vue'
+import HomeCompareTable from '@/components/home/HomeCompareTable.vue'
+import HomeCtaBanner from '@/components/home/HomeCtaBanner.vue'
+import HomeFooter from '@/components/home/HomeFooter.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { useTheme } from '@/composables/useTheme'
@@ -497,6 +481,21 @@ onMounted(async () => {
   gap: 8px;
 }
 
+/* Home nav locale switcher: reshape shared component to a 34px icon button
+   to match .header-icon-btn sizing used by the theme toggle (see deviations.md). */
+.home-nav-locale :deep(button) {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+}
+
+.home-nav-locale :deep(button span:not(:first-child)),
+.home-nav-locale :deep(button svg) {
+  display: none;
+}
+
 .home-user-dot {
   display: inline-flex;
   width: 18px;
@@ -634,6 +633,16 @@ onMounted(async () => {
 .home-hero-visual {
   position: relative;
   min-width: 0;
+}
+
+/* The shared .section-title class (src/style.css) ships line-height:1.15, tuned
+   for other contexts; at this page's 30px section headings (steps/pricing/compare)
+   the design reference renders ~1.47x, so we override locally per-section here
+   instead of touching the global class. */
+.home-steps .section-title,
+.home-pricing .section-title,
+.home-compare-copy .section-title {
+  line-height: 1.467;
 }
 
 /* ---------- Steps ---------- */
@@ -778,120 +787,11 @@ onMounted(async () => {
   max-width: 440px;
 }
 
-.home-compare-table {
-  border-radius: 16px;
-  overflow: hidden;
-}
-
-.home-compare-head,
-.home-compare-row {
-  display: grid;
-  grid-template-columns: 110px 1fr 1fr;
-  gap: 16px;
-  padding: 12px 22px;
-  font-size: 13px;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-}
-
-.home-compare-row:last-child {
-  border-bottom: 0;
-}
-
-.home-compare-head {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  letter-spacing: 0.06em;
-  background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
-}
-
-.home-compare-feature {
-  font-weight: 600;
-}
-
-.home-compare-us {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
-}
-
 /* ---------- CTA ---------- */
-.home-cta-banner {
+/* .home-cta-slot: layout-only margin wrapper for the extracted HomeCtaBanner
+   component (see components/home/HomeCtaBanner.vue for the banner's own styles). */
+.home-cta-slot {
   margin: 0 80px 56px;
-  padding: 40px 48px;
-  border-radius: 20px;
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  color: var(--foreground);
-  background:
-    linear-gradient(120deg, color-mix(in oklch, var(--accent) 16%, transparent), color-mix(in oklch, var(--success) 10%, transparent)),
-    color-mix(in oklch, var(--surface) 70%, transparent);
-  border: 1px solid color-mix(in oklch, var(--accent) 35%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--shadow), 0 30px 60px -40px var(--accent);
-}
-
-.home-cta-banner h2 {
-  margin: 0;
-  font-family: var(--display);
-  font-size: 28px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-}
-
-.home-cta-banner p {
-  margin: 8px 0 0;
-  font-size: 14.5px;
-  color: var(--muted);
-}
-
-.home-cta-btn {
-  height: 44px;
-  padding: 0 22px;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  box-shadow: 0 12px 28px -12px var(--accent);
-  flex: none;
-}
-
-/* ---------- Footer ---------- */
-.home-footer {
-  width: 100%;
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 20px 80px 28px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  font-size: 12.5px;
-  color: var(--muted);
-  border-top: 1px solid var(--border);
-}
-
-.home-footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-}
-
-.home-footer-links a,
-.home-footer-links span {
-  color: inherit;
-  text-decoration: none;
-}
-
-.home-footer-links a:hover {
-  color: var(--foreground);
 }
 
 /* ---------- Compact ---------- */
@@ -940,8 +840,7 @@ onMounted(async () => {
 
 /* ---------- Responsive ---------- */
 @media (max-width: 1180px) {
-  .home-nav-inner,
-  .home-footer {
+  .home-nav-inner {
     padding-left: 40px;
     padding-right: 40px;
   }
@@ -954,7 +853,7 @@ onMounted(async () => {
     padding-right: 40px;
   }
 
-  .home-cta-banner {
+  .home-cta-slot {
     margin-left: 40px;
     margin-right: 40px;
   }
@@ -1001,7 +900,6 @@ onMounted(async () => {
   }
 
   .home-nav-inner,
-  .home-footer,
   .home-hero,
   .home-steps,
   .home-pricing,
@@ -1052,31 +950,8 @@ onMounted(async () => {
     align-items: flex-start;
   }
 
-  .home-compare-head,
-  .home-compare-row {
-    grid-template-columns: 1fr;
-    gap: 4px;
-    padding: 12px 16px;
-  }
-
-  .home-compare-head span:not(:first-child) {
-    display: none;
-  }
-
-  .home-cta-banner {
+  .home-cta-slot {
     margin: 0 20px 40px;
-    padding: 28px 20px;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .home-cta-btn {
-    width: 100%;
-  }
-
-  .home-footer {
-    flex-direction: column;
-    align-items: flex-start;
   }
 }
 </style>

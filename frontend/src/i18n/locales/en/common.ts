@@ -241,7 +241,13 @@ export default {
   // Auth
   auth: {
     brand: {
-      serviceNormal: 'All systems normal'
+      serviceNormal: 'All systems normal',
+      // Three one-line selling points for the auth brand panel (shorter than the home feature copy)
+      features: {
+        unifiedGateway: 'One key · Call every connected model with a single API key',
+        multiAccount: 'Reliable · Smart multi-account routing with automatic failover',
+        balanceQuota: 'Pay as you go · Usage-based billing with clear quota limits and reports'
+      }
     },
     agreementNotice: 'By signing in you agree to the',
     agreementSeparator: 'and',

@@ -1,15 +1,12 @@
 <template>
  <div class="callback-page px-4 py-10">
  <div class="mx-auto max-w-2xl">
- <div v-if="isProcessing" class="glass-card p-6 text-center">
- <div class="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent"></div>
- <h1 class="mt-4 text-lg font-semibold text-foreground">
- {{ t('auth.oauth.callbackTitle') }}
- </h1>
- <p class="mt-2 text-sm text-muted">
- {{ t('auth.oauth.callbackHint') }}
- </p>
- </div>
+ <CallbackStatusCard
+   v-if="isProcessing"
+   status="loading"
+   :title="t('auth.oauth.callbackTitle')"
+   :description="t('auth.oauth.callbackHint')"
+ />
 
  <div v-else-if="needsRegistrationCompletion" class="glass-card p-6">
  <h1 class="text-lg font-semibold text-foreground">
@@ -79,17 +76,28 @@
  </div>
  </div>
 
- <div v-else-if="invalidCallback" class="glass-card p-6 text-center">
- <h1 class="text-lg font-semibold text-foreground">
- {{ t('auth.oauth.invalidCallbackTitle') }}
- </h1>
- <p class="mt-2 text-sm text-muted">
- {{ t('auth.oauth.invalidCallbackHint') }}
- </p>
- <button class="btn-glass-primary mt-6" type="button" @click="router.replace('/login')">
- {{ t('auth.backToLogin') }}
- </button>
- </div>
+ <CallbackStatusCard
+   v-else-if="invalidCallback"
+   status="error"
+   :title="t('auth.oauth.invalidCallbackTitle')"
+   :description="t('auth.oauth.invalidCallbackHint')"
+ >
+   <Button variant="primary" size="lg" nativeType="button" @click="router.replace('/login')">
+     {{ t('auth.backToLogin') }}
+   </Button>
+ </CallbackStatusCard>
+
+ <CallbackStatusCard
+   v-else-if="queryError"
+   status="error"
+   :title="t('auth.oauth.invalidCallbackTitle')"
+   :description="queryErrorDescription || t('auth.oauth.invalidCallbackHint')"
+   :detail="queryError"
+ >
+   <Button variant="primary" size="lg" nativeType="button" @click="router.replace('/login')">
+     {{ t('auth.backToLogin') }}
+   </Button>
+ </CallbackStatusCard>
 
  <div v-else class="glass-card p-6">
  <h1 class="text-lg font-semibold text-foreground">
@@ -164,6 +172,8 @@ import {
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
 import { sanitizeAuthRedirect as sanitizeRedirectPath } from '@/utils/authRedirect'
+import CallbackStatusCard from '@/components/auth/CallbackStatusCard.vue'
+import Button from '@/components/ui/Button.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -199,6 +209,10 @@ const state = computed(() => (route.query.state as string) || '')
 const error = computed(
   () => (route.query.error as string) || (route.query.error_description as string) || ''
 )
+// Raw error code / description straight from the query string, rendered inline in the
+// error CallbackStatusCard below (per ui-standards CallbackStatus "OAuth 回调失败" scenario).
+const queryError = computed(() => (route.query.error as string) || '')
+const queryErrorDescription = computed(() => (route.query.error_description as string) || '')
 
 const fullUrl = computed(() => {
   if (typeof window === 'undefined') return ''

@@ -200,6 +200,7 @@ const logs = [
 
 .console-label {
   font-size: 12px;
+  line-height: 1.3;
   font-weight: 600;
   color: var(--muted);
 }
@@ -257,6 +258,7 @@ const logs = [
   top: 0;
   left: 0;
   font-size: 11px;
+  line-height: 1.3;
   color: var(--muted);
 }
 
@@ -267,6 +269,7 @@ const logs = [
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.3;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -325,11 +328,13 @@ const logs = [
 
 .console-provider-name {
   font-size: 13px;
+  line-height: 1.3;
   font-weight: 600;
 }
 
 .console-provider-models {
   font-size: 11px;
+  line-height: 1.3;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -352,6 +357,7 @@ const logs = [
 .console-provider-lat {
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 1.3;
   color: var(--muted);
 }
 
@@ -365,6 +371,7 @@ const logs = [
   display: grid;
   grid-template-columns: 60px 30px 1fr 52px;
   gap: 10px;
+  line-height: 1.3;
 }
 
 .console-log-code {

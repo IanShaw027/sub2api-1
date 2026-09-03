@@ -113,7 +113,8 @@
 }
 
 .markdown-body img {
-  @apply my-5 max-w-full rounded-xl border border-line shadow-md;
+  @apply my-5 max-w-full rounded-xl border border-line;
+  box-shadow: var(--shadow);
 }
 
 .markdown-body strong {

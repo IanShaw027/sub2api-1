@@ -589,11 +589,14 @@ const PUBLIC_SETTINGS = {
   promo_code_enabled: true,
   password_reset_enabled: true,
   invitation_code_enabled: false,
-  login_agreement_enabled: false,
-  login_agreement_mode: 'modal',
-  login_agreement_updated_at: '',
-  login_agreement_revision: '',
-  login_agreement_documents: [],
+  login_agreement_enabled: false, // prototype state: footer links only, no consent gate (flip to true to preview the modal)
+  login_agreement_mode: 'inline',
+  login_agreement_updated_at: '2026-08-01T00:00:00Z',
+  login_agreement_revision: 'r3',
+  login_agreement_documents: [
+    { id: 'terms', title: '服务条款', content_md: '# 服务条款\n\n欢迎使用 Sub2API。使用本服务即表示您同意以下条款。\n\n## 1. 服务内容\n\nSub2API 提供统一的 AI 模型接入网关，您可通过一个 API 密钥调用已接入的模型。\n\n## 2. 账号与安全\n\n- 妥善保管您的 API 密钥，勿在公开仓库中泄露。\n- 对通过您账号发生的一切请求负责。\n\n## 3. 计费\n\n按实际用量计费，详见控制台用量页面。\n\n```bash\nexport ANTHROPIC_BASE_URL="https://api.sub2api.dev"\n```' },
+    { id: 'privacy', title: '隐私政策', content_md: '# 隐私政策\n\n我们仅收集提供服务所必需的信息。\n\n## 收集的信息\n\n1. 注册邮箱\n2. 请求元数据（模型、token 数、时间）\n\n## 信息用途\n\n用于计费、限流与故障排查，不会出售给第三方。' }
+  ],
   turnstile_enabled: false,
   turnstile_site_key: '',
   tencent_captcha_enabled: false,
@@ -606,7 +609,7 @@ const PUBLIC_SETTINGS = {
   passkey_enabled: true,
   site_name: 'Sub2API',
   site_logo: '',
-  site_subtitle: '订阅转 API 转换平台',
+  site_subtitle: '', // empty = default heroDescription copy, as in the prototype
   api_base_url: 'https://api.sub2api.dev',
   contact_info: 'support@sub2api.dev',
   doc_url: 'https://docs.example.com',
@@ -629,7 +632,7 @@ const PUBLIC_SETTINGS = {
   wechat_oauth_mobile_enabled: false,
   oidc_oauth_enabled: false,
   oidc_oauth_provider_name: '',
-  github_oauth_enabled: true,
+  github_oauth_enabled: false,
   google_oauth_enabled: false,
   backend_mode_enabled: false,
   version: '1.8.2',
@@ -777,12 +780,23 @@ const rangeDays = (query) => {
   return 14
 }
 
+// UI preview helper: /setup/status normally reports "already installed" so app views load
+// straight into the dashboard. Setting MOCK_NEEDS_SETUP=1 (or hitting GET /setup/dev-toggle,
+// see below) flips it to the fresh-install branch so SetupWizardView.vue's wizard renders.
+let SETUP_NEEDS_SETUP = process.env.MOCK_NEEDS_SETUP === '1'
+
 // Exact-path routes: key = "METHOD path"
 const routes = {
   // ---- public / auth ----
   'GET /api/v1/settings/public': () => PUBLIC_SETTINGS,
-  'GET /setup/status': () => ({ needs_setup: false, step: 'done' }),
-  'GET /api/v1/setup/status': () => ({ needs_setup: false, step: 'done' }),
+  'GET /setup/status': () => ({ needs_setup: SETUP_NEEDS_SETUP, step: SETUP_NEEDS_SETUP ? 'database' : 'done' }),
+  'GET /api/v1/setup/status': () => ({ needs_setup: SETUP_NEEDS_SETUP, step: SETUP_NEEDS_SETUP ? 'database' : 'done' }),
+  'POST /setup/test-db': () => ({ success: true, message: 'Database connection successful' }),
+  'POST /setup/test-redis': () => ({ success: true, message: 'Redis connection successful' }),
+  'POST /setup/install': () => {
+    SETUP_NEEDS_SETUP = false
+    return { message: 'Installation successful', restart: false }
+  },
   'POST /api/v1/auth/login': (ctx) => {
     const user = ctx.body && /user|xiaoyu/i.test(String(ctx.body.email || '')) ? NORMAL_USER : ADMIN_USER
     return { ...tokens(user), user: { ...user, run_mode: 'standard' } }
@@ -1057,6 +1071,13 @@ const server = http.createServer(async (req, res) => {
   const path = url.pathname.replace(/\/+$/, '') || '/'
   const method = req.method.toUpperCase()
   const stamp = new Date().toISOString().slice(11, 19)
+
+  // --- UI preview helper: flips the in-memory needs_setup flag so /setup renders its wizard
+  // branch instead of redirecting away. GET /setup/dev-toggle?needs_setup=1|0 ---
+  if (path === '/setup/dev-toggle') {
+    SETUP_NEEDS_SETUP = url.searchParams.get('needs_setup') === '1'
+    return send(res, 200, { code: 0, message: 'ok', data: { needs_setup: SETUP_NEEDS_SETUP } })
+  }
 
   // --- UI preview helper: seeds a logged-in session then redirects (served through the vite proxy) ---
   if (path === '/setup/seed') {

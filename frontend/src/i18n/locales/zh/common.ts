@@ -241,7 +241,13 @@ export default {
   // Auth
   auth: {
     brand: {
-      serviceNormal: '服务正常'
+      serviceNormal: '服务正常',
+      // 登录 / 注册左侧品牌面板的三条卖点（比首页特性描述更精炼，单行显示）
+      features: {
+        unifiedGateway: '一键接入 · 获取一个 API 密钥，即可调用所有已接入模型',
+        multiAccount: '稳定可靠 · 多账号智能调度，自动切换和负载均衡',
+        balanceQuota: '用多少付多少 · 按量计费，配额上限与用量明细清晰可见'
+      }
     },
     agreementNotice: '登录即表示同意',
     agreementSeparator: '与',

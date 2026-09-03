@@ -24,7 +24,9 @@ All responses use the `{ code: 0, message: "ok", data }` envelope and carry perm
 
 Public / auth
 - `GET /settings/public` – full `PublicSettings` (site_name "Sub2API", version 1.8.2, payment/ticket/affiliate/model plaza/channel monitor enabled, github/linuxdo/dingtalk OAuth on)
-- `GET /setup/status` and `GET /api/v1/setup/status` – `{ needs_setup: false, step: "done" }` (the frontend calls the un-prefixed one)
+- `GET /setup/status` and `GET /api/v1/setup/status` – `{ needs_setup: <flag>, step: <flag ? "database" : "done"> }` (the frontend calls the un-prefixed one). `<flag>` defaults to `false` (start the server with `MOCK_NEEDS_SETUP=1` to default it to `true`), and can be flipped at runtime with `GET /setup/dev-toggle?needs_setup=1` (or `=0`) — handy for driving `/setup` into its wizard branch for screenshots without restarting the mock. `POST /setup/install` resets the flag back to `false`.
+- `POST /setup/test-db`, `POST /setup/test-redis` – always `{ success: true, message: "…connection successful" }`
+- `POST /setup/install` – `{ message: "Installation successful", restart: false }`, also clears the `needs_setup` flag above
 - `POST /auth/login` – `AuthResponse` (admin by default; an email containing "user" or "xiaoyu" logs in as the normal user)
 - `GET /auth/me` – `CurrentUserResponse` (the user object itself; admin unless the bearer token is `mock-user-token`)
 - `POST /auth/refresh` – `RefreshTokenResponse`; `POST /auth/logout`, `POST /auth/revoke-all-sessions`

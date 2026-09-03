@@ -126,8 +126,6 @@ function startLogin(provider: EmailOAuthProvider): void {
   overflow: hidden;
   font-size: 10px;
   font-weight: 800;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .oauth-divider {

@@ -1,48 +1,35 @@
 <template>
- <header
- class="glass sticky top-0 z-30 border-b border-line/50"
- >
- <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
- <!-- 左:站点 logo + 名称 -->
- <div class="flex min-w-0 items-center gap-3">
- <template v-if="settings">
- <span
- class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface shadow-sm ring-1 ring-line"
- >
- <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
- </span>
- <span class="truncate text-base font-semibold text-foreground">
- {{ siteName }}
- </span>
- </template>
- <template v-else>
- <span class="h-9 w-9 flex-shrink-0 animate-pulse rounded-xl bg-surface-2" aria-hidden="true"></span>
- <span class="h-5 w-28 animate-pulse rounded bg-surface-2" aria-hidden="true"></span>
- </template>
- </div>
+  <div class="plaza-nav glass">
+    <div class="plaza-nav-inner">
+      <!-- 左:站点 logo + 名称 -->
+      <div class="plaza-nav-brand">
+        <template v-if="settings">
+          <span class="brand-mark">
+            <img :src="siteLogo || '/logo.svg'" alt="Logo" />
+          </span>
+          <span class="plaza-nav-name">{{ siteName }}</span>
+        </template>
+        <template v-else>
+          <span class="brand-mark skeleton" aria-hidden="true"></span>
+          <span class="skeleton plaza-nav-name-skeleton" aria-hidden="true"></span>
+        </template>
+      </div>
 
- <!-- 右:登录 / 回到后台 -->
- <RouterLink
- v-if="isAuthenticated"
- :to="backTarget"
- class="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-[color-mix(in_oklch,var(--accent)_25%,transparent)] transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:shadow-[color-mix(in_oklch,var(--accent)_30%,transparent)] active:scale-[0.98]"
- >
- {{ t('modelPlaza.nav.backToDashboard') }}
- </RouterLink>
- <RouterLink
- v-else
- :to="{ path: '/login', query: { redirect: '/model-plaza' } }"
- class="inline-flex flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] px-4 py-2 text-sm font-semibold text-white shadow-md shadow-[color-mix(in_oklch,var(--accent)_25%,transparent)] transition-all duration-200 hover:opacity-90 hover:shadow-lg hover:shadow-[color-mix(in_oklch,var(--accent)_30%,transparent)] active:scale-[0.98]"
- >
- {{ t('modelPlaza.nav.login') }}
- </RouterLink>
- </div>
- </header>
+      <!-- 右:登录 / 回到后台 -->
+      <Button v-if="isAuthenticated" :to="backTarget" class="plaza-nav-cta">
+        {{ t('modelPlaza.nav.backToDashboard') }}
+      </Button>
+      <Button v-else :to="{ path: '/login', query: { redirect: '/model-plaza' } }" class="plaza-nav-cta">
+        {{ t('modelPlaza.nav.login') }}
+      </Button>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Button from '@/components/ui/Button.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
@@ -54,8 +41,59 @@ const authStore = useAuthStore()
 const settings = computed(() => appStore.cachedPublicSettings)
 const siteName = computed(() => settings.value?.site_name || 'Sub2API')
 const siteLogo = computed(() =>
- sanitizeUrl(settings.value?.site_logo || '', { allowRelative: true, allowDataUrl: true })
+  sanitizeUrl(settings.value?.site_logo || '', { allowRelative: true, allowDataUrl: true })
 )
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const backTarget = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
 </script>
+
+<style scoped>
+.plaza-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--border);
+}
+
+.plaza-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 12px 24px;
+}
+
+.plaza-nav-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.plaza-nav-brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.plaza-nav-name {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+
+.plaza-nav-name-skeleton {
+  width: 112px;
+  height: 20px;
+  border-radius: 5px;
+}
+
+.plaza-nav-cta {
+  flex: none;
+}
+</style>

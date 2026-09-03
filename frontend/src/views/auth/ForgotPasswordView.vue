@@ -6,25 +6,17 @@
         <p>{{ t('auth.forgotPasswordHint') }}</p>
       </div>
 
-      <div v-if="isSubmitted" class="space-y-6">
-        <div class="rounded-xl border border-[color-mix(in_oklch,var(--success)_35%,transparent)] bg-[color-mix(in_oklch,var(--success)_12%,transparent)] p-6">
-          <div class="flex flex-col items-center gap-4 text-center">
-            <div class="flex h-12 w-12 items-center justify-center rounded-full bg-[color-mix(in_oklch,var(--success)_18%,transparent)]">
-              <Icon name="checkCircle" size="lg" class="text-[var(--success-text)]" />
-            </div>
-            <div>
-              <h3 class="text-lg font-semibold text-foreground">
-                {{ t('auth.resetEmailSent') }}
-              </h3>
-              <p class="mt-2 text-sm text-muted">
-                {{ t('auth.resetEmailSentHint') }}
-              </p>
-            </div>
+      <div v-if="isSubmitted" class="forgot-result">
+        <div class="notice notice-success">
+          <Icon name="checkCircle" size="sm" class="notice-icon" />
+          <div>
+            <p class="notice-title">{{ t('auth.resetEmailSent') }}</p>
+            <p>{{ t('auth.resetEmailSentHint') }}</p>
           </div>
         </div>
 
-        <div class="text-center">
-          <router-link to="/login" class="login-link inline-flex items-center gap-2">
+        <div class="forgot-result-back">
+          <router-link to="/login" class="login-link">
             <Icon name="arrowLeft" size="sm" />
             {{ t('auth.backToLogin') }}
           </router-link>
@@ -32,28 +24,21 @@
       </div>
 
       <form v-else @submit.prevent="handleSubmit" class="login-form">
-        <div>
-          <label for="email" class="login-label">
-            {{ t('auth.emailLabel') }}
-          </label>
-          <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <Icon name="mail" size="md" class="text-muted" />
-            </div>
-            <input
-              id="email"
-              v-model="formData.email"
-              type="email"
-              required
-              autofocus
-              autocomplete="email"
-              :disabled="isLoading"
-              class="field pl-11"
-              :class="{ 'input-error': errors.email }"
-              :placeholder="t('auth.emailPlaceholder')"
-            />
-          </div>
-        </div>
+        <label class="login-field" for="email">
+          <span class="login-label">{{ t('auth.emailLabel') }}</span>
+          <input
+            id="email"
+            v-model="formData.email"
+            type="email"
+            required
+            autofocus
+            autocomplete="email"
+            :disabled="isLoading"
+            class="field input-lg"
+            :class="{ 'input-error': errors.email }"
+            :placeholder="t('auth.emailPlaceholder')"
+          />
+        </label>
 
         <div v-if="captchaEnabled">
           <TurnstileWidget
@@ -75,12 +60,12 @@
 
         <Button
           native-type="submit"
-          size="md"
-          class="w-full"
+          size="lg"
+          class="forgot-submit"
           :disabled="isLoading || (turnstileWidgetActive && !turnstileToken)"
           :loading="isLoading"
         >
-          <Icon v-if="!isLoading" name="mail" size="md" />
+          <Icon v-if="!isLoading" name="mail" size="sm" />
           {{ isLoading ? t('auth.sendingResetLink') : t('auth.sendResetLink') }}
         </Button>
       </form>
@@ -358,6 +343,27 @@ async function handleSubmit(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.forgot-result {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.forgot-result-back {
+  display: flex;
+  justify-content: center;
+}
+
+.forgot-submit {
+  width: 100%;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .login-label {

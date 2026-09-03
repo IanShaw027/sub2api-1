@@ -1,501 +1,249 @@
 <template>
- <div
- class="flex min-h-screen items-center justify-center bg-gradient-to-br from-[var(--background)] to-[var(--surface)] p-4"
- >
- <div class="w-full max-w-2xl">
- <!-- Logo & Title -->
- <div class="mb-8 text-center">
- <div
- class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--accent)] shadow-lg"
- >
- <Icon name="cog" size="xl" class="text-white" />
- </div>
- <h1 class="text-3xl font-bold text-foreground">{{ t('setup.title') }}</h1>
- <p class="mt-2 text-muted">{{ t('setup.description') }}</p>
- </div>
+  <div class="setup-page">
+    <div class="setup-shell">
+      <div class="setup-header">
+        <div
+          class="flex h-11 w-11 items-center justify-center rounded-full mb-1 bg-[color-mix(in_oklch,var(--accent)_18%,transparent)] text-[var(--accent)]"
+        >
+          <Icon name="cog" size="lg" :stroke-width="2" />
+        </div>
+        <h1 class="text-xl font-extrabold text-foreground">{{ t('setup.title') }}</h1>
+        <p class="text-[13.5px] text-muted">{{ t('setup.description') }}</p>
+      </div>
 
- <!-- Progress Steps -->
- <div class="mb-8">
- <div class="flex items-center justify-center">
- <template v-for="(step, index) in steps" :key="step.id">
- <div class="flex items-center">
- <div
- :class="[
- 'flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition-all',
- currentStep > index
- ? 'bg-[var(--accent)] text-[var(--background)]'
- : currentStep === index
- ? 'bg-[var(--accent)] text-[var(--background)] ring-4 ring-[color-mix(in_oklch,var(--accent)_22%,transparent)]'
- : 'bg-surface-2 text-muted'
- ]"
- >
- <Icon
- v-if="currentStep > index"
- name="check"
- size="md"
- :stroke-width="2"
- />
- <span v-else>{{ index + 1 }}</span>
- </div>
- <span
- class="ml-2 hidden text-sm font-medium sm:inline"
- :class="
- currentStep >= index
- ? 'text-foreground'
- : 'text-muted'
- "
- >
- {{ step.title }}
- </span>
- </div>
- <div
- v-if="index < steps.length - 1"
- class="mx-2 h-0.5 w-6 sm:mx-3 sm:w-12"
- :class="currentStep > index ? 'bg-[var(--accent)]' : 'bg-surface-2'"
- ></div>
- </template>
- </div>
- </div>
+      <div class="setup-stepper" role="list">
+        <template v-for="(step, index) in steps" :key="step.id">
+          <div class="setup-step" role="listitem">
+            <div
+              class="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold flex-none"
+              :class="
+                currentStep >= index
+                  ? 'bg-[var(--accent)] text-[var(--background)]'
+                  : 'bg-surface-2 text-muted'
+              "
+            >
+              <Icon v-if="currentStep > index" name="check" size="sm" :stroke-width="2" />
+              <span v-else>{{ index + 1 }}</span>
+            </div>
+            <span
+              class="text-xs font-semibold whitespace-nowrap"
+              :class="currentStep >= index ? 'text-foreground' : 'text-muted'"
+            >
+              {{ step.title }}
+            </span>
+          </div>
+          <div
+            v-if="index < steps.length - 1"
+            class="setup-step-line"
+            :class="currentStep > index ? 'bg-[var(--accent)]' : 'bg-surface-2'"
+          />
+        </template>
+      </div>
 
- <!-- Step Content -->
- <div class="glass-card p-8">
- <!-- Step 1: Database -->
- <div v-if="currentStep === 0" class="space-y-6">
- <div class="mb-6 text-center">
- <h2 class="text-xl font-semibold text-foreground">
- {{ t('setup.database.title') }}
- </h2>
- <p class="mt-1 text-sm text-muted">
- {{ t('setup.database.description') }}
- </p>
- </div>
+      <GlassCard padding="lg" class="setup-card">
+        <!-- Step 1: Database -->
+        <div v-if="currentStep === 0" class="setup-step-body">
+          <div class="setup-step-heading">
+            <h2 class="text-[17px] font-bold text-foreground">{{ t('setup.database.title') }}</h2>
+            <p class="mt-1 text-sm text-muted">{{ t('setup.database.description') }}</p>
+          </div>
 
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
- <div>
- <label class="login-label">{{ t('setup.database.host') }}</label>
- <input
- v-model="formData.database.host"
- type="text"
- class="field"
- placeholder="localhost"
- />
- </div>
- <div>
- <label class="login-label">{{ t('setup.database.port') }}</label>
- <input
- v-model.number="formData.database.port"
- type="number"
- class="field"
- placeholder="5432"
- />
- </div>
- </div>
+          <SettingRow :label="t('setup.database.host')">
+            <TextInput v-model="formData.database.host" type="text" placeholder="localhost" />
+          </SettingRow>
+          <SettingRow :label="t('setup.database.port')">
+            <TextInput v-model.number="formData.database.port" type="number" placeholder="5432" />
+          </SettingRow>
+          <SettingRow :label="t('setup.database.username')">
+            <TextInput v-model="formData.database.user" type="text" placeholder="postgres" />
+          </SettingRow>
+          <SettingRow :label="t('setup.database.password')">
+            <TextInput
+              v-model="formData.database.password"
+              type="password"
+              :placeholder="t('setup.database.passwordPlaceholder')"
+            />
+          </SettingRow>
+          <SettingRow :label="t('setup.database.databaseName')">
+            <TextInput v-model="formData.database.dbname" type="text" placeholder="sub2api" />
+          </SettingRow>
+          <SettingRow :label="t('setup.database.sslMode')">
+            <UiSelect
+              v-model="formData.database.sslmode"
+              :options="[
+                { value: 'disable', label: t('setup.database.ssl.disable') },
+                { value: 'require', label: t('setup.database.ssl.require') },
+                { value: 'verify-ca', label: t('setup.database.ssl.verifyCa') },
+                { value: 'verify-full', label: t('setup.database.ssl.verifyFull') }
+              ]"
+            />
+          </SettingRow>
+          <SettingRow :label="t('setup.redis.enableTls')" :description="t('setup.redis.enableTlsHint')">
+            <ToggleSwitch v-model="formData.redis.enable_tls" />
+          </SettingRow>
 
- <div class="flex items-center justify-between rounded-xl border border-line p-3 ">
- <div>
- <p class="text-sm font-medium text-foreground">
- {{ t("setup.redis.enableTls") }}
- </p>
- <p class="text-xs text-muted">
- {{ t("setup.redis.enableTlsHint") }}
- </p>
- </div>
- <Toggle v-model="formData.redis.enable_tls" />
- </div>
+          <div class="setup-test-row">
+            <Button variant="secondary" nativeType="button" :loading="testingDb" @click="testDatabaseConnection">
+              {{ t('setup.status.testConnection') }}
+            </Button>
+            <StatusBadge
+              v-if="dbConnected"
+              tone="success"
+              dot
+              :label="t('setup.status.success')"
+            />
+          </div>
+        </div>
 
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
- <div>
- <label class="login-label">{{ t('setup.database.username') }}</label>
- <input
- v-model="formData.database.user"
- type="text"
- class="field"
- placeholder="postgres"
- />
- </div>
- <div>
- <label class="login-label">{{ t('setup.database.password') }}</label>
- <input
- v-model="formData.database.password"
- type="password"
- class="field"
- :placeholder="t('setup.database.passwordPlaceholder')"
- />
- </div>
- </div>
+        <!-- Step 2: Redis -->
+        <div v-if="currentStep === 1" class="setup-step-body">
+          <div class="setup-step-heading">
+            <h2 class="text-[17px] font-bold text-foreground">{{ t('setup.redis.title') }}</h2>
+            <p class="mt-1 text-sm text-muted">{{ t('setup.redis.description') }}</p>
+          </div>
 
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
- <div>
- <label class="login-label">{{ t('setup.database.databaseName') }}</label>
- <input
- v-model="formData.database.dbname"
- type="text"
- class="field"
- placeholder="sub2api"
- />
- </div>
- <div>
- <label class="login-label">{{ t('setup.database.sslMode') }}</label>
- <Select
- v-model="formData.database.sslmode"
- :options="[
- { value: 'disable', label: t('setup.database.ssl.disable') },
- { value: 'require', label: t('setup.database.ssl.require') },
- { value: 'verify-ca', label: t('setup.database.ssl.verifyCa') },
- { value: 'verify-full', label: t('setup.database.ssl.verifyFull') }
- ]"
- />
- </div>
- </div>
+          <SettingRow :label="t('setup.redis.host')">
+            <TextInput v-model="formData.redis.host" type="text" placeholder="localhost" />
+          </SettingRow>
+          <SettingRow :label="t('setup.redis.port')">
+            <TextInput v-model.number="formData.redis.port" type="number" placeholder="6379" />
+          </SettingRow>
+          <SettingRow :label="t('setup.redis.username')">
+            <TextInput
+              v-model="formData.redis.username"
+              type="text"
+              :placeholder="t('setup.redis.usernamePlaceholder')"
+            />
+          </SettingRow>
+          <SettingRow :label="t('setup.redis.password')">
+            <TextInput
+              v-model="formData.redis.password"
+              type="password"
+              :placeholder="t('setup.redis.passwordPlaceholder')"
+            />
+          </SettingRow>
+          <SettingRow :label="t('setup.redis.database')">
+            <TextInput v-model.number="formData.redis.db" type="number" placeholder="0" />
+          </SettingRow>
+          <SettingRow :label="t('setup.redis.enableTls')" :description="t('setup.redis.enableTlsHint')">
+            <ToggleSwitch v-model="formData.redis.enable_tls" />
+          </SettingRow>
 
- <button
- @click="testDatabaseConnection"
- :disabled="testingDb"
- class="btn-glass-secondary w-full"
- >
- <svg
- v-if="testingDb"
- class="-ml-1 mr-2 h-4 w-4 animate-spin"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- <Icon v-else-if="dbConnected" name="check" size="md" class="mr-2 text-green-500" :stroke-width="2" />
- {{
- testingDb
- ? t('setup.status.testing')
- : dbConnected
- ? t('setup.status.success')
- : t('setup.status.testConnection')
- }}
- </button>
- </div>
+          <div class="setup-test-row">
+            <Button variant="secondary" nativeType="button" :loading="testingRedis" @click="testRedisConnection">
+              {{ t('setup.status.testConnection') }}
+            </Button>
+            <StatusBadge
+              v-if="redisConnected"
+              tone="success"
+              dot
+              :label="t('setup.status.success')"
+            />
+          </div>
+        </div>
 
- <!-- Step 2: Redis -->
- <div v-if="currentStep === 1" class="space-y-6">
- <div class="mb-6 text-center">
- <h2 class="text-xl font-semibold text-foreground">
- {{ t('setup.redis.title') }}
- </h2>
- <p class="mt-1 text-sm text-muted">
- {{ t('setup.redis.description') }}
- </p>
- </div>
+        <!-- Step 3: Admin -->
+        <div v-if="currentStep === 2" class="setup-step-body">
+          <div class="setup-step-heading">
+            <h2 class="text-[17px] font-bold text-foreground">{{ t('setup.admin.title') }}</h2>
+            <p class="mt-1 text-sm text-muted">{{ t('setup.admin.description') }}</p>
+          </div>
 
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
- <div>
- <label class="login-label">{{ t('setup.redis.host') }}</label>
- <input
- v-model="formData.redis.host"
- type="text"
- class="field"
- placeholder="localhost"
- />
- </div>
- <div>
- <label class="login-label">{{ t('setup.redis.port') }}</label>
- <input
- v-model.number="formData.redis.port"
- type="number"
- class="field"
- placeholder="6379"
- />
- </div>
- </div>
+          <SettingRow :label="t('setup.admin.email')">
+            <TextInput v-model="formData.admin.email" type="email" placeholder="admin@example.com" />
+          </SettingRow>
+          <SettingRow :label="t('setup.admin.password')">
+            <TextInput
+              v-model="formData.admin.password"
+              type="password"
+              :placeholder="t('setup.admin.passwordPlaceholder')"
+            />
+          </SettingRow>
+          <SettingRow :label="t('setup.admin.confirmPassword')">
+            <TextInput
+              v-model="confirmPassword"
+              type="password"
+              :placeholder="t('setup.admin.confirmPasswordPlaceholder')"
+              :error="confirmPassword && formData.admin.password !== confirmPassword ? t('setup.admin.passwordMismatch') : ''"
+            />
+          </SettingRow>
+        </div>
 
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
- <div>
- <label class="login-label">{{ t('setup.redis.username') }}</label>
- <input
- v-model="formData.redis.username"
- type="text"
- class="field"
- :placeholder="t('setup.redis.usernamePlaceholder')"
- />
- </div>
- <div>
- <label class="login-label">{{ t('setup.redis.password') }}</label>
- <input
- v-model="formData.redis.password"
- type="password"
- class="field"
- :placeholder="t('setup.redis.passwordPlaceholder')"
- />
- </div>
- <div>
- <label class="login-label">{{ t('setup.redis.database') }}</label>
- <input
- v-model.number="formData.redis.db"
- type="number"
- class="field"
- placeholder="0"
- />
- </div>
- </div>
+        <!-- Step 4: Complete -->
+        <div v-if="currentStep === 3" class="setup-step-body">
+          <div class="setup-step-heading">
+            <h2 class="text-[17px] font-bold text-foreground">{{ t('setup.ready.title') }}</h2>
+            <p class="mt-1 text-sm text-muted">{{ t('setup.ready.description') }}</p>
+          </div>
 
- <div class="flex items-center justify-between rounded-xl border border-line p-3 ">
- <div>
- <p class="text-sm font-medium text-foreground">
- {{ t("setup.redis.enableTls") }}
- </p>
- <p class="text-xs text-muted">
- {{ t("setup.redis.enableTlsHint") }}
- </p>
- </div>
- <Toggle v-model="formData.redis.enable_tls" />
- </div>
+          <SettingRow :label="t('setup.ready.database')">
+            <p class="text-sm text-foreground">
+              {{ formData.database.user }}@{{ formData.database.host }}:{{ formData.database.port }}/{{
+                formData.database.dbname
+              }}
+            </p>
+          </SettingRow>
+          <SettingRow :label="t('setup.ready.redis')">
+            <p class="text-sm text-foreground">{{ formData.redis.host }}:{{ formData.redis.port }}</p>
+          </SettingRow>
+          <SettingRow :label="t('setup.ready.adminEmail')">
+            <p class="text-sm text-foreground">{{ formData.admin.email }}</p>
+          </SettingRow>
+        </div>
 
- <button
- @click="testRedisConnection"
- :disabled="testingRedis"
- class="btn-glass-secondary w-full"
- >
- <svg
- v-if="testingRedis"
- class="-ml-1 mr-2 h-4 w-4 animate-spin"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- <Icon
- v-else-if="redisConnected"
- name="check"
- size="md"
- class="mr-2 text-green-500"
- :stroke-width="2"
- />
- {{
- testingRedis
- ? t('setup.status.testing')
- : redisConnected
- ? t('setup.status.success')
- : t('setup.status.testConnection')
- }}
- </button>
- </div>
+        <!-- Error Message -->
+        <p v-if="errorMessage" class="notice notice-danger mx-5 mt-[18px]">
+          <Icon name="exclamationCircle" size="sm" :stroke-width="2" />
+          <span>{{ errorMessage }}</span>
+        </p>
 
- <!-- Step 3: Admin -->
- <div v-if="currentStep === 2" class="space-y-6">
- <div class="mb-6 text-center">
- <h2 class="text-xl font-semibold text-foreground">
- {{ t('setup.admin.title') }}
- </h2>
- <p class="mt-1 text-sm text-muted">
- {{ t('setup.admin.description') }}
- </p>
- </div>
+        <!-- Success Message -->
+        <p v-if="installSuccess" class="notice notice-success mx-5 mt-[18px]">
+          <span
+            v-if="!serviceReady"
+            class="h-4 w-4 flex-none rounded-full border-2 animate-spin border-[color-mix(in_oklch,var(--success)_35%,transparent)] border-t-[var(--success)]"
+            aria-hidden="true"
+          />
+          <Icon v-else name="checkCircle" size="sm" :stroke-width="2" />
+          <span>
+            <strong>{{ t('setup.status.completed') }}</strong>
+            <br />
+            {{ serviceReady ? t('setup.status.redirecting') : t('setup.status.restarting') }}
+          </span>
+        </p>
 
- <div>
- <label class="login-label">{{ t('setup.admin.email') }}</label>
- <input
- v-model="formData.admin.email"
- type="email"
- class="field"
- placeholder="admin@example.com"
- />
- </div>
+        <!-- Navigation Buttons -->
+        <div class="setup-nav">
+          <Button
+            v-if="currentStep > 0 && !installSuccess"
+            variant="secondary"
+            nativeType="button"
+            @click="currentStep--"
+          >
+            <Icon name="chevronLeft" size="sm" :stroke-width="2" />
+            {{ t('common.back') }}
+          </Button>
+          <div v-else />
 
- <div>
- <label class="login-label">{{ t('setup.admin.password') }}</label>
- <input
- v-model="formData.admin.password"
- type="password"
- class="field"
- :placeholder="t('setup.admin.passwordPlaceholder')"
- />
- </div>
+          <Button v-if="currentStep < 3" variant="primary" nativeType="button" :disabled="!canProceed" @click="nextStep">
+            {{ t('common.next') }}
+            <Icon name="chevronRight" size="sm" :stroke-width="2" />
+          </Button>
 
- <div>
- <label class="login-label">{{ t('setup.admin.confirmPassword') }}</label>
- <input
- v-model="confirmPassword"
- type="password"
- class="field"
- :placeholder="t('setup.admin.confirmPasswordPlaceholder')"
- />
- <p
- v-if="confirmPassword && formData.admin.password !== confirmPassword"
- class="input-error-text"
- >
- {{ t('setup.admin.passwordMismatch') }}
- </p>
- </div>
- </div>
-
- <!-- Step 4: Complete -->
- <div v-if="currentStep === 3" class="space-y-6">
- <div class="mb-6 text-center">
- <h2 class="text-xl font-semibold text-foreground">
- {{ t('setup.ready.title') }}
- </h2>
- <p class="mt-1 text-sm text-muted">
- {{ t('setup.ready.description') }}
- </p>
- </div>
-
- <div class="space-y-4">
- <div class="rounded-xl bg-surface-2 p-4 ">
- <h3 class="mb-2 text-sm font-medium text-muted">
- {{ t('setup.ready.database') }}
- </h3>
- <p class="text-foreground">
- {{ formData.database.user }}@{{ formData.database.host }}:{{
- formData.database.port
- }}/{{ formData.database.dbname }}
- </p>
- </div>
-
- <div class="rounded-xl bg-surface-2 p-4 ">
- <h3 class="mb-2 text-sm font-medium text-muted">
- {{ t('setup.ready.redis') }}
- </h3>
- <p class="text-foreground">
- {{ formData.redis.host }}:{{ formData.redis.port }}
- </p>
- </div>
-
- <div class="rounded-xl bg-surface-2 p-4 ">
- <h3 class="mb-2 text-sm font-medium text-muted">
- {{ t('setup.ready.adminEmail') }}
- </h3>
- <p class="text-foreground">{{ formData.admin.email }}</p>
- </div>
- </div>
- </div>
-
- <!-- Error Message -->
- <div
- v-if="errorMessage"
- class="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 "
- >
- <div class="flex items-start gap-3">
- <Icon name="exclamationCircle" size="md" class="flex-shrink-0 text-red-500" />
- <p class="text-sm text-red-700 ">{{ errorMessage }}</p>
- </div>
- </div>
-
- <!-- Success Message -->
- <div
- v-if="installSuccess"
- class="mt-6 rounded-xl border border-green-200 bg-green-50 p-4 "
- >
- <div class="flex items-start gap-3">
- <svg
- v-if="!serviceReady"
- class="h-5 w-5 flex-shrink-0 animate-spin text-green-500"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- <Icon v-else name="checkCircle" size="md" class="flex-shrink-0 text-green-500" />
- <div>
- <p class="text-sm font-medium text-green-700 ">
- {{ t('setup.status.completed') }}
- </p>
- <p class="mt-1 text-sm text-green-600 ">
- {{
- serviceReady
- ? t('setup.status.redirecting')
- : t('setup.status.restarting')
- }}
- </p>
- </div>
- </div>
- </div>
-
- <!-- Navigation Buttons -->
- <div class="mt-8 flex justify-between">
- <button
- v-if="currentStep > 0 && !installSuccess"
- @click="currentStep--"
- class="btn-glass-secondary"
- >
- <Icon name="chevronLeft" size="sm" class="mr-2" :stroke-width="2" />
- {{ t('common.back') }}
- </button>
- <div v-else></div>
-
- <button
- v-if="currentStep < 3"
- @click="nextStep"
- :disabled="!canProceed"
- class="btn-glass-primary"
- >
- {{ t('common.next') }}
- <Icon name="chevronRight" size="sm" class="ml-2" :stroke-width="2" />
- </button>
-
- <button
- v-else-if="!installSuccess"
- @click="performInstall"
- :disabled="installing"
- class="btn-glass-primary"
- >
- <svg
- v-if="installing"
- class="-ml-1 mr-2 h-4 w-4 animate-spin"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- {{ installing ? t('setup.status.installing') : t('setup.status.completeInstallation') }}
- </button>
- </div>
- </div>
- </div>
- </div>
+          <Button
+            v-else-if="!installSuccess"
+            variant="primary"
+            size="lg"
+            nativeType="button"
+            :loading="installing"
+            @click="performInstall"
+          >
+            {{ installing ? t('setup.status.installing') : t('setup.status.completeInstallation') }}
+          </Button>
+        </div>
+      </GlassCard>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -509,8 +257,13 @@ import {
   type InstallRequest
 } from '@/api/setup'
 import { buildGatewayUrl } from '@/api/client'
-import Select from '@/components/common/Select.vue'
-import Toggle from '@/components/common/Toggle.vue'
+import GlassCard from '@/components/ui/GlassCard.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
+import Button from '@/components/ui/Button.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
@@ -694,3 +447,86 @@ async function waitForServiceRestart() {
   errorMessage.value = t('setup.status.timeout')
 }
 </script>
+
+<style scoped>
+.setup-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.setup-shell {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.setup-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.setup-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  flex-wrap: wrap;
+}
+
+.setup-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-step-line {
+  width: 24px;
+  height: 2px;
+  margin: 0 8px;
+  flex: none;
+}
+
+.setup-step-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-step-heading {
+  text-align: center;
+  padding: 4px 0 18px;
+}
+
+.setup-test-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px 4px;
+}
+
+.setup-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 0;
+}
+
+@media (max-width: 480px) {
+  .setup-step span:last-child {
+    display: none;
+  }
+
+  .setup-nav {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+}
+</style>
