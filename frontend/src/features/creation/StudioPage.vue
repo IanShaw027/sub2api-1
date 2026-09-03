@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
@@ -18,6 +18,17 @@ const store = useCreationStore()
 
 const previewOpen = ref(false)
 const previewUrl = ref('')
+const keyboardOffset = ref('0px')
+
+function updateKeyboardOffset() {
+  const viewport = window.visualViewport
+  if (!viewport) {
+    keyboardOffset.value = '0px'
+    return
+  }
+  const occluded = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+  keyboardOffset.value = `${occluded}px`
+}
 
 const groupOptions = computed(() =>
   store.groups.map((group) => ({ value: group.id, label: group.name })),
@@ -27,6 +38,14 @@ onMounted(() => {
   store.initialize().catch((error) => {
     console.error('Failed to initialize creation studio', error)
   })
+  updateKeyboardOffset()
+  window.visualViewport?.addEventListener('resize', updateKeyboardOffset)
+  window.visualViewport?.addEventListener('scroll', updateKeyboardOffset)
+})
+
+onUnmounted(() => {
+  window.visualViewport?.removeEventListener('resize', updateKeyboardOffset)
+  window.visualViewport?.removeEventListener('scroll', updateKeyboardOffset)
 })
 
 async function onGroupChange(value: string | number | boolean | null) {
@@ -68,14 +87,13 @@ function closePreview() {
         </section>
 
         <aside class="studio-column studio-column-controls">
-          <GlassCard padding="sm" class="studio-controls-card">
+          <GlassCard padding="sm" class="studio-controls-card" :style="{ '--studio-keyboard-offset': keyboardOffset }">
             <div class="studio-control-block">
               <label class="text-xs font-medium text-muted">{{ t('studio.groups') }}</label>
               <UiSelect
                 :model-value="store.groupId"
                 :options="groupOptions"
                 :placeholder="t('studio.selectGroup')"
-                :disabled="Boolean(store.selectedSessionId)"
                 searchable="auto"
                 @update:model-value="onGroupChange"
               />
@@ -169,7 +187,7 @@ function closePreview() {
 
   .studio-controls-card {
     position: sticky;
-    bottom: 0;
+    bottom: var(--studio-keyboard-offset, 0px);
     z-index: 2;
     background: color-mix(in oklch, var(--surface) 92%, transparent);
     backdrop-filter: blur(12px);

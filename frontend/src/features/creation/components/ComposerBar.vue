@@ -47,7 +47,7 @@ async function submit() {
       >
         {{ store.streaming ? t('studio.composer.sending') : t('studio.composer.send') }}
       </Button>
-      <Button v-if="store.error" variant="secondary" @click="store.retryLastFailed">
+      <Button v-if="store.lastFailedSend" variant="secondary" @click="store.retryLastFailed">
         {{ t('studio.retry') }}
       </Button>
     </div>

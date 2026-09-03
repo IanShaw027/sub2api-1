@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { mapCreationImageJob } from '../api'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mapCreationImageJob, streamMessages } from '../api'
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('mapCreationImageJob', () => {
   it('maps media_url from list payloads', () => {
@@ -30,5 +34,29 @@ describe('mapCreationImageJob', () => {
     })
 
     expect(job.media_url).toBe('https://cdn.example/alt.png')
+  })
+})
+
+describe('streamMessages', () => {
+  it('includes the Anthropic max_tokens requirement', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await streamMessages({
+      groupId: 2,
+      sessionId: 5,
+      platform: 'anthropic',
+      model: 'claude-sonnet-4',
+      messages: [],
+      userText: 'hello',
+      onDelta: vi.fn(),
+    })
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model: 'claude-sonnet-4',
+      max_tokens: 4096,
+      stream: true,
+    })
   })
 })

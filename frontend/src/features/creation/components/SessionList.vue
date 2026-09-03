@@ -12,7 +12,9 @@ const store = useCreationStore()
 
 const modeOptions = computed(() => [
   { value: 'chat' as CreationSessionMode, label: t('studio.modes.chat') },
-  { value: 'image' as CreationSessionMode, label: t('studio.modes.image') },
+  ...(store.hasImageModels || store.sessions.some((session) => session.mode === 'image')
+    ? [{ value: 'image' as CreationSessionMode, label: t('studio.modes.image') }]
+    : []),
 ])
 
 async function switchMode(mode: CreationSessionMode) {

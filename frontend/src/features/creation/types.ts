@@ -88,7 +88,6 @@ export interface AsyncImageTask {
 export interface PendingSendRequest {
   sessionId: number
   text: string
-  retryCount: number
 }
 
 export const ANTHROPIC_STYLE_PLATFORMS: ReadonlySet<GroupPlatform> = new Set([

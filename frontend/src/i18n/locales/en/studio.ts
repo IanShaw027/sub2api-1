@@ -41,6 +41,7 @@ export default {
       noImageModels:
         'This group has no image models. Switch to a group that supports OpenAI or Grok image generation.',
       stream: 'Streaming failed.',
+      poll: 'Failed to refresh image status.',
     },
     taskStatus: {
       pending: 'Pending',

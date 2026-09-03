@@ -11,13 +11,11 @@ const props = defineProps<{
   streaming?: boolean
 }>()
 
-marked.setOptions({ breaks: true })
-
 const text = computed(() => creationAPI.extractMessageText(props.content))
 
 const html = computed(() => {
   if (props.role !== 'assistant') return ''
-  const raw = marked.parse(text.value || '') as string
+  const raw = marked.parse(text.value || '', { breaks: true }) as string
   return DOMPurify.sanitize(raw)
 })
 </script>

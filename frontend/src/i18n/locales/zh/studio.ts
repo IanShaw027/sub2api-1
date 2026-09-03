@@ -39,6 +39,7 @@ export default {
       noModel: '请先选择模型。',
       noImageModels: '当前分组没有图像模型，请切换到支持 OpenAI 或 Grok 图像生成的分组。',
       stream: '流式响应失败。',
+      poll: '刷新图像状态失败。',
     },
     taskStatus: {
       pending: '等待中',

@@ -7,8 +7,7 @@ export interface AuthenticatedFetchInit extends RequestInit {
 
 function readBearerToken(headers: HeadersInit | undefined): string | null {
   if (!headers) return null
-  const record = headers instanceof Headers ? Object.fromEntries(headers.entries()) : headers
-  const auth = record.Authorization ?? record.authorization
+  const auth = new Headers(headers).get('Authorization')
   if (typeof auth !== 'string' || !auth.startsWith('Bearer ')) return null
   return auth.slice('Bearer '.length)
 }
@@ -27,7 +26,11 @@ function clearAuthAndRedirect(): void {
   sessionStorage.setItem('auth_expired', '1')
 
   if (!window.location.pathname.includes('/login')) {
-    window.location.href = '/login'
+    try {
+      window.location.href = '/login'
+    } catch {
+      // jsdom throws on full navigation; production browsers navigate.
+    }
   }
 }
 
@@ -45,8 +48,22 @@ export async function authenticatedFetch(
     return response
   }
 
+  const url =
+    typeof input === 'string'
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input instanceof Request
+          ? input.url
+          : String(input)
+  const isAuthEndpoint =
+    url.includes('/auth/login') || url.includes('/auth/register') || url.includes('/auth/refresh')
+
   const refreshToken = localStorage.getItem('refresh_token')
   if (!refreshToken) {
+    if (!isAuthEndpoint) {
+      clearAuthAndRedirect()
+    }
     return response
   }
 

@@ -15,6 +15,7 @@ import {
 } from './types'
 
 const basePath = '/creation'
+const DEFAULT_MAX_TOKENS = 4096
 
 function authHeaders(groupId: number, sessionId?: number): Record<string, string> {
   const token = localStorage.getItem('auth_token')
@@ -279,6 +280,7 @@ export async function streamMessages(options: {
     headers: authHeaders(options.groupId, options.sessionId),
     body: JSON.stringify({
       model: options.model,
+      max_tokens: DEFAULT_MAX_TOKENS,
       stream: true,
       messages: history.map((msg) => ({
         role: msg.role,
