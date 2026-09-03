@@ -19,6 +19,7 @@ import (
 
 type authRepoStub struct {
 	create                   func(ctx context.Context, key *APIKey) error
+	update                   func(ctx context.Context, key *APIKey, fields APIKeyUpdateFields) error
 	getByKeyForAuth          func(ctx context.Context, key string) (*APIKey, error)
 	getByUserGroupAndPurpose func(ctx context.Context, userID, groupID int64, purpose string) (*APIKey, error)
 	existsByKey              func(ctx context.Context, key string) (bool, error)
@@ -59,7 +60,10 @@ func (s *authRepoStub) GetByUserGroupAndPurpose(ctx context.Context, userID, gro
 	return s.getByUserGroupAndPurpose(ctx, userID, groupID, purpose)
 }
 
-func (s *authRepoStub) Update(ctx context.Context, key *APIKey, _ APIKeyUpdateFields) error {
+func (s *authRepoStub) Update(ctx context.Context, key *APIKey, fields APIKeyUpdateFields) error {
+	if s.update != nil {
+		return s.update(ctx, key, fields)
+	}
 	panic("unexpected Update call")
 }
 
@@ -292,6 +296,18 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesMessagesDispatchModelConfig(t 
 	require.Equal(t, apiKey.Name, roundTrip.Name)
 	require.NotNil(t, roundTrip.Group)
 	require.Equal(t, apiKey.Group.MessagesDispatchModelConfig, roundTrip.Group.MessagesDispatchModelConfig)
+}
+
+func TestAPIKeyService_GetByKeyRejectsInternalCreationKey(t *testing.T) {
+	repo := &authRepoStub{
+		getByKeyForAuth: func(context.Context, string) (*APIKey, error) {
+			return &APIKey{Purpose: APIKeyPurposeCreation}, nil
+		},
+	}
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, nil, &config.Config{})
+
+	_, err := svc.GetByKey(context.Background(), "internal-creation-key")
+	require.ErrorIs(t, err, ErrAPIKeyNotFound)
 }
 
 func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testing.T) {

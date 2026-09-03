@@ -44,7 +44,10 @@ func (r *CreationKeyResolver) ResolveAuthKey(ctx context.Context, userID, groupI
 	muIface, _ := r.ensureMu.LoadOrStore(lockKey, &sync.Mutex{})
 	mu := muIface.(*sync.Mutex)
 	mu.Lock()
-	defer mu.Unlock()
+	defer func() {
+		mu.Unlock()
+		r.ensureMu.Delete(lockKey)
+	}()
 
 	apiKey, err := r.apiKeyRepo.GetByUserGroupAndPurpose(ctx, userID, groupID, APIKeyPurposeCreation)
 	if err != nil {
@@ -60,6 +63,14 @@ func (r *CreationKeyResolver) ResolveAuthKey(ctx context.Context, userID, groupI
 	fullKey, err := r.apiKeyRepo.GetByKeyForAuth(ctx, apiKey.Key)
 	if err != nil {
 		return nil, err
+	}
+	if fullKey.Status == StatusAPIKeyDisabled ||
+		fullKey.Status == StatusAPIKeyExpired ||
+		fullKey.Status == StatusAPIKeyQuotaExhausted {
+		fullKey.Status = StatusAPIKeyActive
+		if err := r.apiKeyRepo.Update(ctx, fullKey, APIKeyUpdateFields{Status: true}); err != nil {
+			return nil, err
+		}
 	}
 	r.apiKeyService.compileAPIKeyIPRules(fullKey)
 	return fullKey, nil

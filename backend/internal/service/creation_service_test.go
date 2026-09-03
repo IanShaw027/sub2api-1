@@ -229,6 +229,29 @@ func TestCreationService_SessionCRUD(t *testing.T) {
 	require.ErrorIs(t, err, ErrCreationSessionNotFound)
 }
 
+func TestCreationService_RejectsInvalidSessionModeAndStatus(t *testing.T) {
+	sessions := &creationSessionRepoStub{items: map[int64]*CreationSession{
+		1: {ID: 1, UserID: 7, GroupID: 3, Mode: CreationSessionModeChat},
+	}}
+	svc := NewCreationService(
+		sessions,
+		&creationMessageRepoStub{},
+		&creationImageJobRepoStub{},
+		&groupRepoStubForGroupUpdate{group: &Group{ID: 3, Status: StatusActive}},
+		&creationTestUserRepo{},
+		&userSubRepoStubForGroupUpdate{getActiveErr: ErrSubscriptionNotFound},
+	)
+
+	_, err := svc.CreateSession(context.Background(), CreateCreationSessionInput{
+		UserID: 7, GroupID: 3, Mode: "video",
+	})
+	require.ErrorIs(t, err, ErrCreationInvalidMode)
+
+	invalidStatus := "deleted"
+	_, err = svc.UpdateSession(context.Background(), 7, 1, UpdateCreationSessionInput{Status: &invalidStatus})
+	require.ErrorIs(t, err, ErrCreationInvalidStatus)
+}
+
 func TestCreationService_CreateAndSyncImageJob(t *testing.T) {
 	jobs := &creationImageJobRepoStub{}
 	svc := NewCreationService(
@@ -336,8 +359,42 @@ func TestCreationService_SyncImageJobMissingIsNoop(t *testing.T) {
 
 type creationTestUserRepo struct {
 	userRepoStubForGroupUpdate
+	user *User
 }
 
 func (s *creationTestUserRepo) GetByID(_ context.Context, id int64) (*User, error) {
+	if s.user != nil {
+		return s.user, nil
+	}
 	return &User{ID: id, Status: StatusActive}, nil
+}
+
+func TestCreationService_EnsureUserCanUseGroupRejectsInactiveOrUnauthorizedGroup(t *testing.T) {
+	groupID := int64(3)
+	newService := func(user *User, group *Group) *CreationService {
+		return NewCreationService(
+			&creationSessionRepoStub{},
+			&creationMessageRepoStub{},
+			&creationImageJobRepoStub{},
+			&groupRepoStubForGroupUpdate{group: group},
+			&creationTestUserRepo{user: user},
+			&userSubRepoStubForGroupUpdate{getActiveErr: ErrSubscriptionNotFound},
+		)
+	}
+
+	t.Run("disabled group", func(t *testing.T) {
+		svc := newService(
+			&User{ID: 7, Status: StatusActive},
+			&Group{ID: groupID, Status: StatusDisabled},
+		)
+		require.ErrorIs(t, svc.EnsureUserCanUseGroup(context.Background(), 7, groupID), ErrCreationGroupNotAllowed)
+	})
+
+	t.Run("exclusive group", func(t *testing.T) {
+		svc := newService(
+			&User{ID: 7, Status: StatusActive},
+			&Group{ID: groupID, Status: StatusActive, IsExclusive: true},
+		)
+		require.ErrorIs(t, svc.EnsureUserCanUseGroup(context.Background(), 7, groupID), ErrCreationGroupNotAllowed)
+	})
 }

@@ -54,7 +54,14 @@ func (s *handlerCreationSessionRepo) GetForUser(ctx context.Context, userID, id 
 }
 
 func (s *handlerCreationSessionRepo) ListForUser(ctx context.Context, userID int64, filters service.CreationSessionListFilters) ([]service.CreationSession, *pagination.PaginationResult, error) {
-	return nil, nil, nil
+	out := make([]service.CreationSession, 0)
+	for _, row := range s.items {
+		if row.UserID != userID {
+			continue
+		}
+		out = append(out, *row)
+	}
+	return out, &pagination.PaginationResult{Total: int64(len(out)), Page: 1, PageSize: 20}, nil
 }
 
 func (s *handlerCreationSessionRepo) Update(ctx context.Context, id int64, input service.UpdateCreationSessionInput) (*service.CreationSession, error) {
@@ -62,16 +69,33 @@ func (s *handlerCreationSessionRepo) Update(ctx context.Context, id int64, input
 }
 
 func (s *handlerCreationSessionRepo) Delete(ctx context.Context, userID, id int64) error {
+	if _, err := s.GetForUser(ctx, userID, id); err != nil {
+		return err
+	}
+	delete(s.items, id)
 	return nil
 }
 
-type handlerCreationMessageRepo struct{}
+type handlerCreationMessageRepo struct {
+	items []service.CreationMessage
+	next  int64
+}
 
 func (s *handlerCreationMessageRepo) Create(ctx context.Context, msg *service.CreationMessage) error {
+	s.next++
+	msg.ID = s.next
+	copy := *msg
+	s.items = append(s.items, copy)
 	return nil
 }
 func (s *handlerCreationMessageRepo) ListBySession(ctx context.Context, sessionID int64) ([]service.CreationMessage, error) {
-	return nil, nil
+	out := make([]service.CreationMessage, 0)
+	for _, msg := range s.items {
+		if msg.SessionID == sessionID {
+			out = append(out, msg)
+		}
+	}
+	return out, nil
 }
 
 type handlerCreationImageJobRepo struct {
@@ -418,4 +442,127 @@ func (s *handlerCreationAPIKeyRepo) GetByKeyForAuth(_ context.Context, key strin
 		return s.key, nil
 	}
 	return nil, service.ErrAPIKeyNotFound
+}
+
+func TestCreationHandler_RejectsCrossUserSessionAndImageAccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	ownerID := int64(7)
+	attackerID := int64(99)
+	sessionID := int64(11)
+	imageID := int64(21)
+	taskID := "task_owner_only"
+
+	sessions := &handlerCreationSessionRepo{items: map[int64]*service.CreationSession{
+		sessionID: {
+			ID:      sessionID,
+			UserID:  ownerID,
+			GroupID: 3,
+			Title:   "Owner session",
+			Model:   "gpt-4o",
+			Mode:    service.CreationSessionModeChat,
+			Status:  service.CreationSessionStatusActive,
+		},
+	}}
+	messages := &handlerCreationMessageRepo{items: []service.CreationMessage{{
+		ID:        1,
+		SessionID: sessionID,
+		Role:      service.CreationMessageRoleUser,
+		Content:   json.RawMessage(`"hello"`),
+	}}}
+	jobs := &handlerCreationImageJobRepo{items: map[int64]*service.CreationImageJob{
+		imageID: {
+			ID:             imageID,
+			UserID:         ownerID,
+			GroupID:        3,
+			Status:         service.CreationImageJobStatusProcessing,
+			Model:          "gpt-image-1",
+			Prompt:         "a cat",
+			ProviderTaskID: &taskID,
+		},
+	}}
+	jobs.next = imageID
+
+	h := NewCreationHandler(
+		service.NewCreationService(
+			sessions,
+			messages,
+			jobs,
+			&handlerCreationGroupRepo{},
+			&handlerCreationUserRepo{},
+			&handlerCreationUserSubRepo{},
+		),
+		nil, nil, nil, nil, nil,
+	)
+
+	var currentUser int64
+	r := gin.New()
+	creation := r.Group("/api/v1/creation")
+	creation.Use(func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: currentUser})
+		c.Next()
+	})
+	creation.GET("/sessions", h.ListSessions)
+	creation.GET("/sessions/:id", h.GetSession)
+	creation.PATCH("/sessions/:id", h.UpdateSession)
+	creation.DELETE("/sessions/:id", h.DeleteSession)
+	creation.GET("/sessions/:id/messages", h.ListSessionMessages)
+	creation.POST("/sessions/:id/messages", h.CreateSessionMessage)
+	creation.GET("/images", h.ListImages)
+	creation.GET("/images/:id", h.GetImage)
+
+	assertNotFound := func(t *testing.T, method, path string, body string) {
+		t.Helper()
+		var req *http.Request
+		if body != "" {
+			req = httptest.NewRequest(method, path, bytes.NewBufferString(body))
+			req.Header.Set("Content-Type", "application/json")
+		} else {
+			req = httptest.NewRequest(method, path, nil)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "%s %s body=%s", method, path, w.Body.String())
+		require.NotContains(t, w.Body.String(), "Owner session")
+		require.NotContains(t, w.Body.String(), "hello")
+		require.NotContains(t, w.Body.String(), "a cat")
+		require.NotContains(t, w.Body.String(), taskID)
+	}
+
+	currentUser = attackerID
+	assertNotFound(t, http.MethodGet, "/api/v1/creation/sessions/11", "")
+	assertNotFound(t, http.MethodPatch, "/api/v1/creation/sessions/11", `{"title":"hijacked"}`)
+	assertNotFound(t, http.MethodDelete, "/api/v1/creation/sessions/11", "")
+	assertNotFound(t, http.MethodGet, "/api/v1/creation/sessions/11/messages", "")
+	assertNotFound(t, http.MethodPost, "/api/v1/creation/sessions/11/messages", `{"role":"user","content":"stolen"}`)
+	assertNotFound(t, http.MethodGet, "/api/v1/creation/images/21", "")
+
+	listSessions := httptest.NewRecorder()
+	r.ServeHTTP(listSessions, httptest.NewRequest(http.MethodGet, "/api/v1/creation/sessions", nil))
+	require.Equal(t, http.StatusOK, listSessions.Code)
+	require.NotContains(t, listSessions.Body.String(), "Owner session")
+	require.NotContains(t, listSessions.Body.String(), `"id":11`)
+
+	listImages := httptest.NewRecorder()
+	r.ServeHTTP(listImages, httptest.NewRequest(http.MethodGet, "/api/v1/creation/images", nil))
+	require.Equal(t, http.StatusOK, listImages.Code)
+	require.NotContains(t, listImages.Body.String(), "a cat")
+	require.NotContains(t, listImages.Body.String(), taskID)
+
+	_, err := sessions.GetByID(context.Background(), sessionID)
+	require.NoError(t, err)
+	_, err = jobs.GetByID(context.Background(), imageID)
+	require.NoError(t, err)
+	require.Len(t, messages.items, 1)
+
+	currentUser = ownerID
+	ownerGet := httptest.NewRecorder()
+	r.ServeHTTP(ownerGet, httptest.NewRequest(http.MethodGet, "/api/v1/creation/sessions/11", nil))
+	require.Equal(t, http.StatusOK, ownerGet.Code)
+	require.Contains(t, ownerGet.Body.String(), "Owner session")
+
+	ownerImage := httptest.NewRecorder()
+	r.ServeHTTP(ownerImage, httptest.NewRequest(http.MethodGet, "/api/v1/creation/images/21", nil))
+	require.Equal(t, http.StatusOK, ownerImage.Code)
+	require.Contains(t, ownerImage.Body.String(), "a cat")
 }

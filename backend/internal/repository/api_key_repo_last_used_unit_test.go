@@ -126,6 +126,41 @@ func TestAPIKeyRepositoryListByUserIDAttachesLastUsedIP(t *testing.T) {
 	require.Nil(t, byID[noLogs.ID].LastUsedIP)
 }
 
+func TestAPIKeyRepositoryHidesCreationKeysFromUserOperations(t *testing.T) {
+	repo, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "hidden-creation-key@test.com")
+	group, err := client.Group.Create().
+		SetName("creation-key-group").
+		SetPlatform(service.PlatformOpenAI).
+		SetStatus(service.StatusActive).
+		SetSubscriptionType(service.SubscriptionTypeStandard).
+		SetRateMultiplier(1).
+		Save(ctx)
+	require.NoError(t, err)
+
+	normal := &service.APIKey{UserID: user.ID, Key: "sk-visible-key", Name: "Visible", Status: service.StatusActive}
+	internal := &service.APIKey{
+		UserID: user.ID, Key: "sk-hidden-key", Name: "Hidden", GroupID: &group.ID,
+		Status: service.StatusActive, Purpose: service.APIKeyPurposeCreation,
+	}
+	require.NoError(t, repo.Create(ctx, normal))
+	require.NoError(t, repo.Create(ctx, internal))
+
+	keys, page, err := repo.ListByUserID(ctx, user.ID, pagination.PaginationParams{Page: 1, PageSize: 10}, service.APIKeyListFilters{})
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	require.Equal(t, normal.ID, keys[0].ID)
+	require.Equal(t, int64(1), page.Total)
+
+	authKey, err := repo.GetByKeyForAuth(ctx, internal.Key)
+	require.NoError(t, err)
+	require.Equal(t, service.APIKeyPurposeCreation, authKey.Purpose)
+
+	_, _, err = repo.GetKeyAndOwnerID(ctx, internal.ID)
+	require.ErrorIs(t, err, service.ErrAPIKeyNotFound)
+}
+
 func TestLatestUsageLogIPsQueryPostgresUsesPerKeyLateralLookup(t *testing.T) {
 	query, args := latestUsageLogIPsQuery([]int64{11, 22}, dialect.Postgres)
 	normalizedQuery := strings.Join(strings.Fields(query), " ")

@@ -370,7 +370,7 @@ func (h *CreationHandler) GetImage(c *gin.Context) {
 }
 
 func (h *CreationHandler) withGatewayContext(c *gin.Context, next func(*gin.Context)) {
-	if h == nil || h.keyResolver == nil {
+	if h == nil || h.keyResolver == nil || h.creationService == nil {
 		response.InternalError(c, "creation key resolver unavailable")
 		return
 	}
@@ -381,6 +381,10 @@ func (h *CreationHandler) withGatewayContext(c *gin.Context, next func(*gin.Cont
 	}
 	groupID, ok := parseCreationGroupID(c)
 	if !ok {
+		return
+	}
+	if err := h.creationService.EnsureUserCanUseGroup(c.Request.Context(), subject.UserID, groupID); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 	apiKey, err := h.keyResolver.ResolveAuthKey(c.Request.Context(), subject.UserID, groupID)
@@ -456,7 +460,7 @@ func (h *CreationHandler) persistCreationImageJob(c *gin.Context, model, prompt 
 	if status == "" {
 		status = service.CreationImageJobStatusProcessing
 	}
-	if _, err := h.creationService.CreateImageJob(c.Request.Context(), service.CreateCreationImageJobInput{
+	input := service.CreateCreationImageJobInput{
 		UserID:         subject.UserID,
 		GroupID:        groupID,
 		SessionID:      parseCreationSessionHeader(c),
@@ -464,12 +468,17 @@ func (h *CreationHandler) persistCreationImageJob(c *gin.Context, model, prompt 
 		Prompt:         prompt,
 		ProviderTaskID: taskID,
 		Status:         status,
-	}); err != nil {
-		logger.L().Error("creation.image_job.persist_failed",
-			zap.Error(err),
-			zap.Int64("user_id", subject.UserID),
-			zap.String("task_id", taskID))
 	}
+	var persistErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if _, persistErr = h.creationService.CreateImageJob(c.Request.Context(), input); persistErr == nil {
+			return
+		}
+	}
+	logger.L().Error("creation.image_job.persist_failed",
+		zap.Error(persistErr),
+		zap.Int64("user_id", subject.UserID),
+		zap.String("task_id", taskID))
 }
 
 func (h *CreationHandler) syncCreationImageJob(c *gin.Context, task *service.ImageTask) {

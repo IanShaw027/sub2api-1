@@ -97,7 +97,7 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 //   - 适用于删除等只需 key 与用户 ID 的场景
 func (r *apiKeyRepository) GetKeyAndOwnerID(ctx context.Context, id int64) (string, int64, error) {
 	m, err := r.activeQuery().
-		Where(apikey.IDEQ(id)).
+		Where(apikey.IDEQ(id), apikey.PurposeNEQ(service.APIKeyPurposeCreation)).
 		Select(apikey.FieldKey, apikey.FieldUserID).
 		Only(ctx)
 	if err != nil {
@@ -137,6 +137,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldGroupID,
 			apikey.FieldName,
 			apikey.FieldStatus,
+			apikey.FieldPurpose,
 			apikey.FieldIPWhitelist,
 			apikey.FieldIPBlacklist,
 			apikey.FieldQuota,
@@ -451,7 +452,10 @@ func (r *apiKeyRepository) deleteWithTombstone(ctx context.Context, exec *dbent.
 }
 
 func (r *apiKeyRepository) apiKeyListByUserIDQuery(userID int64, filters service.APIKeyListFilters) *dbent.APIKeyQuery {
-	q := r.activeQuery().Where(apikey.UserIDEQ(userID))
+	q := r.activeQuery().Where(
+		apikey.UserIDEQ(userID),
+		apikey.PurposeNEQ(service.APIKeyPurposeCreation),
+	)
 
 	if filters.Search != "" {
 		q = q.Where(apikey.Or(
@@ -619,7 +623,12 @@ func (r *apiKeyRepository) VerifyOwnership(ctx context.Context, userID int64, ap
 	}
 
 	ids, err := r.client.APIKey.Query().
-		Where(apikey.UserIDEQ(userID), apikey.IDIn(apiKeyIDs...), apikey.DeletedAtIsNil()).
+		Where(
+			apikey.UserIDEQ(userID),
+			apikey.IDIn(apiKeyIDs...),
+			apikey.DeletedAtIsNil(),
+			apikey.PurposeNEQ(service.APIKeyPurposeCreation),
+		).
 		IDs(ctx)
 	if err != nil {
 		return nil, err
@@ -628,7 +637,10 @@ func (r *apiKeyRepository) VerifyOwnership(ctx context.Context, userID int64, ap
 }
 
 func (r *apiKeyRepository) CountByUserID(ctx context.Context, userID int64) (int64, error) {
-	count, err := r.activeQuery().Where(apikey.UserIDEQ(userID)).Count(ctx)
+	count, err := r.activeQuery().Where(
+		apikey.UserIDEQ(userID),
+		apikey.PurposeNEQ(service.APIKeyPurposeCreation),
+	).Count(ctx)
 	return int64(count), err
 }
 

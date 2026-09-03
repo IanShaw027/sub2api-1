@@ -180,7 +180,13 @@ func NewCreationMessageRepository(client *dbent.Client) service.CreationMessageR
 }
 
 func (r *creationMessageRepository) Create(ctx context.Context, msg *service.CreationMessage) error {
-	builder := r.client.CreationMessage.Create().
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin creation message transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	builder := tx.CreationMessage.Create().
 		SetSessionID(msg.SessionID).
 		SetRole(msg.Role).
 		SetContent(msg.Content)
@@ -196,6 +202,14 @@ func (r *creationMessageRepository) Create(ctx context.Context, msg *service.Cre
 	row, err := builder.Save(ctx)
 	if err != nil {
 		return fmt.Errorf("save creation message: %w", err)
+	}
+	if _, err := tx.CreationSession.UpdateOneID(msg.SessionID).
+		SetUpdatedAt(time.Now()).
+		Save(ctx); err != nil {
+		return fmt.Errorf("touch creation session: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit creation message: %w", err)
 	}
 	msg.ID = row.ID
 	msg.CreatedAt = row.CreatedAt

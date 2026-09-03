@@ -49,11 +49,14 @@ func ProvideCreationService(
 }
 
 func (s *CreationService) CreateSession(ctx context.Context, input CreateCreationSessionInput) (*CreationSession, error) {
-	mode := NormalizeCreationSessionMode(input.Mode)
-	if mode == "" {
+	rawMode := strings.TrimSpace(input.Mode)
+	mode := NormalizeCreationSessionMode(rawMode)
+	if rawMode == "" {
 		mode = CreationSessionModeChat
+	} else if mode == "" {
+		return nil, ErrCreationInvalidMode
 	}
-	if err := s.ensureUserCanUseGroup(ctx, input.UserID, input.GroupID); err != nil {
+	if err := s.EnsureUserCanUseGroup(ctx, input.UserID, input.GroupID); err != nil {
 		return nil, err
 	}
 	title := strings.TrimSpace(input.Title)
@@ -103,9 +106,11 @@ func (s *CreationService) UpdateSession(ctx context.Context, userID, sessionID i
 		return nil, err
 	}
 	if input.Status != nil {
-		if NormalizeCreationSessionStatus(*input.Status) == "" {
-			return nil, ErrCreationInvalidMode
+		normalized := NormalizeCreationSessionStatus(strings.TrimSpace(*input.Status))
+		if normalized == "" {
+			return nil, ErrCreationInvalidStatus
 		}
+		input.Status = &normalized
 	}
 	return s.sessions.Update(ctx, sessionID, input)
 }
@@ -291,7 +296,16 @@ func creationImageMediaAssetIDFromTask(task *ImageTask) *int64 {
 	return nil
 }
 
-func (s *CreationService) ensureUserCanUseGroup(ctx context.Context, userID, groupID int64) error {
+// EnsureUserCanUseGroup validates the same group boundary for session CRUD and
+// delegated gateway requests. Client-side available-group filtering is not an
+// authorization boundary.
+func (s *CreationService) EnsureUserCanUseGroup(ctx context.Context, userID, groupID int64) error {
+	if s == nil || s.users == nil || s.groups == nil || s.userSubs == nil {
+		return fmt.Errorf("creation group authorization is not configured")
+	}
+	if userID <= 0 {
+		return ErrCreationGroupNotAllowed
+	}
 	if groupID <= 0 {
 		return ErrCreationGroupRequired
 	}
@@ -302,6 +316,9 @@ func (s *CreationService) ensureUserCanUseGroup(ctx context.Context, userID, gro
 	group, err := s.groups.GetByID(ctx, groupID)
 	if err != nil {
 		return err
+	}
+	if !user.IsActive() || !group.IsActive() {
+		return ErrCreationGroupNotAllowed
 	}
 	if group.IsSubscriptionType() {
 		_, err = s.userSubs.GetActiveByUserIDAndGroupID(ctx, userID, groupID)

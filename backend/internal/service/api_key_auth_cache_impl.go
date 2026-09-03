@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 22 // v22: group free_openai_fast field
+const apiKeyAuthSnapshotVersion = 23 // v23: reject internal creation keys from public auth
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -280,6 +280,11 @@ func (s *APIKeyService) loadAuthCacheEntry(ctx context.Context, key, cacheKey st
 			return entry, nil
 		}
 		return nil, fmt.Errorf("get api key: %w", err)
+	}
+	if apiKey.Purpose == APIKeyPurposeCreation {
+		entry := &APIKeyAuthCacheEntry{NotFound: true}
+		s.setAuthCacheL1(cacheKey, entry)
+		return entry, nil
 	}
 	apiKey.Key = key
 	snapshot := s.snapshotFromAPIKey(ctx, apiKey)

@@ -36,6 +36,7 @@ var (
 	ErrCreationGroupRequired   = infraerrors.BadRequest("CREATION_GROUP_REQUIRED", "group_id is required")
 	ErrCreationGroupNotAllowed = infraerrors.Forbidden("CREATION_GROUP_NOT_ALLOWED", "group is not allowed for this user")
 	ErrCreationInvalidMode     = infraerrors.BadRequest("CREATION_INVALID_MODE", "invalid creation session mode")
+	ErrCreationInvalidStatus   = infraerrors.BadRequest("CREATION_INVALID_STATUS", "invalid creation session status")
 )
 
 type CreationSession struct {
