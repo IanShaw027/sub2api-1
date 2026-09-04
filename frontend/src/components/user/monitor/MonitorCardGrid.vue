@@ -7,7 +7,7 @@
  <div
  v-for="i in 6"
  :key="i"
- class="p-5 rounded-2xl min-h-[280px] bg-surface/70 border border-line/80 animate-pulse"
+ class="p-5 rounded-[var(--radius-card)] min-h-[280px] bg-surface/70 border border-line/80 animate-pulse"
  >
  <div class="flex items-start gap-3">
  <div class="w-9 h-9 rounded-xl bg-surface-2"></div>

@@ -129,3 +129,9 @@
 - charts/* 全部 chartTheme()；vitest 16 files / 77 通过；eslint/vue-tsc 0；i18n 8917/8917；anchor-diff 丢失 2（PageHeader→hero，键改名）。
 - 复核修复：hero 工具条与小卡重叠（absolute→文档流，min-height 219）。
 - 待裁决（15.x）：`layout/DashboardPageLayout.vue` 无消费者，admin/user 仪表盘均为内联 hero；决定：保留内联写法，15 阶段删除该组件及其 spec 或收敛为共享骨架。
+
+## 12.2 渠道监控 /monitor（12B）
+- probe 1440×1080 user：h1 top 130 h35；StatCard top 309 h110（与用户仪表盘 117 同量级）；筛选行 60（内容 36 + padding）；thead 42；行 64。
+- ChannelStatusV2View 947→339，逻辑抽至 `useChannelMonitorV2.ts`，模板拆 MonitorToolbar/MonitorDataTabs；anchor-diff 59 项全部迁移到子文件（补回 4 个遗漏 aria-label）。
+- 门禁：eslint 0；vue-tsc 0（本组文件）；ui-lint scoped 全 0；i18n 0/0/0；vitest 12 files / 73 通过（含 components/user）。
+- 亮/暗/390 截图确认；原 StatCard 被趋势卡遮挡缺陷消除。

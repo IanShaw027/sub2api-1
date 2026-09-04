@@ -33,10 +33,28 @@ import {
 
 const NEUTRAL_BADGE = 'badge-tone-muted'
 
-/** Availability HSL hue multiplier: 0%=red(0) / 50%=yellow(60) / 100%=green(120). */
-const HSL_HUE_PER_PERCENT = 1.2
-const HSL_SATURATION = 72
-const HSL_LIGHTNESS = 42
+/**
+ * Per-provider identity colour, expressed purely as token / color-mix()
+ * expressions (never literal hex) so provider badges stay theme- and
+ * accent-reactive. Four providers map straight onto existing semantic
+ * tokens; the rest are token-composed blends to keep 8 providers visually
+ * distinct without introducing new literal brand colours.
+ */
+const PROVIDER_TOKEN: Partial<Record<Provider, string>> = {
+  [PROVIDER_OPENAI]: 'var(--success)',
+  [PROVIDER_ANTHROPIC]: 'var(--warning)',
+  [PROVIDER_GEMINI]: 'var(--accent)',
+  [PROVIDER_GROK]: 'var(--muted)',
+  [PROVIDER_ANTIGRAVITY]: 'color-mix(in oklch, var(--accent) 55%, var(--danger) 45%)',
+  [PROVIDER_KIMI]: 'color-mix(in oklch, var(--danger) 80%, var(--accent) 20%)',
+  [PROVIDER_ZHIPU]: 'color-mix(in oklch, var(--accent) 70%, var(--danger) 30%)',
+  [PROVIDER_DEEPSEEK]: 'color-mix(in oklch, var(--accent) 50%, var(--success) 50%)',
+}
+
+/** Tailwind arbitrary-value syntax needs `_` instead of spaces. */
+function bracket(value: string): string {
+  return value.replace(/\s+/g, '_')
+}
 
 export interface AvailabilityRow {
   primary_status: MonitorStatus | ''
@@ -95,26 +113,10 @@ export function useChannelMonitorFormat() {
   }
 
   function providerBadgeClass(p: Provider | string): string {
-    switch (p) {
-      case PROVIDER_OPENAI:
-        return 'bg-emerald-500/15 text-emerald-600'
-      case PROVIDER_ANTHROPIC:
-        return 'bg-orange-500/15 text-orange-600'
-      case PROVIDER_GEMINI:
-        return 'bg-sky-500/15 text-sky-600'
-      case PROVIDER_GROK:
-        return 'bg-zinc-500/15 text-zinc-600'
-      case PROVIDER_ANTIGRAVITY:
-        return 'bg-purple-500/15 text-purple-600'
-      case PROVIDER_KIMI:
-        return 'bg-pink-500/15 text-pink-600'
-      case PROVIDER_ZHIPU:
-        return 'bg-indigo-500/15 text-indigo-600'
-      case PROVIDER_DEEPSEEK:
-        return 'bg-teal-500/15 text-teal-600'
-      default:
-        return NEUTRAL_BADGE
-    }
+    const token = PROVIDER_TOKEN[p as Provider]
+    if (!token) return NEUTRAL_BADGE
+    const bg = bracket(`color-mix(in oklch, ${token} 15%, transparent)`)
+    return `bg-[${bg}] text-[${bracket(token)}]`
   }
 
   /**
@@ -134,49 +136,23 @@ export function useChannelMonitorFormat() {
   }
 
   /**
-   * Tailwind class for a provider radio-button-style picker (active/inactive state).
-   * Reuses the same emerald/orange/sky palette as providerBadgeClass to keep
+   * Class for a provider radio-button-style picker (active/inactive state).
+   * Reuses the same token-composed palette as providerBadgeClass to keep
    * visual semantics consistent across badges and pickers.
    */
   function providerPickerClass(p: Provider | string, active: boolean): string {
-    switch (p) {
-      case PROVIDER_OPENAI:
-        return active
-          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-700'
-          : 'border-line bg-surface text-muted hover:border-emerald-300 hover:text-emerald-700'
-      case PROVIDER_ANTHROPIC:
-        return active
-          ? 'border-orange-500 bg-orange-500/15 text-orange-700'
-          : 'border-line bg-surface text-muted hover:border-orange-300 hover:text-orange-700'
-      case PROVIDER_GEMINI:
-        return active
-          ? 'border-sky-500 bg-sky-500/15 text-sky-700'
-          : 'border-line bg-surface text-muted hover:border-sky-300 hover:text-sky-700'
-      case PROVIDER_GROK:
-        return active
-          ? 'border-zinc-500 bg-zinc-500/15 text-zinc-700'
-          : 'border-line bg-surface text-muted hover:border-zinc-400 hover:text-zinc-700'
-      case PROVIDER_ANTIGRAVITY:
-        return active
-          ? 'border-purple-500 bg-purple-500/15 text-purple-700'
-          : 'border-line bg-surface text-muted hover:border-purple-300 hover:text-purple-700'
-      case PROVIDER_KIMI:
-        return active
-          ? 'border-pink-500 bg-pink-500/15 text-pink-700'
-          : 'border-line bg-surface text-muted hover:border-pink-300 hover:text-pink-700'
-      case PROVIDER_ZHIPU:
-        return active
-          ? 'border-indigo-500 bg-indigo-500/15 text-indigo-700'
-          : 'border-line bg-surface text-muted hover:border-indigo-300 hover:text-indigo-700'
-      case PROVIDER_DEEPSEEK:
-        return active
-          ? 'border-teal-500 bg-teal-500/15 text-teal-700'
-          : 'border-line bg-surface text-muted hover:border-teal-300 hover:text-teal-700'
-      default:
-        return active
-          ? 'border-line bg-surface-2 text-foreground'
-          : 'border-line bg-surface text-muted hover:border-line hover:text-foreground'
+    const token = PROVIDER_TOKEN[p as Provider]
+    if (!token) {
+      return active
+        ? 'border-line bg-surface-2 text-foreground'
+        : 'border-line bg-surface text-muted hover:border-line hover:text-foreground'
     }
+    const tint = bracket(`color-mix(in oklch, ${token} 15%, transparent)`)
+    const hoverTint = bracket(`color-mix(in oklch, ${token} 45%, var(--border) 55%)`)
+    const tokenClass = bracket(token)
+    return active
+      ? `border-[${tokenClass}] bg-[${tint}] text-[${tokenClass}]`
+      : `border-line bg-surface text-muted hover:border-[${hoverTint}] hover:text-[${tokenClass}]`
   }
 
   function formatLatency(ms: number | null | undefined): string {
@@ -225,38 +201,32 @@ export function useChannelMonitorFormat() {
 }
 
 /**
- * Map availability percent to an HSL colour (red -> yellow -> green).
- * Returns undefined for null/NaN so callers can fall back to a neutral colour.
+ * Map availability percent to a token colour (danger -> warning -> success),
+ * as a `color-mix()` expression so it stays theme/accent-reactive. Returns
+ * undefined for null/NaN so callers can fall back to a neutral colour.
  */
-export function hslForPct(pct: number | null | undefined): string | undefined {
+export function tokenColorForPct(pct: number | null | undefined): string | undefined {
   if (pct === null || pct === undefined || Number.isNaN(pct)) return undefined
   const clamped = Math.max(0, Math.min(100, pct))
-  const hue = clamped * HSL_HUE_PER_PERCENT
-  return `hsl(${hue} ${HSL_SATURATION}% ${HSL_LIGHTNESS}%)`
+  if (clamped <= 50) {
+    const warmth = clamped * 2
+    return `color-mix(in oklch, var(--warning) ${warmth}%, var(--danger) ${100 - warmth}%)`
+  }
+  const cool = (clamped - 50) * 2
+  return `color-mix(in oklch, var(--success) ${cool}%, var(--warning) ${100 - cool}%)`
 }
 
 /**
- * Tailwind gradient class for the provider icon tile background.
+ * Gradient class for the provider icon tile background. Token-composed
+ * (color-mix over the same PROVIDER_TOKEN palette as the badge/picker
+ * helpers above) instead of a literal Tailwind palette gradient.
  */
 export function providerGradient(provider: string): string {
-  switch (provider) {
-    case PROVIDER_OPENAI:
-      return 'bg-gradient-to-br from-emerald-500/10 to-emerald-500/20'
-    case PROVIDER_ANTHROPIC:
-      return 'bg-gradient-to-br from-orange-500/10 to-amber-500/20'
-    case PROVIDER_GEMINI:
-      return 'bg-gradient-to-br from-sky-500/10 to-indigo-500/20'
-    case PROVIDER_GROK:
-      return 'bg-gradient-to-br from-zinc-500/10 to-neutral-500/20'
-    case PROVIDER_ANTIGRAVITY:
-      return 'bg-gradient-to-br from-purple-500/10 to-purple-500/20'
-    case PROVIDER_KIMI:
-      return 'bg-gradient-to-br from-pink-500/10 to-pink-500/20'
-    case PROVIDER_ZHIPU:
-      return 'bg-gradient-to-br from-indigo-500/10 to-indigo-500/20'
-    case PROVIDER_DEEPSEEK:
-      return 'bg-gradient-to-br from-teal-500/10 to-teal-500/20'
-    default:
-      return 'bg-gradient-to-br from-[color-mix(in_oklch,var(--foreground)_6%,transparent)] to-[color-mix(in_oklch,var(--foreground)_10%,transparent)]'
+  const token = PROVIDER_TOKEN[provider as Provider]
+  if (!token) {
+    return 'bg-gradient-to-br from-[color-mix(in_oklch,var(--foreground)_6%,transparent)] to-[color-mix(in_oklch,var(--foreground)_10%,transparent)]'
   }
+  const from = bracket(`color-mix(in oklch, ${token} 10%, transparent)`)
+  const to = bracket(`color-mix(in oklch, ${token} 20%, transparent)`)
+  return `bg-gradient-to-br from-[${from}] to-[${to}]`
 }

@@ -1,11 +1,11 @@
 <template>
  <section
- class="glass-card flex min-h-[360px] flex-col overflow-visible !rounded-3xl !border-0 !p-6 shadow-sm ring-1 ring-line/5"
+ class="glass-card flex min-h-[360px] flex-col overflow-visible !p-6"
  >
  <div class="glass-card-header mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 !border-0 !p-0">
  <div class="min-w-0">
  <h2 class="flex items-center gap-2 text-sm font-bold text-foreground">
- <span class="inline-flex h-4 w-4 text-emerald-500" aria-hidden="true">
+ <span class="inline-flex h-4 w-4 text-success" aria-hidden="true">
  <Icon name="grid" size="sm" />
  </span>
  {{ t('channelMonitorV2.matrix.title') }}
@@ -32,7 +32,7 @@
  <div
  v-if="rows.length"
  ref="scrollRef"
- class="matrix-scroll max-h-[min(42vh,420px)] max-w-full overflow-auto rounded-2xl bg-surface-2/60 p-2"
+ class="matrix-scroll max-h-[min(42vh,420px)] max-w-full overflow-auto rounded-[var(--radius-card)] bg-surface-2/60 p-2"
  @wheel="onMatrixWheel"
  >
  <div class="matrix-table w-full" :style="tableStyle">
@@ -507,35 +507,37 @@ function formatBucketRange(value: string) {
  border-radius: 9999px;
 }
 
-/* Multi-stop green → yellow → red (score10 best … score0 worst) */
-.health-score10 { background: #16a34a; }
-.health-score9 { background: #22c55e; }
-.health-score8 { background: #4ade80; }
-.health-score7 { background: #a3e635; }
-.health-score6 { background: #facc15; }
-.health-score5 { background: #fbbf24; }
-.health-score4 { background: #f59e0b; }
-.health-score3 { background: #f97316; }
-.health-score2 { background: #fb7185; }
-.health-score1 { background: #f87171; }
-.health-score0 { background: rgb(239, 67, 67); }
+/* Multi-stop green → yellow → red (score10 best … score0 worst).
+   Token-composed via color-mix() over --success/--warning/--danger so the
+   whole gradient stays theme- and accent-reactive; zero literal hex. */
+.health-score10 { background: var(--success); }
+.health-score9 { background: color-mix(in oklch, var(--success) 85%, var(--warning) 15%); }
+.health-score8 { background: color-mix(in oklch, var(--success) 70%, var(--warning) 30%); }
+.health-score7 { background: color-mix(in oklch, var(--success) 45%, var(--warning) 55%); }
+.health-score6 { background: color-mix(in oklch, var(--warning) 85%, var(--success) 15%); }
+.health-score5 { background: var(--warning); }
+.health-score4 { background: color-mix(in oklch, var(--warning) 80%, var(--danger) 20%); }
+.health-score3 { background: color-mix(in oklch, var(--warning) 55%, var(--danger) 45%); }
+.health-score2 { background: color-mix(in oklch, var(--warning) 30%, var(--danger) 70%); }
+.health-score1 { background: color-mix(in oklch, var(--danger) 85%, var(--warning) 15%); }
+.health-score0 { background: var(--danger); }
 /* Coarse fallbacks (older payloads without score) */
-.health-healthy { background: #22c55e; }
-.health-warning { background: #f59e0b; }
-.health-critical { background: #ef4444; }
-.health-unknown { background: #9ca3af; }
+.health-healthy { background: var(--success); }
+.health-warning { background: var(--warning); }
+.health-critical { background: var(--danger); }
+.health-unknown { background: var(--muted); }
 
 .score-legend {
  background: linear-gradient(
  90deg,
- rgb(239, 67, 67) 0%,
- #f87171 15%,
- #f97316 30%,
- #f59e0b 45%,
- #facc15 55%,
- #a3e635 70%,
- #22c55e 85%,
- #16a34a 100%
+ var(--danger) 0%,
+ color-mix(in oklch, var(--danger) 85%, var(--warning) 15%) 15%,
+ color-mix(in oklch, var(--warning) 30%, var(--danger) 70%) 30%,
+ color-mix(in oklch, var(--warning) 80%, var(--danger) 20%) 45%,
+ var(--warning) 55%,
+ color-mix(in oklch, var(--success) 45%, var(--warning) 55%) 70%,
+ color-mix(in oklch, var(--success) 85%, var(--warning) 15%) 85%,
+ var(--success) 100%
  );
 }
 
@@ -570,36 +572,25 @@ function formatBucketRange(value: string) {
  max-width: 16rem;
  transform: translateX(-50%) translateY(4px);
  border-radius: 0.75rem;
- border: 1px solid rgb(229 231 235);
- background: rgb(255 255 255);
+ border: 1px solid var(--border);
+ background: var(--surface);
  padding: 0.5rem 0.625rem;
- box-shadow: 0 10px 25px -5px rgb(0 0 0 / 0.15);
+ box-shadow: var(--shadow-pop);
  opacity: 0;
  visibility: hidden;
  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
  white-space: nowrap;
 }
-:global(.dark) .pulse-tooltip {
- border-color: rgb(55 65 81);
- background: rgb(17 24 39);
- color: rgb(229 231 235);
-}
 .pulse-tooltip-line {
  display: block;
  font-size: 11px;
  line-height: 1.45;
- color: rgb(75 85 99);
-}
-:global(.dark) .pulse-tooltip-line {
- color: rgb(209 213 219);
+ color: var(--muted);
 }
 .pulse-tooltip-title {
  margin-bottom: 0.2rem;
  font-weight: 600;
- color: rgb(17 24 39);
-}
-:global(.dark) .pulse-tooltip-title {
- color: rgb(243 244 246);
+ color: var(--foreground);
 }
 .pulse-cell:hover .pulse-tooltip,
 .pulse-cell:focus-visible .pulse-tooltip {
@@ -620,33 +611,22 @@ function formatBucketRange(value: string) {
  max-width: min(18rem, calc(100vw - 1.5rem));
  transform: translate(-50%, -100%);
  border-radius: 0.75rem;
- border: 1px solid rgb(229 231 235);
- background: rgb(255 255 255);
+ border: 1px solid var(--border);
+ background: var(--surface);
  padding: 0.5rem 0.625rem;
- box-shadow: 0 18px 40px -12px rgb(0 0 0 / 0.28);
+ box-shadow: var(--shadow-pop);
  white-space: nowrap;
-}
-:global(.dark) .matrix-floating-tooltip {
- border-color: rgb(55 65 81);
- background: rgb(17 24 39);
- color: rgb(229 231 235);
 }
 .matrix-floating-tooltip-line {
  display: block;
  font-size: 11px;
  line-height: 1.45;
- color: rgb(75 85 99);
-}
-:global(.dark) .matrix-floating-tooltip-line {
- color: rgb(209 213 219);
+ color: var(--muted);
 }
 .matrix-floating-tooltip-title {
  margin-bottom: 0.2rem;
  font-weight: 600;
- color: rgb(17 24 39);
-}
-:global(.dark) .matrix-floating-tooltip-title {
- color: rgb(243 244 246);
+ color: var(--foreground);
 }
 
 @media (max-width: 640px) {

@@ -2,6 +2,8 @@
 export default {
   channelMonitorV2: {
     title: 'Channel Monitor',
+    heroKicker: 'Live monitoring',
+    heroDescription: 'Health, latency and error overview across platforms, groups and models',
     updating: 'Updating data',
     updatedTo: 'Updated to {time}',
     partialCoverage: 'Partial historical coverage',
@@ -22,6 +24,7 @@ export default {
     otherModels: 'Other models',
     ignored: 'Ignored',
     currentUser: 'Current user',
+    healthState: { healthy: 'Healthy', warning: 'Warning', critical: 'Critical', unknown: 'Unknown' },
     ranges: { '90m': '90m', '24h': '24h', '7d': '7d', '30d': '30d' },
     filters: {
       platform: 'Platform', allPlatforms: 'All', group: 'Group', allGroups: 'All', model: 'Model', allModels: 'All',
@@ -96,6 +99,8 @@ export default {
       refreshTitle: 'Aggregation interval',
       refreshHint: 'Affects matrix time granularity and refresh cadence',
       refreshAria: 'Aggregation interval',
+      refreshOneMinute: '1 min',
+      refreshFiveMinutes: '5 min',
       platformsTitle: 'Platforms and models',
       platformsHint:
         'Leave empty = show all real model names; when filled, only listed models get their own rows and the rest roll into “Other”',

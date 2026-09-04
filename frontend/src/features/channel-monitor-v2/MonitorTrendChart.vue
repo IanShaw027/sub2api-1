@@ -1,11 +1,11 @@
 <template>
  <section
- class="glass-card flex min-h-[360px] flex-col overflow-hidden !rounded-3xl !border-0 !p-6 shadow-sm ring-1 ring-line/5"
+ class="glass-card flex min-h-[360px] flex-col overflow-hidden !p-6"
  >
  <div class="glass-card-header mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3 !border-0 !p-0">
  <div class="min-w-0">
  <h2 class="flex items-center gap-2 text-sm font-bold text-foreground">
- <span class="inline-flex h-4 w-4 text-sky-500" aria-hidden="true">
+ <span class="inline-flex h-4 w-4 text-accent" aria-hidden="true">
  <Icon name="chart" size="sm" />
  </span>
  {{ t('channelMonitorV2.chart.title') }}
@@ -16,13 +16,13 @@
  </div>
  <div class="flex w-full min-w-0 flex-wrap items-center justify-end gap-2 text-xs text-muted sm:w-auto">
  <span class="flex shrink-0 items-center gap-1">
- <span class="h-2 w-2 rounded-full bg-red-500"></span>{{ t('channelMonitorV2.chart.errorLegend') }}
+ <span class="h-2 w-2 rounded-full bg-danger"></span>{{ t('channelMonitorV2.chart.errorLegend') }}
  </span>
  <span class="flex shrink-0 items-center gap-1">
- <span class="h-2 w-2 rounded-full bg-emerald-500"></span>{{ t('channelMonitorV2.chart.cacheLegend') }}
+ <span class="h-2 w-2 rounded-full bg-success"></span>{{ t('channelMonitorV2.chart.cacheLegend') }}
  </span>
  <span class="flex shrink-0 items-center gap-1">
- <span class="h-2 w-2 rounded-full bg-sky-500"></span>{{ t('channelMonitorV2.chart.ttftLegend') }}
+ <span class="h-2 w-2 rounded-full bg-accent"></span>{{ t('channelMonitorV2.chart.ttftLegend') }}
  </span>
  <span class="badge badge-gray shrink-0">{{ bucketLabel }}</span>
  <button
@@ -84,10 +84,11 @@ import {
  sliceByZoom,
  type ZoomState,
 } from '@/features/channel-monitor-v2/monitorZoom'
-import { useTheme } from '@/composables/useTheme'
+import { alpha, baseChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 const { t, locale } = useI18n()
+const theme = useChartTheme()
 
 const props = defineProps<{
  trend: Array<{ bucket_start: string; metrics: MonitorMetric; health: MonitorHealth }>
@@ -98,8 +99,6 @@ const props = defineProps<{
 const chartRef = ref<HTMLElement | null>(null)
 const zoom = ref<ZoomState>(resetZoom())
 const zoomed = computed(() => isZoomed(zoom.value))
-
-const { isDark } = useTheme()
 
 const bucketLabel = computed(() => {
  const seconds = props.coverage?.bucket_seconds || 60
@@ -130,8 +129,8 @@ const chartData = computed(() => {
  {
  label: t('channelMonitorV2.chart.errorDataset'),
  data: errorRates,
- borderColor: '#ef4444',
- backgroundColor: 'rgba(239, 67, 67, 0.10)',
+ borderColor: theme.value.danger,
+ backgroundColor: alpha(theme.value.danger, 10),
  yAxisID: 'yPct',
  tension: 0.4,
  cubicInterpolationMode: 'monotone' as const,
@@ -144,8 +143,8 @@ const chartData = computed(() => {
  {
  label: t('channelMonitorV2.chart.cacheDataset'),
  data: cacheRates,
- borderColor: '#10b981',
- backgroundColor: 'rgba(16, 185, 129, 0.08)',
+ borderColor: theme.value.success,
+ backgroundColor: alpha(theme.value.success, 8),
  yAxisID: 'yPct',
  tension: 0.4,
  cubicInterpolationMode: 'monotone' as const,
@@ -158,8 +157,8 @@ const chartData = computed(() => {
  {
  label: t('channelMonitorV2.chart.ttftDataset'),
  data: ttftP50,
- borderColor: '#0ea5e9',
- backgroundColor: 'rgba(14, 165, 233, 0.08)',
+ borderColor: theme.value.accent,
+ backgroundColor: alpha(theme.value.accent, 8),
  yAxisID: 'yTtft',
  tension: 0.4,
  cubicInterpolationMode: 'monotone' as const,
@@ -204,24 +203,17 @@ function smoothTrend(values: Array<number | null>): Array<number | null> {
 }
 
 const chartOptions = computed(() => {
- const text = isDark.value ? '#9ca3af' : '#6b7280'
- const grid = isDark.value ? '#374151' : '#f3f4f6'
- const tooltipBg = isDark.value ? '#1f2937' : '#ffffff'
- const tooltipTitle = isDark.value ? '#f3f4f6' : '#111827'
- const tooltipBody = isDark.value ? '#d1d5db' : '#4b5563'
+ const base = baseChartOptions(theme.value)
  return {
- responsive: true,
- maintainAspectRatio: false,
+ ...base,
  interaction: { mode: 'index' as const, intersect: false },
  plugins: {
+ ...base.plugins,
  legend: { display: false },
  tooltip: {
- backgroundColor: tooltipBg,
- titleColor: tooltipTitle,
- bodyColor: tooltipBody,
- borderColor: grid,
- borderWidth: 1,
- padding: 10,
+ ...theme.value.tooltip,
+ titleFont: { family: theme.value.font.family },
+ bodyFont: { family: theme.value.font.mono },
  displayColors: true,
  callbacks: {
  label(ctx: { dataset: { label?: string }; parsed: { y: number | null } }) {
@@ -238,8 +230,8 @@ const chartOptions = computed(() => {
  },
  scales: {
  x: {
- ticks: { color: text, maxRotation: 0, autoSkip: true, maxTicksLimit: 8, autoSkipPadding: 10, font: { size: 10 } },
- grid: { display: false },
+ ...base.scales.x,
+ ticks: { ...base.scales.x.ticks, maxRotation: 0, autoSkip: true, maxTicksLimit: 8, autoSkipPadding: 10 },
  },
  yPct: {
  type: 'linear' as const,
@@ -247,24 +239,24 @@ const chartOptions = computed(() => {
  min: 0,
  suggestedMax: 100,
  ticks: {
- color: text,
- font: { size: 10 },
+ color: theme.value.text,
+ font: { family: theme.value.font.family, size: theme.value.font.size },
  callback: (v: string | number) => `${v}%`,
  },
- grid: { color: grid, borderDash: [4, 4] },
- title: { display: true, text: t('channelMonitorV2.chart.percentAxis'), color: text, font: { size: 11 } },
+ grid: { color: theme.value.grid, borderDash: [4, 4] },
+ title: { display: true, text: t('channelMonitorV2.chart.percentAxis'), color: theme.value.text, font: { size: 11 } },
  },
  yTtft: {
  type: 'linear' as const,
  position: 'right' as const,
  min: 0,
  ticks: {
- color: '#0ea5e9',
- font: { size: 10 },
+ color: theme.value.accent,
+ font: { family: theme.value.font.family, size: theme.value.font.size },
  callback: (v: string | number) => formatMonitorMs(Number(v)),
  },
  grid: { display: false },
- title: { display: true, text: t('channelMonitorV2.metrics.ttftP50'), color: '#0ea5e9', font: { size: 11 } },
+ title: { display: true, text: t('channelMonitorV2.metrics.ttftP50'), color: theme.value.accent, font: { size: 11 } },
  },
  },
  }
