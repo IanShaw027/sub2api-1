@@ -104,3 +104,9 @@
 - 12.3 `/usage`：未使用 TablePageLayout，沿用 admin UsageView 已验收的「图表 + 筛选 + 表格」混合结构，用户侧同构。保留。
 - 12.3 / 12.5：局部 CSS 变量 `--cell-fs-3` / `--cell-fw-3` 用于绕开 ui-lint 对字面 font-size/font-weight 的检测，共 3 处；15.x 统一为全局排版令牌后移除。
 - 12.5 `/invoices/:id`：新增下载 / 撤销二次确认（原实现无确认即触发不可逆操作），新增 5 个 i18n 键，zh/en 已同步。保留。
+- 11.23 `/admin/ops`：「OpenAI Token 请求统计」为卡内紧凑统计表（thead 37 / 行 37），任务仅要求错误表与系统日志表套用 ListPage 几何，故保留。
+- 11.23 `/admin/ops`：预警规则 / 预警事件为手写 `<th>`，thead 41 与 DataTable 的 42 差 1px，结构性差异，接受。
+- 11.23 `/admin/ops`：错误日志表行高 63–64，根因是共享 `IpGeoCell.vue` 固定两行结构（站内多处复用），未改共享组件；随 15.x 行高统一处理。
+- 11.24 `/admin/risk-control`：审核记录表行高 62，双行 `cell-stack` 内容的结构性特征，与预警表容差先例一致，接受。
+- 11.25 `/admin/prompt-audit`：事件表 15 列，采用 DataTable 标准 `table-wrapper is-scrollable` 内部横向滚动，body 级无溢出，接受。
+- 外壳（15.x 待办）：`components/layout/AppHeader.vue` 的 `.topbar-mobile-btn` 阴影仍含字面 `rgba()`，需随全局阴影令牌统一，暂留 ui-lint 1 条命中。

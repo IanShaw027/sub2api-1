@@ -150,9 +150,9 @@
 - [x] 11.20 `/admin/tickets/:id`（`TicketDetailView.vue`：DetailPage 配方，在 0.3 基础上完成时间线 / 侧卡 / 回复模板 pill / 状态 `UiSelect`）；验证截图 + spec
 - [x] 11.21 `/admin/usage`（`UsageView.vue` + `components/admin/usage/*`：ListPage + 日期范围 + 明细弹层 `.code-block`）；验证截图
 - [x] 11.22 `/admin/audit-logs`（`AuditLogView.vue`：ListPage + 详情弹层 JSON `.code-block`）；验证截图
-- [ ] 11.23 `/admin/ops`（`views/admin/ops/**` 20 个文件：DashboardPage 配方；错误 / 系统日志表 ListPage；6 个图表 `chartTheme()`；4 个弹层 `UiModal`；`OpsErrorDetailsModal`（列表）与 `OpsErrorDetailModal`（详情）是协作对，不合并，仅统一外观）；验证亮 / 暗 / 390 截图 + `ops` spec
-- [ ] 11.24 `/admin/risk-control`（`RiskControlView.vue`：规则 `SettingRow` 卡 + 事件 ListPage + 严重度徽章 + `.code-block` 内容）；验证截图
-- [ ] 11.25 `/admin/prompt-audit`（`features/prompt-audit/*`：节点池卡片、事件表、详情抽屉）；验证截图 + `prompt-audit` spec；提交 `feat(glass): admin lists batch 3 (tasks 11.19–11.25)`
+- [x] 11.23 `/admin/ops`（`views/admin/ops/**` 20 个文件：DashboardPage 配方；错误 / 系统日志表 ListPage；6 个图表 `chartTheme()`；4 个弹层 `UiModal`；`OpsErrorDetailsModal`（列表）与 `OpsErrorDetailModal`（详情）是协作对，不合并，仅统一外观）；验证亮 / 暗 / 390 截图 + `ops` spec
+- [x] 11.24 `/admin/risk-control`（`RiskControlView.vue`：规则 `SettingRow` 卡 + 事件 ListPage + 严重度徽章 + `.code-block` 内容）；验证截图
+- [x] 11.25 `/admin/prompt-audit`（`features/prompt-audit/*`：节点池卡片、事件表、详情抽屉）；验证截图 + `prompt-audit` spec；提交 `feat(glass): admin lists batch 3 (tasks 11.19–11.25)`
 
 ## 12. 用户侧页面（3 批，每批 4 个代理）
 

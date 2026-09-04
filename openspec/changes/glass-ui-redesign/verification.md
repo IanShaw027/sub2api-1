@@ -143,3 +143,12 @@
 - 几何：h1 top 74 / h 35；筛选行 h36（y=146 / 270）；thead 42；行 58–61；`/invoices/:id` 主栏自 y=146 起、侧栏 320；390 单列无横向溢出。
 - 截图：`.shots/12c-{usage,orders,invoices,invoice-detail}-{light,dark,mobile}.png`、`12c-invoice-cancel-modal.png`、`12c-orders-cancel-modal.png`（含数据行，非空态）。
 - 门禁：vue-tsc 0；eslint 0；ui-lint --scoped legacy/color/scoped 全 0（lead 复核一致）；i18n-diff 0；anchor-diff（UsageView，base 65529a248）无锚点丢失；vitest 183/187，4 条失败位于 `components/user/profile/__tests__/totp-timer-cleanup.spec.ts`，属组 12E 并发进行中目录，与本组无关，待 12E 落地后复核。
+
+## 11.23–11.25 运维监控 / 风险控制 / 提示审计（组 11H，含 lead 复核）
+
+- 提交：`4a24ecf22`（返工主体）、`8c8dff2dd`（风险控制表头 42px）。
+- lead 实测（1440×1080，seeded）：`/admin/ops` h1 top 74 / h 36；`/admin/risk-control` h1 74/35、thead 42、行 62；`/admin/prompt-audit` h1 74/35、thead 42、行 62。代理报告的 ops「h1 top=68」为误测，已验收基线 `/admin/accounts` 实测同为 74/35。
+- `/admin/ops` 表格枚举：系统日志 thead 42 / 行 58；预警规则 thead 41 / 行 59；「OpenAI Token 请求统计」thead 37 / 行 37（仪表盘卡内紧凑统计表，不在 11.23 要求的列表页表格范围内，登记为偏差）。
+- 移动端 390：`/admin/ops` h1 单行（代理修复 scoped `:deep()` 落在同一元素导致规则失效的问题，加 `.ops-header-shell` 祖先层）。暗色 lead 亲自查看 `/admin/ops`，令牌化正确、图表取色随主题。
+- 门禁：eslint 0；`RiskControlView.spec` 4/4；ops + risk-control + prompt-audit 共 16 文件 65 用例通过；ui-lint 本次改动文件零新增命中。
+- 复核附带发现并单独修复（外壳，非本组所有权）：移动端顶栏公告铃铛缺失，`#topbar-mobile-bell` 传送目标在同组件模板内解析过早导致铃铛无处渲染，改用 `<Teleport defer>` 并对空目标隐藏（提交 `e0cdfdd34`）。
