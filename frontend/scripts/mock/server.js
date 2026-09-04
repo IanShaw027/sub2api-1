@@ -1627,6 +1627,24 @@ let OPS_ADVANCED_SETTINGS = {
 }
 let OPS_METRIC_THRESHOLDS = { sla_percent_min: 99, ttft_p99_ms_max: 3000, request_error_rate_percent_max: 5, upstream_error_rate_percent_max: 8 }
 
+// ---- user-side subscriptions / available channels ----
+const USER_SUBS = [
+  { id: 301, user_id: 12, group_id: 2, status: 'active', starts_at: iso(+NOW() - 86400000 * 12), daily_usage_usd: 11.02, weekly_usage_usd: 63.4, monthly_usage_usd: 212.4, daily_window_start: iso(+NOW() - 3600000 * 9), weekly_window_start: iso(+NOW() - 86400000 * 3), monthly_window_start: iso(+NOW() - 86400000 * 12), created_at: iso(+NOW() - 86400000 * 12), updated_at: iso(+NOW() - 3600000), expires_at: iso(+NOW() + 86400000 * 18), group: groupById(2) },
+  { id: 302, user_id: 12, group_id: 1, status: 'active', starts_at: iso(+NOW() - 86400000 * 40), daily_usage_usd: 1.8, weekly_usage_usd: 9.6, monthly_usage_usd: 31.2, daily_window_start: iso(+NOW() - 3600000 * 9), weekly_window_start: iso(+NOW() - 86400000 * 5), monthly_window_start: iso(+NOW() - 86400000 * 10), created_at: iso(+NOW() - 86400000 * 40), updated_at: iso(+NOW() - 7200000), expires_at: iso(+NOW() + 86400000 * 50), group: groupById(1) },
+  { id: 303, user_id: 12, group_id: 4, status: 'expired', starts_at: iso(+NOW() - 86400000 * 70), daily_usage_usd: 0, weekly_usage_usd: 0, monthly_usage_usd: 0, daily_window_start: null, weekly_window_start: null, monthly_window_start: null, created_at: iso(+NOW() - 86400000 * 70), updated_at: iso(+NOW() - 86400000 * 10), expires_at: iso(+NOW() - 86400000 * 10), group: groupById(4) }
+]
+const subWindow = (used, limit, resetSec) => (limit == null ? { used, limit: null, percentage: 0, reset_in_seconds: resetSec } : { used, limit, percentage: Number(((used / limit) * 100).toFixed(1)), reset_in_seconds: resetSec })
+const subProgress = (sub) => { const g = sub.group || {}; const days = sub.expires_at ? Math.ceil((new Date(sub.expires_at) - NOW()) / 86400000) : null; return { subscription_id: sub.id, daily: subWindow(sub.daily_usage_usd, g.daily_limit_usd ?? null, 3600 * 15), weekly: subWindow(sub.weekly_usage_usd, g.weekly_limit_usd ?? null, 86400 * 4), monthly: subWindow(sub.monthly_usage_usd, g.monthly_limit_usd ?? null, 86400 * 18), expires_at: sub.expires_at, days_remaining: days } }
+const userSubSummary = () => ({ active_count: USER_SUBS.filter((s) => s.status === 'active').length, subscriptions: USER_SUBS.map((s) => { const p = subProgress(s); return { id: s.id, group_name: s.group ? s.group.name : '', status: s.status, daily_progress: p.daily ? p.daily.percentage : null, weekly_progress: p.weekly ? p.weekly.percentage : null, monthly_progress: p.monthly ? p.monthly.percentage : null, expires_at: p.expires_at, days_remaining: p.days_remaining } }) })
+const uPrice = (i, o, cw, cr) => ({ billing_mode: 'token', input_price: i, output_price: o, cache_write_price: cw, cache_write_1h_price: cw == null ? null : cw * 2, cache_read_price: cr, image_input_price: null, image_output_price: null, per_request_price: null, intervals: [] })
+const uGroup = (g) => ({ id: g.id, name: g.name, platform: g.platform, subscription_type: g.subscription_type || 'standard', rate_multiplier: g.rate_multiplier, peak_rate_enabled: !!g.peak_rate_enabled, peak_start: g.peak_start || '', peak_end: g.peak_end || '', peak_rate_multiplier: g.peak_rate_multiplier || 1, is_exclusive: !!g.is_exclusive })
+const USER_AVAILABLE_CHANNELS = [
+  { name: 'Claude', description: 'Anthropic Claude 系列，支持长上下文与缓存', platforms: [{ platform: 'anthropic', groups: [uGroup(groupById(1)), uGroup(groupById(2))], supported_models: [{ name: 'claude-sonnet-4-5', platform: 'anthropic', pricing: uPrice(3, 15, 3.75, 0.3) }, { name: 'claude-fable-4-1', platform: 'anthropic', pricing: uPrice(15, 75, 18.75, 1.5) }, { name: 'claude-haiku-4-5', platform: 'anthropic', pricing: uPrice(1, 5, 1.25, 0.1) }] }] },
+  { name: 'OpenAI', description: 'ChatGPT Codex OAuth 池，适合编码任务', platforms: [{ platform: 'openai', groups: [uGroup(groupById(3))], supported_models: [{ name: 'gpt-5', platform: 'openai', pricing: uPrice(1.25, 10, null, 0.125) }, { name: 'gpt-5-codex', platform: 'openai', pricing: uPrice(1.25, 10, null, 0.125) }, { name: 'gpt-4.1', platform: 'openai', pricing: uPrice(2, 8, null, 0.5) }] }] },
+  { name: 'Gemini', description: 'Gemini 2.5 Pro / Flash，支持图片生成', platforms: [{ platform: 'gemini', groups: [uGroup(groupById(4))], supported_models: [{ name: 'gemini-2.5-pro', platform: 'gemini', pricing: { ...uPrice(1.25, 10, null, 0.31), intervals: [{ min_tokens: 0, max_tokens: 200000, tier_label: '≤200K', input_price: 1.25, output_price: 10, cache_write_price: null, cache_read_price: 0.31, per_request_price: null }, { min_tokens: 200000, max_tokens: null, tier_label: '>200K', input_price: 2.5, output_price: 15, cache_write_price: null, cache_read_price: 0.625, per_request_price: null }] } }, { name: 'gemini-2.5-flash', platform: 'gemini', pricing: uPrice(0.3, 2.5, null, 0.075) }, { name: 'gemini-2.5-flash-image', platform: 'gemini', pricing: { ...uPrice(null, null, null, null), billing_mode: 'per_request', per_request_price: 0.04 } }] }] }
+]
+const USER_TICKETS = MOCK_TICKETS.map((t) => ({ ...t, user_id: 12, user_name: 'xiaoyu', user_email: 'xiaoyu.lin@example.com' }))
+
 const emptyPage = (query) => ({ items: [], total: 0, page: Number(query.get('page') || 1), page_size: Number(query.get('page_size') || 20), pages: 0 })
 
 const rangeDays = (query) => {
@@ -1688,10 +1706,10 @@ const routes = {
   'POST /api/v1/keys': (ctx) => makeKey({ id: 599, name: (ctx.body && ctx.body.name) || 'new-key', key: 'sk-s2a-new0000000000000000000000000000000' }),
   'GET /api/v1/groups/available': () => GROUPS.filter((g) => !g.is_exclusive || g.id === 2).map(publicGroup),
   'GET /api/v1/groups/rates': () => ({ 2: 1.1 }),
-  'GET /api/v1/subscriptions': () => [],
-  'GET /api/v1/subscriptions/active': () => [],
-  'GET /api/v1/subscriptions/progress': () => [],
-  'GET /api/v1/subscriptions/summary': () => ({ active_count: 0, subscriptions: [] }),
+  'GET /api/v1/subscriptions': () => USER_SUBS,
+  'GET /api/v1/subscriptions/active': () => USER_SUBS.filter((s) => s.status === 'active'),
+  'GET /api/v1/subscriptions/progress': () => USER_SUBS.map(subProgress),
+  'GET /api/v1/subscriptions/summary': () => userSubSummary(),
 
   // ---- usage (user) ----
   'GET /api/v1/usage': (ctx) => paginate(usageLogs(12), ctx.query),
@@ -1715,9 +1733,9 @@ const routes = {
 
   // ---- announcements / tickets / payment / misc user-side ----
   'GET /api/v1/announcements': () => [],
-  'GET /api/v1/tickets': (ctx) => emptyPage(ctx.query),
+  'GET /api/v1/tickets': (ctx) => { let items = USER_TICKETS; const st = ctx.query.get('status'); if (st) items = items.filter((t) => t.status === st); const cat = ctx.query.get('category'); if (cat) items = items.filter((t) => t.category === cat); return paginate(items, ctx.query) },
   'GET /api/v1/tickets/unread-count': () => ({ count: 3 }),
-  'GET /api/v1/tickets/rate-groups': () => [],
+  'GET /api/v1/tickets/rate-groups': () => [{ group_id: 1, name: '默认分组', base_rate_multiplier: 1, user_rate_multiplier: 1, effective_rate: 1 }, { group_id: 2, name: 'Claude Max', base_rate_multiplier: 1.2, user_rate_multiplier: 1.1, effective_rate: 1.1 }],
   'GET /api/v1/payment/config': () => USER_PAYMENT_CONFIG,
   'GET /api/v1/payment/plans': () => [],
   'GET /api/v1/payment/orders/my': (ctx) => { let items = MOCK_PAY_ORDERS.map((o) => ({ ...o, user_id: 12 })); const st = ctx.query.get('status'); if (st) items = items.filter((o) => o.status === st); return paginate(items, ctx.query) },
@@ -1725,7 +1743,7 @@ const routes = {
   'GET /api/v1/payment/orders/invoice-eligible-providers': () => ({ provider_instance_ids: ['alipay-main', 'wxpay-main', 'stripe-main'] }),
   'GET /api/v1/payment/invoices': (ctx) => paginate(MOCK_INVOICES.map((v) => ({ ...v, user_id: 12 })), ctx.query),
   'GET /api/v1/redeem/history': () => [],
-  'GET /api/v1/channels/available': () => [],
+  'GET /api/v1/channels/available': () => USER_AVAILABLE_CHANNELS,
   'GET /api/v1/admin/channel-monitor-v2/config': () => V2_CONFIG,
   'PUT /api/v1/admin/channel-monitor-v2/config': (ctx) => Object.assign(V2_CONFIG, ctx.body || {}, { version: V2_CONFIG.version + 1 }),
   'GET /api/v1/admin/risk-control/config': () => RC_CONFIG,
@@ -1986,6 +2004,10 @@ const routes = {
 
 // Pattern routes for parameterized paths
 const patternRoutes = [
+  [/^GET \/api\/v1\/subscriptions\/(\d+)\/progress$/, (ctx, m) => subProgress(USER_SUBS.find((x) => x.id === Number(m[1])) || USER_SUBS[0])],
+  [/^GET \/api\/v1\/tickets\/(\d+)$/, (ctx, m) => USER_TICKETS.find((t) => t.id === Number(m[1])) || USER_TICKETS[0]],
+  [/^GET \/api\/v1\/tickets\/(\d+)\/messages$/, (ctx, m) => ticketMessages(USER_TICKETS.find((t) => t.id === Number(m[1])) || USER_TICKETS[0])],
+  [/^POST \/api\/v1\/tickets\/(\d+)\/(withdraw|update|resubmit|close|reply)$/, () => ({ ok: true })],
   [/^GET \/api\/v1\/payment\/orders\/(\d+)$/, (ctx, m) => ({ ...(MOCK_PAY_ORDERS.find((o) => o.id === Number(m[1])) || MOCK_PAY_ORDERS[0]), user_id: 12 })],
   [/^GET \/api\/v1\/payment\/invoices\/(\d+)$/, (ctx, m) => ({ ...(MOCK_INVOICES.find((o) => o.id === Number(m[1])) || MOCK_INVOICES[0]), user_id: 12 })],
   [/^POST \/api\/v1\/payment\/invoices\/(\d+)\/download-grant$/, () => ({ url: 'https://files.example.com/invoice.pdf', expires_at: Math.floor(+NOW() / 1000) + 600, ttl_minutes: 10 })],
