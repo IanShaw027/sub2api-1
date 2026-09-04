@@ -17,12 +17,13 @@
           <MonitorQuotaView :snapshot="r.quota" class="mt-1" />
         </div>
         <div class="flex items-center gap-2">
-          <span
-            class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
-            :class="statusBadgeClass(r.status)"
-          >
-            {{ statusLabel(r.status) }}
-          </span>
+          <StatusCell
+            :status="r.status"
+            :tone="statusTone(r.status)"
+            :label="statusLabel(r.status)"
+            dot
+            :pulse="r.status === 'operational'"
+          />
           <span class="text-xs text-muted">{{ formatLatency(r.latency_ms) }} ms</span>
         </div>
       </div>
@@ -42,6 +43,8 @@ import { useI18n } from 'vue-i18n'
 import type { CheckResult } from '@/api/admin/channelMonitor'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import MonitorQuotaView from '@/components/common/MonitorQuotaView.vue'
+import { StatusCell } from '@/components/common/cells'
+import { monitorStatusTone as statusTone } from './monitorStatusTone'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 
 defineProps<{
@@ -54,5 +57,5 @@ defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { statusLabel, statusBadgeClass, formatLatency, formatMonitorModel } = useChannelMonitorFormat()
+const { statusLabel, formatLatency, formatMonitorModel } = useChannelMonitorFormat()
 </script>

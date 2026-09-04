@@ -520,6 +520,7 @@ export default {
       runFailed: 'Check failed',
       duplicate: 'Duplicate',
       duplicating: 'Duplicating',
+      viewDetails: 'View Details',
       duplicateSuccess: 'Monitor duplicated as "{name}" and disabled. Review its configuration before enabling it.',
       duplicateFailed: 'Failed to duplicate monitor',
       duplicateKeyUnavailable: 'The API key cannot be decrypted. Re-enter it before duplicating this monitor.',
@@ -649,6 +650,13 @@ export default {
           description: 'Description',
           descriptionPlaceholder: 'Optional: what this template is for, capture date, etc.'
         }
+      },
+      detail: {
+        title: 'Monitor Details — {name}',
+        noHistory: 'No check history yet for this model',
+        loadError: 'Failed to load monitor history',
+        latestCheck: 'Latest check: {time}',
+        checksCount: '{n} checks recorded'
       }
     },
 

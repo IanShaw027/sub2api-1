@@ -5,22 +5,25 @@
       <span class="text-sm text-foreground">{{ formatMonitorModel(row.primary_model) }}</span>
       <HelpTooltip>
       <template #trigger>
-        <span
-          class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium"
-          :class="statusBadgeClass(row.primary_status)"
-        >
-          {{ statusLabel(row.primary_status) }}
-        </span>
+        <StatusCell
+          :status="row.primary_status"
+          :tone="statusTone(row.primary_status)"
+          :label="statusLabel(row.primary_status)"
+          dot
+          :pulse="row.primary_status === 'operational'"
+        />
       </template>
       <div class="space-y-2">
         <div class="text-xs font-semibold text-white">
           {{ formatMonitorModel(row.primary_model) }}
-          <span
-            class="ml-1 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-            :class="statusBadgeClass(row.primary_status)"
-          >
-            {{ statusLabel(row.primary_status) }}
-          </span>
+          <StatusCell
+            class="ml-1"
+            :status="row.primary_status"
+            :tone="statusTone(row.primary_status)"
+            :label="statusLabel(row.primary_status)"
+            dot
+            :pulse="row.primary_status === 'operational'"
+          />
         </div>
         <div v-if="(row.extra_models?.length ?? 0) === 0" class="text-[11px] text-muted">
           {{ t('monitorCommon.extraModelsEmpty') }}
@@ -41,12 +44,13 @@
               <tr v-for="m in (row.extra_models_status || [])" :key="m.model">
                 <td class="py-0.5 pr-2 text-white">{{ m.model }}</td>
                 <td class="py-0.5 pr-2">
-                  <span
-                    class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px]"
-                    :class="statusBadgeClass(m.status)"
-                  >
-                    {{ statusLabel(m.status) }}
-                  </span>
+                  <StatusCell
+                    :status="m.status"
+                    :tone="statusTone(m.status)"
+                    :label="statusLabel(m.status)"
+                    dot
+                    :pulse="m.status === 'operational'"
+                  />
                 </td>
                 <td class="py-0.5 text-white">{{ formatLatency(m.latency_ms) }}</td>
               </tr>
@@ -66,6 +70,8 @@ import { useI18n } from 'vue-i18n'
 import type { ChannelMonitor } from '@/api/admin/channelMonitor'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import MonitorQuotaView from '@/components/common/MonitorQuotaView.vue'
+import { StatusCell } from '@/components/common/cells'
+import { monitorStatusTone as statusTone } from './monitorStatusTone'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 
 defineProps<{
@@ -73,5 +79,5 @@ defineProps<{
 }>()
 
 const { t } = useI18n()
-const { statusLabel, statusBadgeClass, formatLatency, formatMonitorModel } = useChannelMonitorFormat()
+const { statusLabel, formatLatency, formatMonitorModel } = useChannelMonitorFormat()
 </script>

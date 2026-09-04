@@ -47,7 +47,7 @@
           {{ t('admin.channelMonitor.advanced.headerAddRow') }}
         </button>
       </div>
-      <p v-if="headersError" class="mt-1 text-xs text-red-500">{{ headersError }}</p>
+      <p v-if="headersError" class="mt-1 text-xs text-danger-text">{{ headersError }}</p>
       <p v-else class="mt-1 text-xs text-muted">
         {{ t('admin.channelMonitor.advanced.headersHint') }}
       </p>
@@ -95,7 +95,7 @@
         spellcheck="false"
         @blur="commitBody"
       />
-      <p v-if="bodyError" class="mt-1 text-xs text-red-500">{{ bodyError }}</p>
+      <p v-if="bodyError" class="mt-1 text-xs text-danger-text">{{ bodyError }}</p>
       <p v-else class="mt-1 text-xs text-muted">
         {{ t('admin.channelMonitor.advanced.bodyJsonHint') }}
       </p>

@@ -1,47 +1,16 @@
 <template>
-  <div class="flex items-center gap-1">
-    <button
-      @click="$emit('run', row)"
-      :disabled="running"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent"
-    >
-      <Icon name="refresh" size="sm" :class="running ? 'animate-spin' : ''" />
-      <span class="text-xs">{{ t('admin.channelMonitor.runNow') }}</span>
-    </button>
-    <button
-      data-testid="monitor-duplicate"
-      :title="duplicateTitle"
-      :disabled="duplicating || Boolean(row.api_key_decrypt_failed)"
-      @click="$emit('duplicate', row)"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
-    >
-      <Icon name="copy" size="sm" />
-      <span class="text-xs">
-        {{ duplicating ? t('admin.channelMonitor.duplicating') : t('admin.channelMonitor.duplicate') }}
-      </span>
-    </button>
-    <button
-      @click="$emit('edit', row)"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent"
-    >
-      <Icon name="edit" size="sm" />
-      <span class="text-xs">{{ t('common.edit') }}</span>
-    </button>
-    <button
-      @click="$emit('delete', row)"
-      class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-    >
-      <Icon name="trash" size="sm" />
-      <span class="text-xs">{{ t('common.delete') }}</span>
-    </button>
-  </div>
+  <ActionsCell
+    :edit-label="t('common.edit')"
+    :items="items"
+    @edit="$emit('edit', row)"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { ChannelMonitor } from '@/api/admin/channelMonitor'
-import Icon from '@/components/icons/Icon.vue'
+import ActionsCell, { type ActionsCellItem } from '@/components/common/cells/ActionsCell.vue'
 
 const props = defineProps<{
   row: ChannelMonitor
@@ -49,17 +18,43 @@ const props = defineProps<{
   duplicating: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'run', row: ChannelMonitor): void
   (e: 'duplicate', row: ChannelMonitor): void
   (e: 'edit', row: ChannelMonitor): void
   (e: 'delete', row: ChannelMonitor): void
+  (e: 'detail', row: ChannelMonitor): void
 }>()
 
 const { t } = useI18n()
-const duplicateTitle = computed(() => {
-  if (props.row.api_key_decrypt_failed) return t('admin.channelMonitor.duplicateKeyUnavailable')
-  if (props.duplicating) return t('admin.channelMonitor.duplicating')
-  return t('admin.channelMonitor.duplicate')
-})
+
+const items = computed<ActionsCellItem[]>(() => [
+  {
+    label: t('admin.channelMonitor.viewDetails'),
+    icon: 'chart',
+    onClick: () => emit('detail', props.row),
+  },
+  {
+    label: t('admin.channelMonitor.runNow'),
+    icon: 'refresh',
+    disabled: props.running,
+    onClick: () => emit('run', props.row),
+  },
+  {
+    label: props.row.api_key_decrypt_failed
+      ? t('admin.channelMonitor.duplicateKeyUnavailable')
+      : props.duplicating
+        ? t('admin.channelMonitor.duplicating')
+        : t('admin.channelMonitor.duplicate'),
+    icon: 'copy',
+    disabled: props.duplicating || Boolean(props.row.api_key_decrypt_failed),
+    onClick: () => emit('duplicate', props.row),
+  },
+  {
+    label: t('common.delete'),
+    icon: 'trash',
+    danger: true,
+    onClick: () => emit('delete', props.row),
+  },
+])
 </script>

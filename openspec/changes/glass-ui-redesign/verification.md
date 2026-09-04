@@ -87,3 +87,9 @@
 - 探针：内容 146；导航 224 + 934；卡间距 12；SettingRow 67/84；各 tab 卡片 top 146。
 - 行数：GatewayTab 42（拆为 gateway/ 15 个分区）；SecurityTab 3012、useSettingsForm.ts 2709 仍超 1500（后续 6.3 remainder）。
 - anchor-diff：tabs 0 lost（GatewayTab 加 `--scope gateway`）；BackupView 3 处重命名（两步确认函数、`mediaEnabled` computed）。
+
+### 11.5 / 11.6（channels pricing / monitor，2026-09-04）
+- vue-tsc 0；eslint 0；vitest channel/monitor + views/admin 257/257；ui-lint total 0；i18n parity 8905/8905。
+- anchor-diff：ChannelsView `handleDelete` 迁入 ActionsCell items 回调（仍被引用），ChannelMonitorView 0 lost。
+- 探针：h1 74/35，filter-bar 146 h36，thead h42。行数：ChannelsView 1722→372（ChannelFormDialog 1392 等），ChannelMonitorView 402 + monitor/ 14 文件。
+- 待 lead：mock 缺 `channel-monitors` 种子 / `history` 路由 / `channel_monitor_mode` 可切 v1（legacy 页只能空态）；`useChannelMonitorFormat.ts` 硬编码调色板色划归 12.2（monitor v2）一并整改。

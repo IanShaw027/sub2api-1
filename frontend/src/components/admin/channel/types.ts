@@ -402,32 +402,7 @@ function checkIntervalOverlap(sorted: IntervalFormEntry[], t: TranslateFn): stri
   return null
 }
 
-/** 平台对应的模型 tag 样式（背景+文字） */
-export function getPlatformTagClass(platform: string): string {
-  switch (platform) {
-    case 'anthropic': return 'bg-orange-500/15 text-orange-600'
-    case 'openai': return 'bg-emerald-500/15 text-emerald-600'
-    case 'gemini': return 'bg-blue-500/15 text-blue-600'
-    case 'antigravity': return 'bg-purple-500/15 text-purple-600'
-    case 'grok': return 'bg-zinc-500/15 text-zinc-600'
-    case 'kimi': return 'bg-pink-500/15 text-pink-600'
-    case 'zhipu': return 'bg-indigo-500/15 text-indigo-600'
-    case 'deepseek': return 'bg-teal-500/15 text-teal-600'
-    default: return 'badge-tone-muted'
-  }
-}
-
-/** 平台对应的模型文字色（仅 text-*，用于 input/text 场景）— 与 getPlatformTagClass 同色系 */
-export function getPlatformTextClass(platform: string): string {
-  switch (platform) {
-    case 'anthropic': return 'text-orange-600'
-    case 'openai': return 'text-emerald-600'
-    case 'gemini': return 'text-blue-600'
-    case 'antigravity': return 'text-purple-600'
-    case 'grok': return 'text-zinc-600'
-    case 'kimi': return 'text-pink-600'
-    case 'zhipu': return 'text-indigo-600'
-    case 'deepseek': return 'text-teal-600'
-    default: return ''
-  }
-}
+// NOTE: platform tag/text color helpers were consolidated into the shared
+// `@/utils/platformColors` module (platformBadgeLightClass / platformTextClass)
+// to remove a duplicate, inconsistent per-platform color system. Import from
+// there instead of redefining platform hues here.

@@ -60,7 +60,7 @@
             <div class="flex items-center gap-1.5">
               <span class="font-medium text-foreground">{{ value }}</span>
               <HelpTooltip v-if="row.api_key_decrypt_failed" :content="t('admin.channelMonitor.apiKeyDecryptFailed')">
-                <Icon name="exclamationTriangle" size="sm" class="text-red-500" />
+                <Icon name="exclamationTriangle" size="sm" class="text-danger-text" />
               </HelpTooltip>
             </div>
           </template>
@@ -100,6 +100,7 @@
               @duplicate="handleDuplicate"
               @edit="openEditDialog"
               @delete="handleDelete"
+              @detail="openDetailModal"
             />
           </template>
 
@@ -146,6 +147,12 @@
       @close="showRunResult = false"
     />
 
+    <MonitorDetailModal
+      :show="showDetailModal"
+      :monitor="detailMonitor"
+      @close="showDetailModal = false"
+    />
+
     <ConfirmDialog
       :show="showDeleteDialog"
       :title="t('common.delete')"
@@ -186,6 +193,7 @@ import MonitorFiltersBar from '@/components/admin/monitor/MonitorFiltersBar.vue'
 import MonitorFormDialog from '@/components/admin/monitor/MonitorFormDialog.vue'
 import MonitorTemplateManagerDialog from '@/components/admin/monitor/MonitorTemplateManagerDialog.vue'
 import MonitorRunResultDialog from '@/components/admin/monitor/MonitorRunResultDialog.vue'
+import MonitorDetailModal from '@/components/admin/monitor/MonitorDetailModal.vue'
 import MonitorPrimaryModelCell from '@/components/admin/monitor/MonitorPrimaryModelCell.vue'
 import MonitorActionsCell from '@/components/admin/monitor/MonitorActionsCell.vue'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -221,6 +229,8 @@ const showDeleteDialog = ref(false)
 const deleting = ref<ChannelMonitor | null>(null)
 const showRunResult = ref(false)
 const runResults = ref<CheckResult[]>([])
+const showDetailModal = ref(false)
+const detailMonitor = ref<ChannelMonitor | null>(null)
 const duplicatingIds = reactive(new Set<number>())
 
 let abortController: AbortController | null = null
@@ -304,6 +314,11 @@ function openEditDialog(row: ChannelMonitor) {
 function closeDialog() {
   showDialog.value = false
   editing.value = null
+}
+
+function openDetailModal(row: ChannelMonitor) {
+  detailMonitor.value = row
+  showDetailModal.value = true
 }
 
 async function toggleEnabled(row: ChannelMonitor) {
