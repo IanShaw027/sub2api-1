@@ -1,5 +1,5 @@
 <template>
-  <div class="rounded-2xl border border-line bg-surface-2 p-4">
+  <div class="rounded-xl border border-line bg-surface-2 p-4">
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <div class="text-sm font-medium text-foreground">
@@ -62,7 +62,7 @@
       <div
         v-for="(group, groupIndex) in anyOf"
         :key="groupIndex"
-        class="rounded-2xl border border-line bg-surface p-4 shadow-sm"
+        class="rounded-xl border border-line bg-surface p-4 shadow-[var(--shadow-pop)]"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="min-w-0">
@@ -157,7 +157,10 @@
         </div>
       </div>
 
-      <div v-if="validationError" class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-danger-text">
+      <div
+        v-if="validationError"
+        class="rounded-xl border border-[color-mix(in_oklch,var(--danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--danger)_12%,transparent)] p-3 text-sm text-danger-text"
+      >
         {{ validationError }}
       </div>
     </div>

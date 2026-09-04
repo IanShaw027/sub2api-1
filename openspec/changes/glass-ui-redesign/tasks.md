@@ -132,8 +132,8 @@
 - [x] 11.4 `/admin/proxies`（`ProxiesView.vue` + 代理弹层 + IP 地理批量工具条）；验证同上
 - [ ] 11.5 `/admin/channels/pricing`（`ChannelsView.vue` + `components/admin/channels/*`：模型定价表格、倍率 `.tag`、批量编辑弹层）；验证同上
 - [ ] 11.6 `/admin/channels/monitor`（`ChannelMonitorView.vue`：状态玻璃卡网格 + 圆点徽章 + 8px pulse + 96×28 sparkline + 详情弹层）；验证同上
-- [ ] 11.7 `/admin/plugins`（`PluginsView.vue`：卡片网格或 ListPage、安装 / 配置弹层）；验证同上
-- [ ] 11.8 `/admin/announcements`（`AnnouncementsView.vue`：ListPage + Markdown 编辑器 `.field` 文本域 220 + 预览卡 + 受众 / 排期 `SettingRow`）；验证同上；提交 `feat(glass): admin lists batch 1 (tasks 11.1–11.8)`
+- [x] 11.7 `/admin/plugins`（`PluginsView.vue`：卡片网格或 ListPage、安装 / 配置弹层）；验证同上
+- [x] 11.8 `/admin/announcements`（`AnnouncementsView.vue`：ListPage + Markdown 编辑器 `.field` 文本域 220 + 预览卡 + 受众 / 排期 `SettingRow`）；验证同上；提交 `feat(glass): admin lists batch 1 (tasks 11.1–11.8)`
 
 批次 2（运营）
 - [ ] 11.9 `/admin/redeem`（在 0.1 基础上完成 ListPage 配方、生成 / 批量更新 / 导出弹层）；验证截图 + `RedeemView*.spec`

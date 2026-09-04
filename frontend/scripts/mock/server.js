@@ -814,6 +814,12 @@ function paginate(items, query, defaultSize = 20) {
   const start = (page - 1) * page_size
   return { items: items.slice(start, start + page_size), total: items.length, page, page_size, pages: Math.max(1, Math.ceil(items.length / page_size)) }
 }
+const pluginManifest = (id, name, version, platform) => ({ schema_version: 1, id, name, version, description: name + ' 适配插件', author: 'Sub2API', requires: { sub2api_version: '>=1.0.0', plugin_protocol: 1, transport_api: 1, ui_bridge: 1 }, capabilities: [{ id: platform + '.chat', platform, account_type: 'oauth' }], ui: { entrypoint: 'index.js' } })
+const MOCK_PLUGINS = [
+  { id: 1, plugin_key: 'kimi-adapter', name: 'Kimi 适配器', version: '1.2.0', description: 'Moonshot Kimi OAuth 账号接入与配额同步', author: 'Sub2API', manifest: pluginManifest('kimi-adapter', 'Kimi 适配器', '1.2.0', 'kimi'), signature_status: 'trusted', state: 'enabled', last_error: '', installed_at: iso(NOW() - 20 * 864e5), enabled_at: iso(NOW() - 19 * 864e5), updated_at: iso(NOW() - 2 * 864e5), bindings: [{ id: 11, plugin_id: 1, capability: 'kimi.chat', platform: 'kimi', account_type: 'oauth', enabled: true, rollout_percent: 100 }], compatibility: { compatible: true, tested: true, status: 'compatible', message: '', sub2api_version: '1.8.2', required_sub2api_version: '>=1.0.0', recommended_sub2api_version: '1.8.0', plugin_protocol: 1, transport_api: 1, ui_bridge: 1 } },
+  { id: 2, plugin_key: 'zhipu-adapter', name: '智谱 GLM 适配器', version: '0.9.1', description: '智谱 GLM API Key 账号接入（灰度）', author: 'community', manifest: pluginManifest('zhipu-adapter', '智谱 GLM 适配器', '0.9.1', 'zhipu'), signature_status: 'unsigned', state: 'disabled', last_error: '', installed_at: iso(NOW() - 5 * 864e5), updated_at: iso(NOW() - 5 * 864e5), bindings: [{ id: 21, plugin_id: 2, capability: 'zhipu.chat', platform: 'zhipu', account_type: 'apikey', enabled: false, rollout_percent: 25 }], compatibility: { compatible: true, tested: false, status: 'untested', message: '未在当前版本测试', sub2api_version: '1.8.2', required_sub2api_version: '>=1.6.0', recommended_sub2api_version: '1.7.0', plugin_protocol: 1, transport_api: 1, ui_bridge: 1 } },
+]
+
 const emptyPage = (query) => ({ items: [], total: 0, page: Number(query.get('page') || 1), page_size: Number(query.get('page_size') || 20), pages: 0 })
 
 const rangeDays = (query) => {
@@ -1003,6 +1009,7 @@ const routes = {
   'GET /api/v1/admin/groups/live-capability': () => ({ supported: true }),
   'GET /api/v1/admin/proxies': (ctx) => emptyPage(ctx.query),
   'GET /api/v1/admin/proxies/all': () => [],
+  'GET /api/v1/admin/plugins': () => MOCK_PLUGINS,
   'GET /api/v1/admin/user-attributes': () => [],
   'GET /api/v1/admin/users': (ctx) => paginate(ADMIN_USERS, ctx.query),
   'GET /api/v1/admin/usage': (ctx) => paginate(usageLogs(20).map((l) => ({ ...l, user: { id: 42, email: NORMAL_USER.email, username: NORMAL_USER.username }, account: { id: l.account_id, name: (ACCOUNTS.find((a) => a.id === l.account_id) || {}).name } })), ctx.query),

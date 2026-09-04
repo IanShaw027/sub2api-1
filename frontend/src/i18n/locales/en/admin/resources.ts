@@ -406,6 +406,8 @@ export default {
       form: {
         title: 'Title',
         content: 'Content (Markdown supported)',
+        contentPreview: 'Preview',
+        contentPreviewEmpty: 'Nothing to preview yet',
         insertImage: 'Insert image',
         uploading: 'Uploading…',
         uploadFailed: 'Failed to upload image',

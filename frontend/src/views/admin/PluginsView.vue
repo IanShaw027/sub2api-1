@@ -52,18 +52,14 @@
         {{ t("common.loading") }}
       </div>
 
-      <div
+      <EmptyState
         v-else-if="plugins.length === 0"
-        class="flex min-h-56 flex-col items-center justify-center border border-dashed border-line px-6 text-center"
-      >
-        <Icon name="cube" size="xl" class="text-muted" />
-        <p class="mt-3 font-medium text-foreground">
-          {{ t("admin.plugins.empty") }}
-        </p>
-        <p class="mt-1 max-w-lg text-sm text-muted">
-          {{ t("admin.plugins.emptyHint") }}
-        </p>
-      </div>
+        :title="t('admin.plugins.empty')"
+        :description="t('admin.plugins.emptyHint')"
+        :action-text="t('admin.plugins.upload')"
+        size="lg"
+        @action="fileInput?.click()"
+      />
 
       <div v-else class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <GlassCard
@@ -285,7 +281,7 @@
             v-if="uiError"
             class="absolute inset-0 z-20 flex flex-col items-center justify-center p-8 text-center"
           >
-            <Icon name="exclamationTriangle" size="xl" class="text-amber-500" />
+            <Icon name="exclamationTriangle" size="xl" class="text-warning-text" />
             <p class="mt-3 font-medium text-foreground">
               {{ t("admin.plugins.uiUnavailable") }}
             </p>
@@ -325,6 +321,7 @@ import PageHeader from "@/components/ui/PageHeader.vue";
 import Button from "@/components/ui/Button.vue";
 import GlassCard from "@/components/ui/GlassCard.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
 import Icon from "@/components/icons/Icon.vue";
 import TotpStepUpDialog from "@/components/auth/TotpStepUpDialog.vue";
 import {

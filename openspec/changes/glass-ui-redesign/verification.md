@@ -75,3 +75,8 @@
 - anchor-diff：Users/Groups 各「丢失」7 个 handler（状态 chip、行菜单迁入 ActionsCell / GroupSortModal），Subscriptions 3 个（`closeAssignModal` 逻辑进入 SubscriptionAssignDialog，`handleResetQuota/handleRevoke` 经菜单包装仍在），Proxies 34 个（create/edit 表单合并进 ProxyFormModal、批量操作经 `runMoreMenuAction` 包装）——均为迁移非丢失。
 - 探针（1440，light）：h1 74/35，filter-bar 146 h36，thead 211 h42（subscriptions / proxies）；无参考图，按 ListPage 配方核验。
 - 行数：ProxiesView 2140→1324，SubscriptionsView 1557→1128，UsersView 1940；GroupsView 6372（Create/Edit 弹层拆分延后，见 deviations，health-cleanup 6.4 标 [~]）。
+
+### 11.7 / 11.8（plugins / announcements，2026-09-04）
+- eslint 0；vitest 3/3；ui-lint 4 文件 total 0；i18n parity 8899/8899；anchor-diff 无丢失。
+- 探针：h1 74/35；announcements filter-bar 146 h36，thead h42。
+- lead 补充：mock 新增 `GET /api/v1/admin/plugins`（2 个种子插件，含 compatibility 版本字段）；此前无路由时回落到分页信封导致插件页空白（11D 发现，非回归）。

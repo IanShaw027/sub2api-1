@@ -403,6 +403,8 @@ export default {
       form: {
         title: '标题',
         content: '内容（支持 Markdown）',
+        contentPreview: '预览',
+        contentPreviewEmpty: '暂无可预览内容',
         insertImage: '插入图片',
         uploading: '正在上传…',
         uploadFailed: '图片上传失败',
