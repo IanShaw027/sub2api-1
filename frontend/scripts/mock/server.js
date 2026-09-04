@@ -639,6 +639,10 @@ function usageLogs(count = 12) {
 }
 
 // ==================== Settings ====================
+const CUSTOM_MENU_ITEMS = [
+  { id: 'docs-guide', label: '接入指南', icon_svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>', url: 'md:getting-started', page_slug: 'getting-started', visibility: 'user', sort_order: 1 },
+  { id: 'status-embed', label: '外部状态页', icon_svg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></svg>', url: 'http://localhost:3777/status', visibility: 'user', sort_order: 2 }
+]
 const PUBLIC_SETTINGS = {
   registration_enabled: true,
   email_verify_enabled: false,
@@ -679,7 +683,7 @@ const PUBLIC_SETTINGS = {
   risk_control_enabled: true,
   table_default_page_size: 20,
   table_page_size_options: [10, 20, 50, 100],
-  custom_menu_items: [],
+  custom_menu_items: CUSTOM_MENU_ITEMS,
   custom_endpoints: [
     { name: 'OpenAI Compatible', endpoint: 'https://api.sub2api.dev/v1', description: '支持 OpenAI 格式请求' }
   ],
@@ -739,7 +743,7 @@ const ADMIN_SETTINGS = {
   auth_source_default_email_platform_quotas: {}, auth_source_default_linuxdo_platform_quotas: {}, auth_source_default_oidc_platform_quotas: {}, auth_source_default_wechat_platform_quotas: {}, auth_source_default_github_platform_quotas: {}, auth_source_default_google_platform_quotas: {}, auth_source_default_dingtalk_platform_quotas: {},
   site_name: PUBLIC_SETTINGS.site_name, site_logo: '', site_subtitle: PUBLIC_SETTINGS.site_subtitle, api_base_url: PUBLIC_SETTINGS.api_base_url, contact_info: PUBLIC_SETTINGS.contact_info,
   support_qr_codes: [], doc_url: PUBLIC_SETTINGS.doc_url, download_tools_url: '', home_content: '', compact_home_enabled: false, hide_ccs_import_button: false,
-  table_default_page_size: 20, table_page_size_options: [10, 20, 50, 100], backend_mode_enabled: false, custom_menu_items: [], custom_endpoints: PUBLIC_SETTINGS.custom_endpoints,
+  table_default_page_size: 20, table_page_size_options: [10, 20, 50, 100], backend_mode_enabled: false, custom_menu_items: CUSTOM_MENU_ITEMS, custom_endpoints: PUBLIC_SETTINGS.custom_endpoints,
   smtp_host: 'smtp.sendgrid.net', smtp_port: 587, smtp_username: 'apikey', smtp_password_configured: true, smtp_from_email: 'noreply@sub2api.dev', smtp_from_name: 'Sub2API', smtp_use_tls: true,
   turnstile_enabled: false, turnstile_site_key: '', turnstile_secret_key_configured: false,
   tencent_captcha_enabled: false, tencent_captcha_app_id: '', tencent_captcha_app_secret_key_configured: false, tencent_captcha_cloud_secret_id_configured: false, tencent_captcha_cloud_secret_key_configured: false, tencent_captcha_region: '',
@@ -1645,6 +1649,104 @@ const USER_AVAILABLE_CHANNELS = [
 ]
 const USER_TICKETS = MOCK_TICKETS.map((t) => ({ ...t, user_id: 12, user_name: 'xiaoyu', user_email: 'xiaoyu.lin@example.com' }))
 
+
+// ==================== User affiliate / redeem / checkout / custom pages / studio (12.11–12.16) ====================
+const USER_AFF_DETAIL = () => ({
+  user_id: 12, aff_code: 'S2A-XY42', inviter_id: null, aff_count: 6, aff_quota: 6.2, aff_frozen_quota: 2.1, aff_history_quota: 18.4, effective_rebate_rate_percent: 10,
+  invitees: Array.from({ length: 6 }, (_, i) => ({ user_id: 120 + i, email: `invitee${i + 1}@example.com`, username: ['小周', 'kai', 'mira', '阿亮', 'dev_wu', 'jojo'][i], created_at: iso(+NOW() - (i + 1) * 5 * 864e5), total_rebate: round2(6.5 - i * 0.9) }))
+})
+const USER_REDEEM_HISTORY = [
+  { id: 901, code: 'GIFT-7Q2K-AB91', type: 'balance', value: 20, status: 'used', used_at: iso(+NOW() - 2 * 864e5), created_at: iso(+NOW() - 9 * 864e5) },
+  { id: 902, code: 'SUB-CLMAX-30D', type: 'subscription', value: 30, status: 'used', used_at: iso(+NOW() - 6 * 864e5), created_at: iso(+NOW() - 20 * 864e5), group_id: 2, validity_days: 30, group: { id: 2, name: 'Claude Max' } },
+  { id: 903, code: 'CONC-PLUS-5', type: 'concurrency', value: 5, status: 'used', used_at: iso(+NOW() - 12 * 864e5), created_at: iso(+NOW() - 30 * 864e5) },
+  { id: 904, code: 'ADM-BAL-0810', type: 'admin_balance', value: 15, status: 'used', used_at: iso(+NOW() - 25 * 864e5), created_at: iso(+NOW() - 25 * 864e5), notes: '活动补偿' },
+  { id: 905, code: 'GIFT-3M8N-ZZ10', type: 'balance', value: 5, status: 'used', used_at: iso(+NOW() - 40 * 864e5), created_at: iso(+NOW() - 45 * 864e5) },
+  { id: 906, code: 'ADM-CONC-0701', type: 'admin_concurrency', value: 2, status: 'used', used_at: iso(+NOW() - 64 * 864e5), created_at: iso(+NOW() - 64 * 864e5), notes: '测试并发上调' },
+  { id: 907, code: 'SUB-STD-90D', type: 'subscription', value: 90, status: 'used', used_at: iso(+NOW() - 88 * 864e5), created_at: iso(+NOW() - 90 * 864e5), group_id: 1, validity_days: 90, group: { id: 1, name: '默认分组' } }
+]
+const USER_CHECKOUT_INFO = () => ({
+  methods: {
+    alipay: { currency: 'CNY', display_name: '支付宝', daily_limit: 20000, daily_used: 128, daily_remaining: 19872, single_min: 10, single_max: 5000, fee_rate: 0, available: true },
+    wxpay: { currency: 'CNY', display_name: '微信支付', daily_limit: 20000, daily_used: 0, daily_remaining: 20000, single_min: 10, single_max: 3000, fee_rate: 0, available: true },
+    stripe: { currency: 'USD', display_name: 'Stripe', daily_limit: 5000, daily_used: 49, daily_remaining: 4951, single_min: 5, single_max: 1000, fee_rate: 0.029, available: true }
+  },
+  global_min: 10, global_max: 5000, plans: MOCK_PAY_PLANS.filter((p) => p.for_sale), balance_disabled: false, balance_recharge_multiplier: 1,
+  subscription_usd_to_cny_rate: 7.2, recharge_fee_rate: 0, help_text: '充值到账通常在 1 分钟内完成；如遇问题请提交工单。', help_image_url: '', stripe_publishable_key: 'pk_test_mock', alipay_force_qrcode: false
+})
+const CUSTOM_PAGE_MD = `# 接入指南
+
+欢迎使用 Sub2API。本页演示自定义 Markdown 页面的排版效果，包括标题、列表、代码块与表格。
+
+## 1. 获取 API Key
+
+1. 前往 **API 密钥** 页面创建一个密钥。
+2. 复制形如 \`sk-s2a-...\` 的密钥并妥善保存。
+3. 在客户端中将 Base URL 指向 \`https://api.example.com/v1\`。
+
+## 2. 快速调用
+
+\`\`\`bash
+curl https://api.example.com/v1/messages \\
+  -H "x-api-key: $SUB2API_KEY" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -d '{"model":"claude-sonnet-4-5","max_tokens":256,"messages":[{"role":"user","content":"hi"}]}'
+\`\`\`
+
+## 3. 支持的平台
+
+| 平台 | 端点 | 说明 |
+| --- | --- | --- |
+| Anthropic | /v1/messages | 原生协议 |
+| OpenAI | /v1/chat/completions | 兼容协议 |
+| Gemini | /v1beta/models | 原生协议 |
+
+## 4. 常见问题
+
+> 请求返回 401：请检查密钥是否已停用或分组是否被限制。
+
+- 并发超限会返回 429，建议客户端做指数退避。
+- 更多信息请查看 [公开状态页](/status)。
+
+## 5. 图片示例
+
+![示例图](assets/demo.svg)
+`
+const MOCK_SVG = (label, hue) => `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue} 70% 62%)"/><stop offset="1" stop-color="hsl(${(hue + 60) % 360} 70% 45%)"/></linearGradient></defs><rect width="640" height="400" fill="url(#g)"/><circle cx="480" cy="120" r="70" fill="rgba(255,255,255,.35)"/><text x="32" y="360" font-family="Inter,system-ui" font-size="28" fill="#fff">${label}</text></svg>`
+const STUDIO_SESSIONS = [
+  { id: 71, user_id: 12, group_id: 2, title: '重构登录页文案', model: 'claude-sonnet-4-5', mode: 'chat', status: 'active', created_at: iso(+NOW() - 2 * 36e5), updated_at: iso(+NOW() - 12 * 6e4) },
+  { id: 72, user_id: 12, group_id: 2, title: '海报概念图 · 玻璃质感', model: 'gpt-image-1', mode: 'image', status: 'active', created_at: iso(+NOW() - 26 * 36e5), updated_at: iso(+NOW() - 3 * 36e5) },
+  { id: 73, user_id: 12, group_id: 3, title: 'SQL 索引优化建议', model: 'gpt-5-codex', mode: 'chat', status: 'active', created_at: iso(+NOW() - 3 * 864e5), updated_at: iso(+NOW() - 2 * 864e5) },
+  { id: 74, user_id: 12, group_id: 2, title: '周报摘要生成', model: 'claude-haiku-4-5', mode: 'chat', status: 'active', created_at: iso(+NOW() - 6 * 864e5), updated_at: iso(+NOW() - 5 * 864e5) },
+  { id: 75, user_id: 12, group_id: 2, title: '产品图 · 白底电商', model: 'gpt-image-1', mode: 'image', status: 'archived', created_at: iso(+NOW() - 12 * 864e5), updated_at: iso(+NOW() - 11 * 864e5) }
+]
+const studioMsg = (id, session_id, role, text, i, model) => ({ id, session_id, role, content: JSON.stringify([{ type: 'text', text }]), model: role === 'assistant' ? model : null, input_tokens: role === 'assistant' ? 420 + i * 37 : null, output_tokens: role === 'assistant' ? 180 + i * 22 : null, created_at: iso(+NOW() - (10 - i) * 6e4) })
+const STUDIO_MESSAGES = {
+  71: [
+    studioMsg(7101, 71, 'user', '帮我把登录页的标题和副标题改得更简洁，面向开发者。', 0),
+    studioMsg(7102, 71, 'assistant', '可以试试这组文案：\n\n**标题**：一把密钥，接入所有模型\n\n**副标题**：Sub2API 为你统一 Anthropic、OpenAI 与 Gemini 的调用入口，按量计费、实时监控。\n\n如果希望更克制一些，也可以只保留标题，把副标题压缩为一句话：“统一入口，按量计费。”', 1, 'claude-sonnet-4-5'),
+    studioMsg(7103, 71, 'user', '第二版更好，再给我三个按钮文案的备选。', 2),
+    studioMsg(7104, 71, 'assistant', '1. 立即开始\n2. 获取密钥\n3. 免费试用 14 天\n\n建议主按钮用「获取密钥」，动作最明确；次按钮放「查看文档」。', 3, 'claude-sonnet-4-5')
+  ],
+  73: [
+    studioMsg(7301, 73, 'user', '这条查询很慢：SELECT * FROM usage_logs WHERE user_id = ? AND created_at > ? ORDER BY created_at DESC LIMIT 50', 0),
+    studioMsg(7302, 73, 'assistant', '建议建立复合索引 `(user_id, created_at DESC)`，并把 `SELECT *` 收窄为实际需要的列。若表按天分区，同时在 WHERE 中带上分区键可以显著减少扫描量。', 1, 'gpt-5-codex')
+  ],
+  74: [
+    studioMsg(7401, 74, 'user', '根据以下要点写一段周报摘要：完成用户端玻璃 UI 三页，修复两个 spec，mock 覆盖工单。', 0),
+    studioMsg(7402, 74, 'assistant', '本周完成用户端 Glass UI 三个页面的重构并通过门禁，修复了两条失效的单元测试；同时补齐了工单模块的 mock 数据，为后续验收提供了真实数据支撑。', 1, 'claude-haiku-4-5')
+  ],
+  72: [], 75: []
+}
+const STUDIO_IMAGES = [
+  { id: 501, session_id: 72, user_id: 12, group_id: 2, status: 'completed', model: 'gpt-image-1', prompt: '玻璃质感的海报，柔和的渐变背景，居中一个半透明卡片', media_asset_id: 9001, provider_task_id: 'task_a1', error: null, created_at: iso(+NOW() - 3 * 36e5), updated_at: iso(+NOW() - 3 * 36e5 + 9e4), media_url: '/api/v1/media/public/9001' },
+  { id: 502, session_id: 72, user_id: 12, group_id: 2, status: 'completed', model: 'gpt-image-1', prompt: '同一主题，夜间配色，霓虹青色高光', media_asset_id: 9002, provider_task_id: 'task_a2', error: null, created_at: iso(+NOW() - 2.5 * 36e5), updated_at: iso(+NOW() - 2.5 * 36e5 + 8e4), media_url: '/api/v1/media/public/9002' },
+  { id: 503, session_id: 72, user_id: 12, group_id: 2, status: 'processing', model: 'gpt-image-1', prompt: '横版 banner，加入产品 logo 占位', media_asset_id: null, provider_task_id: 'task_a3', error: null, created_at: iso(+NOW() - 4 * 6e4), updated_at: iso(+NOW() - 6e4) },
+  { id: 504, session_id: 72, user_id: 12, group_id: 2, status: 'failed', model: 'gpt-image-1', prompt: '包含真实人物肖像的海报', media_asset_id: null, provider_task_id: 'task_a4', error: 'content_policy_violation: 请求内容不符合安全策略', created_at: iso(+NOW() - 5 * 36e5), updated_at: iso(+NOW() - 5 * 36e5 + 3e4) },
+  { id: 505, session_id: 75, user_id: 12, group_id: 2, status: 'completed', model: 'gpt-image-1', prompt: '白底电商产品图，无线耳机，柔光', media_asset_id: 9003, provider_task_id: 'task_b1', error: null, created_at: iso(+NOW() - 11 * 864e5), updated_at: iso(+NOW() - 11 * 864e5 + 7e4), media_url: '/api/v1/media/public/9003' },
+  { id: 506, session_id: 75, user_id: 12, group_id: 2, status: 'completed', model: 'gpt-image-1', prompt: '同款耳机，俯视角度', media_asset_id: 9004, provider_task_id: 'task_b2', error: null, created_at: iso(+NOW() - 11 * 864e5 + 6e5), updated_at: iso(+NOW() - 11 * 864e5 + 7e5), media_url: '/api/v1/media/public/9004' }
+]
+const STUDIO_MODELS = { 2: ['claude-sonnet-4-5', 'claude-fable-4-1', 'claude-haiku-4-5', 'gpt-image-1'], 3: ['gpt-5-codex', 'gpt-5', 'gpt-image-1'], 1: ['claude-sonnet-4-5', 'gpt-5', 'gemini-2.5-pro'] }
+
 const emptyPage = (query) => ({ items: [], total: 0, page: Number(query.get('page') || 1), page_size: Number(query.get('page_size') || 20), pages: 0 })
 
 const rangeDays = (query) => {
@@ -1696,10 +1798,8 @@ const routes = {
   }),
   'GET /api/v1/user/totp/status': () => ({ enabled: false, encryption_key_configured: true }),
   'GET /api/v1/user/passkeys': () => [],
-  'GET /api/v1/user/aff': () => ({
-    aff_code: 'S2A-XY42', invite_url: 'https://console.sub2api.dev/register?aff=S2A-XY42', rebate_rate: 0.1, invitee_count: 6,
-    total_rebate: 18.4, available_rebate: 6.2, frozen_rebate: 2.1, transferred_rebate: 10.1, invitees: []
-  }),
+  'GET /api/v1/user/aff': () => USER_AFF_DETAIL(),
+  'POST /api/v1/user/aff/transfer': () => ({ transferred_quota: 6.2, balance: 44.45 }),
 
   // ---- keys / groups / subscriptions ----
   'GET /api/v1/keys': (ctx) => paginate(API_KEYS, ctx.query, 10),
@@ -1737,12 +1837,21 @@ const routes = {
   'GET /api/v1/tickets/unread-count': () => ({ count: 3 }),
   'GET /api/v1/tickets/rate-groups': () => [{ group_id: 1, name: '默认分组', base_rate_multiplier: 1, user_rate_multiplier: 1, effective_rate: 1 }, { group_id: 2, name: 'Claude Max', base_rate_multiplier: 1.2, user_rate_multiplier: 1.1, effective_rate: 1.1 }],
   'GET /api/v1/payment/config': () => USER_PAYMENT_CONFIG,
-  'GET /api/v1/payment/plans': () => [],
+  'GET /api/v1/payment/plans': () => MOCK_PAY_PLANS.filter((p) => p.for_sale),
   'GET /api/v1/payment/orders/my': (ctx) => { let items = MOCK_PAY_ORDERS.map((o) => ({ ...o, user_id: 12 })); const st = ctx.query.get('status'); if (st) items = items.filter((o) => o.status === st); return paginate(items, ctx.query) },
   'GET /api/v1/payment/orders/refund-eligible-providers': () => ({ provider_instance_ids: ['alipay-main', 'stripe-main'] }),
   'GET /api/v1/payment/orders/invoice-eligible-providers': () => ({ provider_instance_ids: ['alipay-main', 'wxpay-main', 'stripe-main'] }),
   'GET /api/v1/payment/invoices': (ctx) => paginate(MOCK_INVOICES.map((v) => ({ ...v, user_id: 12 })), ctx.query),
-  'GET /api/v1/redeem/history': () => [],
+  'GET /api/v1/redeem/history': () => USER_REDEEM_HISTORY,
+  'GET /api/v1/redeem/history-page': (ctx) => { const ty = ctx.query.get('type'); const items = ty ? USER_REDEEM_HISTORY.filter((r) => r.type === ty) : USER_REDEEM_HISTORY; return { ...paginate(items, ctx.query), total_recharged: 25 } },
+  'POST /api/v1/redeem': (ctx) => ({ message: 'ok', type: 'balance', value: 10, new_balance: 48.25 }),
+  'GET /api/v1/payment/checkout-info': () => USER_CHECKOUT_INFO(),
+  'GET /api/v1/payment/limits': () => ({ methods: USER_CHECKOUT_INFO().methods, global_min: 10, global_max: 5000 }),
+  'GET /api/v1/creation/sessions': (ctx) => { const st = ctx.query.get('status'); const items = STUDIO_SESSIONS.filter((x) => !st || x.status === st); return { items, total: items.length, page: 1, page_size: Number(ctx.query.get('page_size') || 100) } },
+  'POST /api/v1/creation/sessions': (ctx) => ({ id: 76, user_id: 12, group_id: (ctx.body && ctx.body.group_id) || 2, title: (ctx.body && ctx.body.title) || '新会话', model: (ctx.body && ctx.body.model) || 'claude-sonnet-4-5', mode: (ctx.body && ctx.body.mode) || 'chat', status: 'active', created_at: iso(+NOW()), updated_at: iso(+NOW()) }),
+  'GET /api/v1/creation/images': (ctx) => { const sid = ctx.query.get('session_id'); const items = STUDIO_IMAGES.filter((x) => !sid || String(x.session_id) === sid); return { items, total: items.length, page: 1, page_size: 100 } },
+  'GET /api/v1/creation/models': (ctx) => ({ object: 'list', data: (STUDIO_MODELS[ctx.query.get('group_id')] || STUDIO_MODELS[2]).map((id) => ({ id, object: 'model', owned_by: id.startsWith('claude') ? 'anthropic' : id.startsWith('gemini') ? 'google' : 'openai' })) }),
+  'GET /api/v1/pages/getting-started': () => ({ __raw: CUSTOM_PAGE_MD, __type: 'text/markdown; charset=utf-8' }),
   'GET /api/v1/channels/available': () => USER_AVAILABLE_CHANNELS,
   'GET /api/v1/admin/channel-monitor-v2/config': () => V2_CONFIG,
   'PUT /api/v1/admin/channel-monitor-v2/config': (ctx) => Object.assign(V2_CONFIG, ctx.body || {}, { version: V2_CONFIG.version + 1 }),
@@ -2004,6 +2113,11 @@ const routes = {
 
 // Pattern routes for parameterized paths
 const patternRoutes = [
+  [/^GET \/api\/v1\/creation\/sessions\/(\d+)\/messages$/, (ctx, m) => STUDIO_MESSAGES[m[1]] || []],
+  [/^POST \/api\/v1\/creation\/sessions\/(\d+)\/messages$/, (ctx, m) => studioMsg(Date.now() % 1e7, Number(m[1]), 'user', (ctx.body && ctx.body.content) || '', 10)],
+  [/^(PATCH|DELETE) \/api\/v1\/creation\/sessions\/(\d+)$/, (ctx, m) => ({ ...(STUDIO_SESSIONS.find((x) => x.id === Number(m[2])) || STUDIO_SESSIONS[0]), ...(ctx.body || {}) })],
+  [/^GET \/api\/v1\/media\/public\/(\d+)$/, (ctx, m) => ({ __raw: MOCK_SVG(['海报 A', '海报 B', '产品图 1', '产品图 2'][Number(m[1]) - 9001] || 'asset', 200 + (Number(m[1]) % 4) * 45), __type: 'image/svg+xml' })],
+  [/^GET \/api\/v1\/pages\/[^/]+\/images\/.+$/, () => ({ __raw: MOCK_SVG('示例图', 260), __type: 'image/svg+xml' })],
   [/^GET \/api\/v1\/subscriptions\/(\d+)\/progress$/, (ctx, m) => subProgress(USER_SUBS.find((x) => x.id === Number(m[1])) || USER_SUBS[0])],
   [/^GET \/api\/v1\/tickets\/(\d+)$/, (ctx, m) => USER_TICKETS.find((t) => t.id === Number(m[1])) || USER_TICKETS[0]],
   [/^GET \/api\/v1\/tickets\/(\d+)\/messages$/, (ctx, m) => ticketMessages(USER_TICKETS.find((t) => t.id === Number(m[1])) || USER_TICKETS[0])],
@@ -2215,6 +2329,10 @@ location.replace(${JSON.stringify(to)});
   try {
     const data = await handler(ctx, match)
     console.log(`${stamp} ${method} ${path}${url.search}`)
+    if (data && typeof data === 'object' && data.__raw !== undefined) {
+      res.writeHead(data.__status || 200, { 'Content-Type': data.__type || 'text/plain; charset=utf-8', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' })
+      return res.end(data.__raw)
+    }
     send(res, 200, { code: 0, message: 'ok', data })
   } catch (err) {
     console.error(`${stamp} ${method} ${path} !! ${err && err.stack}`)
