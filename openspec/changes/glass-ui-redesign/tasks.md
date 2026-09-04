@@ -111,17 +111,17 @@
 
 ## 10. 系统设置 · 原型 06（2 个代理：A 通用/条款/功能/安全/用户默认；B 网关/支付/邮件/备份 + 子弹层）
 
-- [ ] 10.1 页头 dirty 指示（"● n 项未保存的更改"）+ 重置 + 保存（`form="settings-form"`）；左侧分区导航 34px 项 + 未保存 6px 圆点 + 部署信息卡（版本 / PostgreSQL / Redis / Codex 版本同步）；<768 `.field` select；验证截图与参考图 06 一致、`SettingsView.spec` 通过
-- [ ] 10.2 通用设置 tab：全部行 `SettingRow`（文本 420 / 数字 120 / 开关 36×20 / Logo 44 预览 + 32 上传 + ghost 移除 / 二维码上传虚线框 / 首页内容文本域）；验证截图 diff < 1%（参考图 502–517 行）
-- [ ] 10.3 登录条款 tab（文档列表编辑器 `180px 1fr 1fr 32px` 行网格 + 32 添加 + 32 danger 删除）；验证截图
-- [ ] 10.4 功能开关 tab（每行开关 + 危险提示 12 warning-text）；验证截图
-- [ ] 10.5 安全与认证 tab（OAuth 提供方列表编辑器、Turnstile / 腾讯验证码、TOTP、Passkey、IP 策略）；验证截图 + 相关 spec
-- [ ] 10.6 用户默认值 tab（数字字段 120、分组 `UiSelect`、`OpenAIFastPolicyUserSelector` 令牌化）；验证截图
-- [ ] 10.7 网关服务 tab（自定义端点列表编辑器、超时 / 重试数字字段、模型映射表格）；验证截图
-- [ ] 10.8 支付设置 tab（渠道卡片 + 品牌按钮保留、汇率 / 限额字段、订阅套餐入口）；验证截图 + `payment` 相关 spec
-- [ ] 10.9 邮件设置 tab（SMTP 字段、`EmailTemplateEditor.vue` 文本域 + 预览玻璃卡、测试邮件 `UiModal`）；验证截图
-- [ ] 10.10 数据备份 tab（`BackupView.vue` / dataManagement：S3 配置 `SettingRow`、历史记录 DataTable、恢复确认 `ConfirmDialog`）；验证截图 + spec
-- [ ] 10.11 `lint:ui` 对 `SettingsView.vue` 与 `components/admin/settings/**` 0 命中、`anchor-diff` 无 v-model 丢失、`vue-tsc` 0 错误；提交 `feat(glass): system settings (tasks 10.1–10.10)`
+- [x] 10.1 页头 dirty 指示（"● n 项未保存的更改"）+ 重置 + 保存（`form="settings-form"`）；左侧分区导航 34px 项 + 未保存 6px 圆点 + 部署信息卡（版本 / PostgreSQL / Redis / Codex 版本同步）；<768 `.field` select；验证截图与参考图 06 一致、`SettingsView.spec` 通过
+- [x] 10.2 通用设置 tab：全部行 `SettingRow`（文本 420 / 数字 120 / 开关 36×20 / Logo 44 预览 + 32 上传 + ghost 移除 / 二维码上传虚线框 / 首页内容文本域）；验证截图 diff < 1%（参考图 502–517 行）
+- [x] 10.3 登录条款 tab（文档列表编辑器 `180px 1fr 1fr 32px` 行网格 + 32 添加 + 32 danger 删除）；验证截图
+- [x] 10.4 功能开关 tab（每行开关 + 危险提示 12 warning-text）；验证截图
+- [x] 10.5 安全与认证 tab（OAuth 提供方列表编辑器、Turnstile / 腾讯验证码、TOTP、Passkey、IP 策略）；验证截图 + 相关 spec
+- [x] 10.6 用户默认值 tab（数字字段 120、分组 `UiSelect`、`OpenAIFastPolicyUserSelector` 令牌化）；验证截图
+- [x] 10.7 网关服务 tab（自定义端点列表编辑器、超时 / 重试数字字段、模型映射表格）；验证截图
+- [x] 10.8 支付设置 tab（渠道卡片 + 品牌按钮保留、汇率 / 限额字段、订阅套餐入口）；验证截图 + `payment` 相关 spec
+- [x] 10.9 邮件设置 tab（SMTP 字段、`EmailTemplateEditor.vue` 文本域 + 预览玻璃卡、测试邮件 `UiModal`）；验证截图
+- [x] 10.10 数据备份 tab（`BackupView.vue` / dataManagement：S3 配置 `SettingRow`、历史记录 DataTable、恢复确认 `ConfirmDialog`）；验证截图 + spec
+- [x] 10.11 `lint:ui` 对 `SettingsView.vue` 与 `components/admin/settings/**` 0 命中、`anchor-diff` 无 v-model 丢失、`vue-tsc` 0 错误；提交 `feat(glass): system settings (tasks 10.1–10.10)`
 
 ## 11. 管理员列表、详情与仪表盘（3 批，每批 4 个代理；每个代理 1–2 个路由）
 

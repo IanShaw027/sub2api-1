@@ -1,25 +1,14 @@
 <template>
  <div v-show="activeTab === 'users'" class="settings-stack">
  <!-- Default Settings -->
- <div class="glass-card settings-card">
- <div
- class="settings-card-head"
+ <SettingsSection
+ :title="t('admin.settings.defaults.title')"
+ :description="t('admin.settings.defaults.description')"
  >
- <h2 class="settings-card-title">
- {{ t("admin.settings.defaults.title") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.defaults.description") }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="settings-row-group">
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.defaults.defaultBalance')"
+ :description="t('admin.settings.defaults.defaultBalanceHint')"
  >
- {{ t("admin.settings.defaults.defaultBalance") }}
- </label>
  <input
  v-model.number="form.default_balance"
  type="number"
@@ -28,16 +17,11 @@
  class="input"
  placeholder="0.00"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.defaults.defaultBalanceHint") }}
- </p>
- </div>
- <div class="settings-row">
- <label
- class="settings-row-label"
+ </SettingRow>
+ <SettingRow
+ :label="t('admin.settings.defaults.defaultConcurrency')"
+ :description="t('admin.settings.defaults.defaultConcurrencyHint')"
  >
- {{ t("admin.settings.defaults.defaultConcurrency") }}
- </label>
  <input
  v-model.number="form.default_concurrency"
  type="number"
@@ -45,16 +29,11 @@
  class="input"
  placeholder="1"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.defaults.defaultConcurrencyHint") }}
- </p>
- </div>
- <div class="settings-row">
- <label
- class="settings-row-label"
+ </SettingRow>
+ <SettingRow
+ :label="t('admin.settings.defaults.defaultUserRpmLimit')"
+ :description="t('admin.settings.defaults.defaultUserRpmLimitHint')"
  >
- {{ t("admin.settings.defaults.defaultUserRpmLimit") }}
- </label>
  <input
  v-model.number="form.default_user_rpm_limit"
  type="number"
@@ -63,24 +42,13 @@
  class="input"
  placeholder="0"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.defaults.defaultUserRpmLimitHint") }}
- </p>
- </div>
- </div>
+ </SettingRow>
 
- <div class="border-t border-line pt-4 ">
- <div class="mb-3 flex items-center justify-between">
- <div>
- <label class="font-medium text-foreground ">
- {{ t("admin.settings.defaults.defaultSubscriptions") }}
- </label>
- <p class="text-sm text-muted ">
- {{
- t("admin.settings.defaults.defaultSubscriptionsHint")
- }}
- </p>
- </div>
+ <SettingRow
+ :label="t('admin.settings.defaults.defaultSubscriptions')"
+ :description="t('admin.settings.defaults.defaultSubscriptionsHint')"
+ >
+ <div class="mb-3 flex justify-end">
  <button
  type="button"
  class="btn-glass-secondary"
@@ -197,7 +165,7 @@
  <div class="flex items-end">
  <button
  type="button"
- class="btn-glass-secondary default-sub-delete-btn w-full text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary default-sub-delete-btn w-full text-danger-text "
  @click="removeDefaultSubscription(index)"
  >
  {{ t("common.delete") }}
@@ -205,21 +173,16 @@
  </div>
  </div>
  </div>
- </div>
+ </SettingRow>
 
  <!-- ★ 新增：系统全局默认平台限额矩阵 -->
- <div class="border-t border-line pt-4 ">
- <div class="mb-3">
- <label class="font-medium text-foreground ">
- {{ t("admin.settings.defaults.defaultPlatformQuotas") }}
- </label>
- <p class="settings-card-desc">
- {{ t("admin.settings.defaults.defaultPlatformQuotasHint") }}
- </p>
- <p class="mt-0.5 text-xs text-amber-600 ">
+ <SettingRow
+ :label="t('admin.settings.defaults.defaultPlatformQuotas')"
+ :description="t('admin.settings.defaults.defaultPlatformQuotasHint')"
+ >
+ <p class="mb-2 text-xs text-warning-text ">
  {{ t("admin.settings.defaults.platformQuotaNotice") }}
  </p>
- </div>
  <div class="overflow-x-auto">
  <table class="min-w-full text-sm">
  <thead>
@@ -269,37 +232,22 @@
  </tbody>
  </table>
  </div>
- </div>
+ </SettingRow>
  <!-- /全局平台限额矩阵 -->
- </div>
- </div>
+ </SettingsSection>
 
- <div class="glass-card settings-card">
- <div
- class="settings-card-head"
+ <SettingsSection
+ :title="t('admin.settings.authSourceDefaults.title')"
+ :description="t('admin.settings.authSourceDefaults.description')"
  >
- <h2 class="settings-card-title">
- {{ t("admin.settings.authSourceDefaults.title") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.authSourceDefaults.description") }}
- </p>
- </div>
- <div class="settings-card-body">
- <div
- class="flex items-center justify-between rounded border border-line px-4 py-3 "
+ <SettingRow
+ :label="t('admin.settings.authSourceDefaults.requireEmailLabel')"
+ :description="t('admin.settings.authSourceDefaults.requireEmailHint')"
  >
- <div>
- <label class="font-medium text-foreground ">
- {{ t("admin.settings.authSourceDefaults.requireEmailLabel") }}
- </label>
- <p class="text-sm text-muted ">
- {{ t("admin.settings.authSourceDefaults.requireEmailHint") }}
- </p>
- </div>
  <Toggle v-model="form.force_email_on_third_party_signup" />
- </div>
+ </SettingRow>
 
+ <div class="settings-card-body">
  <div class="space-y-4">
  <div
  v-for="authSource in authSourceDefaultsMeta"
@@ -531,7 +479,7 @@
  <div class="flex items-end">
  <button
  type="button"
- class="btn-glass-secondary w-full text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary w-full text-danger-text "
  @click="
  removeAuthSourceDefaultSubscription(
  authSource.source,
@@ -610,7 +558,7 @@
  </div>
  </div>
  </div>
- </div>
+ </SettingsSection>
  </div>
 </template>
 
@@ -624,6 +572,8 @@ import Select from "@/components/common/Select.vue";
 import GroupBadge from "@/components/common/GroupBadge.vue";
 import GroupOptionItem from "@/components/common/GroupOptionItem.vue";
 import Toggle from "@/components/common/Toggle.vue";
+import SettingsSection from "@/components/ui/SettingsSection.vue";
+import SettingRow from "@/components/ui/SettingRow.vue";
 
 const settingsForm = inject(SettingsFormKey)!;
 const {

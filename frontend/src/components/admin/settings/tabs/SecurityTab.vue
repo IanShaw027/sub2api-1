@@ -15,15 +15,15 @@
  <div class="settings-card-body">
  <!-- Security Warning -->
  <div
- class="rounded-lg border border-amber-200 bg-amber-50 p-4 "
+ class="rounded-lg border border-warning bg-[color-mix(in_oklch,var(--warning)_10%,transparent)] p-4 "
  >
  <div class="flex items-start">
  <Icon
  name="exclamationTriangle"
  size="md"
- class="mt-0.5 flex-shrink-0 text-amber-500"
+ class="mt-0.5 flex-shrink-0 text-warning-text"
  />
- <p class="ml-3 text-sm text-amber-700 ">
+ <p class="ml-3 text-sm text-warning-text ">
  {{ t("admin.settings.adminApiKey.securityWarning") }}
  </p>
  </div>
@@ -114,7 +114,7 @@
  type="button"
  @click="deleteAdminApiKey"
  :disabled="adminApiKeyOperating"
- class="btn-glass-secondary text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary text-danger-text "
  >
  {{ t("admin.settings.adminApiKey.delete") }}
  </button>
@@ -124,16 +124,16 @@
  <!-- Newly Generated Key Display -->
  <div
  v-if="newAdminApiKey"
- class="space-y-3 rounded-lg border border-green-200 bg-green-50 p-4 "
+ class="space-y-3 rounded-lg border border-success bg-[color-mix(in_oklch,var(--success)_10%,transparent)] p-4 "
  >
  <p
- class="text-sm font-medium text-green-700 "
+ class="text-sm font-medium text-success-text "
  >
  {{ t("admin.settings.adminApiKey.keyWarning") }}
  </p>
  <div class="flex items-center gap-2">
  <code
- class="flex-1 select-all break-all rounded border border-green-300 bg-surface px-3 py-2 font-mono text-sm "
+ class="flex-1 select-all break-all rounded border border-success bg-surface px-3 py-2 font-mono text-sm "
  >
  {{ newAdminApiKey }}
  </code>
@@ -145,15 +145,13 @@
  {{ t("admin.settings.adminApiKey.copyKey") }}
  </button>
  </div>
- <p class="text-xs text-green-600 ">
+ <p class="text-xs text-success-text ">
  {{ t("admin.settings.adminApiKey.usage") }}
  </p>
  </div>
  </div>
  </div>
  </div>
- </div>
- <div v-show="activeTab === 'security'" class="settings-stack">
  <!-- Registration Settings -->
  <div class="glass-card settings-card">
  <div
@@ -364,7 +362,7 @@
  <!-- Warning when encryption key not configured -->
  <p
  v-if="!form.totp_encryption_key_configured"
- class="mt-2 text-sm text-amber-600 "
+ class="mt-2 text-sm text-warning-text "
  >
  {{ t("admin.settings.registration.totpKeyNotConfigured") }}
  </p>
@@ -399,8 +397,8 @@
  class="mt-3 rounded-lg border px-3 py-2 text-sm"
  :class="
  form.passkey_configured
- ? 'border-green-200 bg-green-50 text-green-800 '
- : 'border-amber-200 bg-amber-50 text-amber-800 '
+ ? 'border-success bg-[color-mix(in_oklch,var(--success)_10%,transparent)] text-success-text '
+ : 'border-warning bg-[color-mix(in_oklch,var(--warning)_10%,transparent)] text-warning-text '
  "
  data-testid="passkey-config-status"
  >
@@ -1786,7 +1784,7 @@
  (form.wechat_connect_mp_enabled ||
  form.wechat_connect_mobile_enabled)
  "
- class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 "
+ class="rounded-lg border border-warning bg-[color-mix(in_oklch,var(--warning)_10%,transparent)] px-4 py-3 text-sm text-warning-text "
  >
  {{
  localText(
@@ -2067,7 +2065,7 @@
  <p class="text-sm text-muted ">
  {{ t("admin.settings.dingtalk.syncCorpEmailHint") }}
  </p>
- <p class="text-xs text-amber-600 mt-1">
+ <p class="text-xs text-warning-text mt-1">
  {{ t("admin.settings.dingtalk.syncCorpEmailPermissionHint") }}
  </p>
  </div>
@@ -2113,7 +2111,7 @@
  <p class="text-sm text-muted ">
  {{ t("admin.settings.dingtalk.syncDeptHint") }}
  </p>
- <p class="text-xs text-amber-600 mt-1">
+ <p class="text-xs text-warning-text mt-1">
  {{ t("admin.settings.dingtalk.syncDeptPermissionHint") }}
  </p>
  </div>

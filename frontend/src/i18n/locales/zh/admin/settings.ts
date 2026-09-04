@@ -1319,7 +1319,7 @@ export default {
         version: '版本',
         codexSync: 'Codex 版本同步'
       },
-      saveSettings: '保存设置',
+      saveSettings: '保存更改',
       saving: '保存中...',
       settingsSaved: '设置保存成功',
       smtpConnectionSuccess: 'SMTP 连接成功',

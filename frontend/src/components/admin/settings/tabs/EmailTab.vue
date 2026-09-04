@@ -197,29 +197,61 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-end gap-4">
- <div class="settings-row flex-1">
- <label
- class="settings-row-label"
+ <div class="flex items-center justify-between gap-4">
+ <p class="text-sm text-muted ">
+ {{ t("admin.settings.testEmail.recipientEmailPlaceholder") }}
+ </p>
+ <button
+ type="button"
+ @click="openTestEmailModal"
+ :disabled="loadFailed"
+ class="btn-glass-secondary"
  >
+ {{ t("admin.settings.testEmail.sendTestEmail") }}
+ </button>
+ </div>
+ </div>
+ </div>
+
+ <!-- Send Test Email Dialog -->
+ <UiModal
+ :open="testEmailModalOpen"
+ :title="t('admin.settings.testEmail.title')"
+ :subtitle="t('admin.settings.testEmail.description')"
+ width="sm"
+ :close-label="t('common.cancel')"
+ @close="testEmailModalOpen = false"
+ >
+ <form
+ id="send-test-email-form"
+ @submit.prevent="sendTestEmail"
+ >
+ <label class="input-label">
  {{ t("admin.settings.testEmail.recipientEmail") }}
  </label>
  <input
  v-model="testEmailAddress"
  type="email"
  class="input"
+ autofocus
  :placeholder="
  t('admin.settings.testEmail.recipientEmailPlaceholder')
  "
  />
- </div>
+ </form>
+ <template #footer>
  <button
  type="button"
- @click="sendTestEmail"
- :disabled="
- sendingTestEmail || !testEmailAddress || loadFailed
- "
- class="btn-glass-secondary"
+ class="btn btn-secondary"
+ @click="testEmailModalOpen = false"
+ >
+ {{ t("common.cancel") }}
+ </button>
+ <button
+ type="submit"
+ form="send-test-email-form"
+ :disabled="sendingTestEmail || !testEmailAddress"
+ class="btn btn-primary"
  >
  <svg
  v-if="sendingTestEmail"
@@ -247,9 +279,8 @@
  : t("admin.settings.testEmail.sendTestEmail")
  }}
  </button>
- </div>
- </div>
- </div>
+ </template>
+ </UiModal>
 
  <!-- 订阅到期提醒 -->
  <div class="glass-card settings-card">
@@ -427,6 +458,7 @@ import { ref } from "vue";
 import { adminAPI } from "@/api";
 import Icon from "@/components/icons/Icon.vue";
 import Toggle from "@/components/common/Toggle.vue";
+import UiModal from "@/components/ui/UiModal.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
 import { extractApiErrorMessage } from "@/utils/apiError";
 
@@ -446,6 +478,12 @@ const testingSmtp = ref(false);
 const sendingTestEmail = ref(false);
 
 const testEmailAddress = ref("");
+
+const testEmailModalOpen = ref(false);
+
+function openTestEmailModal() {
+  testEmailModalOpen.value = true;
+}
 
 const addQuotaNotifyEmail = () => {
   if (!form.account_quota_notify_emails) {
@@ -507,6 +545,7 @@ async function sendTestEmail() {
     });
     // API returns { message: "..." } on success, errors are thrown as exceptions
     appStore.showSuccess(result.message || t("admin.settings.testEmailSent"));
+    testEmailModalOpen.value = false;
   } catch (error: unknown) {
     appStore.showError(
       extractApiErrorMessage(error, t("admin.settings.failedToSendTestEmail")),

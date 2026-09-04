@@ -66,3 +66,7 @@
 | `/admin/announcements` | 11.8 Markdown 预览 | — | 新增内容预览：复用既有 `marked`+`DOMPurify`+`@/styles/announcement-markdown.css`（`AnnouncementPopup.vue` 已用的同一套渲染管线与样式类 `markdown-body prose prose-sm max-w-none`），未引入新依赖 | 已实现（原型未覆盖弹层内部） | 11.8 明确要求「Markdown 编辑器 `.field` 文本域 220 + 预览玻璃卡」 | 同上 |
 | `/admin/announcements` | 11.8 受众/排期行 | — | 状态、通知方式、开始/结束时间、展示条件（受众）五行改用共享 `SettingRow`（套 `SettingsSection` 卡片，来自 `components/ui/`，只读复用未修改），替换原先裸 `<label class="input-label">+控件` 结构；`AnnouncementTargetingEditor.vue` 组件本身未改动交互，仅作为 `SettingRow` 的 control 插槽内容 | 已实现 | 11.8 明确要求「受众/排期行使用 SettingRow」 | 同上 |
 | `/admin/announcements` | 令牌化 | `AnnouncementTargetingEditor.vue`：`rounded-2xl`（legacy 类，2 处）、`border-red-200 bg-red-50`（Tailwind 调色板字面色，校验错误提示框） | `rounded-2xl`→`rounded-xl`；`shadow-sm`→`shadow-[var(--shadow-pop)]`；错误提示框改为 `border-[color-mix(in_oklch,var(--danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--danger)_12%,transparent)]`（与 `EmailTemplateEditor.vue` 同类告警框配方一致） | 已修复 | 规则 2/`ui-lint.mjs` 明确禁止 `rounded-2xl` 与调色板字面色 | `node scripts/ui-lint.mjs` 对该文件命中数 0 |
+| 系统设置 · 支付 tab（10B） | 原型无「订阅套餐」入口 | 新增 router-link 到 `/admin/orders/plans`，保留真实产品功能（规则 1） |
+| 系统设置 · 数据备份（10B） | 原型操作按钮在卡片标题右侧 | `SettingsSection` header 插槽布局限制，按钮行移至标题下方 |
+| 系统设置 · 数据备份（10B） | 任务只要求恢复走 `ConfirmDialog` | 删除备份同样改为两步确认；DataTable 用 `#empty` 插槽保留「暂无备份记录」专属文案 |
+| 系统设置 · SettingRow / SettingsSection（lead） | 行高 69/87、卡间距 24 | 原语修正：标题 19px / 说明 17px 行高（原型 `line-height: normal` 实测），去掉 `SettingsSection` 兄弟 margin（由父级 gap 控制），删除 10A 的 `!important` 覆盖 → 行 67/84、卡间距 12 |

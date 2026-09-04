@@ -1,57 +1,45 @@
 <template>
-  <div class="glass-card">
-    <div class="border-b border-line px-6 py-4">
-      <h2 class="text-lg font-semibold text-foreground">
-        {{ t('admin.settings.ipSecurity.title') }}
-      </h2>
-      <p class="mt-1 text-sm text-muted">
-        {{ t('admin.settings.ipSecurity.description') }}
-      </p>
-    </div>
-    <div class="space-y-5 p-6">
-      <div class="flex items-center justify-between">
-        <div>
-          <label class="font-medium text-foreground">{{ t('admin.settings.ipSecurity.enable') }}</label>
-          <p class="text-sm text-muted">{{ t('admin.settings.ipSecurity.enableHint') }}</p>
-        </div>
-        <Toggle v-model="form.enabled" />
-      </div>
-      <div v-if="form.enabled" class="grid gap-4 border-t border-line pt-4 md:grid-cols-2">
-        <div>
-          <label class="input-label">{{ t('admin.settings.ipSecurity.windowMinutes') }}</label>
-          <input v-model.number="form.window_minutes" type="number" min="1" max="1440" class="input" />
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.settings.ipSecurity.accountThreshold') }}</label>
-          <input v-model.number="form.account_threshold" type="number" min="2" max="100" class="input" />
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.settings.ipSecurity.window2Minutes') }}</label>
-          <input v-model.number="form.window2_minutes" type="number" min="0" max="10080" class="input" />
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.settings.ipSecurity.accountThreshold2') }}</label>
-          <input v-model.number="form.account_threshold2" type="number" min="2" max="100" class="input" />
-        </div>
-        <div class="md:col-span-2">
-          <label class="input-label">{{ t('admin.settings.ipSecurity.learningUntil') }}</label>
-          <input v-model="form.learning_until" type="text" placeholder="2026-08-16T00:00:00Z" class="input" />
-        </div>
-      </div>
-      <div class="flex items-center justify-between border-t border-line pt-4">
-        <div>
-          <label class="font-medium text-foreground">{{ t('admin.settings.ipSecurity.blockDatacenterRegistration') }}</label>
-          <p class="text-sm text-muted">{{ t('admin.settings.ipSecurity.blockDatacenterRegistrationHint') }}</p>
-        </div>
-        <Toggle v-model="form.block_datacenter_registration" />
-      </div>
+  <SettingsSection
+    :title="t('admin.settings.ipSecurity.title')"
+    :description="t('admin.settings.ipSecurity.description')"
+  >
+    <SettingRow
+      :label="t('admin.settings.ipSecurity.enable')"
+      :description="t('admin.settings.ipSecurity.enableHint')"
+    >
+      <Toggle v-model="form.enabled" />
+    </SettingRow>
+    <template v-if="form.enabled">
+      <SettingRow :label="t('admin.settings.ipSecurity.windowMinutes')">
+        <input v-model.number="form.window_minutes" type="number" min="1" max="1440" class="input" />
+      </SettingRow>
+      <SettingRow :label="t('admin.settings.ipSecurity.accountThreshold')">
+        <input v-model.number="form.account_threshold" type="number" min="2" max="100" class="input" />
+      </SettingRow>
+      <SettingRow :label="t('admin.settings.ipSecurity.window2Minutes')">
+        <input v-model.number="form.window2_minutes" type="number" min="0" max="10080" class="input" />
+      </SettingRow>
+      <SettingRow :label="t('admin.settings.ipSecurity.accountThreshold2')">
+        <input v-model.number="form.account_threshold2" type="number" min="2" max="100" class="input" />
+      </SettingRow>
+      <SettingRow :label="t('admin.settings.ipSecurity.learningUntil')">
+        <input v-model="form.learning_until" type="text" placeholder="2026-08-16T00:00:00Z" class="input" />
+      </SettingRow>
+    </template>
+    <SettingRow
+      :label="t('admin.settings.ipSecurity.blockDatacenterRegistration')"
+      :description="t('admin.settings.ipSecurity.blockDatacenterRegistrationHint')"
+    >
+      <Toggle v-model="form.block_datacenter_registration" />
+    </SettingRow>
+    <div class="settings-card-body">
       <div class="flex justify-end">
         <button type="button" class="btn btn-primary btn-sm" :disabled="saving" @click="saveConfig">
           {{ t('common.save') }}
         </button>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3 border-t border-line pt-4">
+      <div class="mt-4 flex flex-wrap items-center gap-3">
         <select v-model="status" class="input w-auto" @change="loadBans(1)">
           <option value="active">{{ t('admin.settings.ipSecurity.statusActive') }}</option>
           <option value="whitelisted">{{ t('admin.settings.ipSecurity.statusWhitelisted') }}</option>
@@ -149,7 +137,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -160,6 +148,8 @@ import ipSecurityAPI, { type IPSecurityActivityDetail, type IPSecurityBan } from
 import { useAppStore } from '@/stores/app'
 import Icon from '@/components/icons/Icon.vue'
 import Toggle from '@/components/common/Toggle.vue'
+import SettingsSection from '@/components/ui/SettingsSection.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()

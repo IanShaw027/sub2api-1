@@ -169,9 +169,14 @@ const settingsTabs = [
   { key: "security" as SettingsTab, icon: "shield" as const },
   { key: "users" as SettingsTab, icon: "user" as const },
   { key: "gateway" as SettingsTab, icon: "server" as const },
-  { key: "payment" as SettingsTab, icon: "creditCard" as const },
+  // NOTE (subagent 10A, glass-ui-redesign task 10.1): reordered email/backup/payment
+  // to match prototype reference 06 nav sequence (通用设置/登录条款/功能开关/安全与认证/
+  // 用户默认值/网关服务/邮件设置/数据备份/支付设置). No tab content changed — only the
+  // order of these three entries. Flag for 10B (owner of Payment/Email/Backup tabs)
+  // in case this conflicts with other in-flight edits to this array.
   { key: "email" as SettingsTab, icon: "mail" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },
+  { key: "payment" as SettingsTab, icon: "creditCard" as const },
 ];
 
 const settingsTabKeyboardActions = {

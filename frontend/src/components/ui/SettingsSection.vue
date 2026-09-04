@@ -27,10 +27,6 @@ defineProps<{
   overflow: hidden;
 }
 
-.ui-settings-section + .ui-settings-section {
-  margin-top: 12px;
-}
-
 .ui-settings-section-header {
   display: flex;
   flex-direction: column;

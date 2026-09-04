@@ -1,56 +1,32 @@
 <template>
  <div v-show="activeTab === 'features'" class="settings-stack">
 
- <div class="glass-card settings-card">
- <div class="settings-card-head">
- <h2 class="settings-card-title">
- {{ t('admin.settings.features.ticket.title') }}
- </h2>
- <p class="settings-card-desc">
- {{ t('admin.settings.features.ticket.description') }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.ticket.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.ticket.enabledHint') }}
- </p>
- </div>
+ <SettingsSection
+ :title="t('admin.settings.features.ticket.title')"
+ :description="t('admin.settings.features.ticket.description')"
+ >
+ <SettingRow
+ :label="t('admin.settings.features.ticket.enabled')"
+ :description="t('admin.settings.features.ticket.enabledHint')"
+ >
  <Toggle v-model="form.ticket_enabled" />
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
- <div class="glass-card settings-card">
- <div class="settings-card-head">
- <h2 class="settings-card-title">
- {{ t('admin.settings.features.creationCenter.title') }}
- </h2>
- <p class="settings-card-desc">
- {{ t('admin.settings.features.creationCenter.description') }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.creationCenter.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.creationCenter.enabledHint') }}
- </p>
- </div>
+ <SettingsSection
+ :title="t('admin.settings.features.creationCenter.title')"
+ :description="t('admin.settings.features.creationCenter.description')"
+ >
+ <SettingRow
+ :label="t('admin.settings.features.creationCenter.enabled')"
+ :description="t('admin.settings.features.creationCenter.enabledHint')"
+ >
  <Toggle v-model="form.creation_center_enabled" />
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
- <div class="glass-card settings-card">
- <div class="settings-card-head">
+ <SettingsSection>
+ <template #header>
  <h2 class="settings-card-title">
  {{ t('admin.settings.features.channelMonitor.title') }}
  </h2>
@@ -66,26 +42,16 @@
  <span aria-hidden="true">→</span>
  </router-link>
  </p>
- </div>
- <div class="settings-card-body">
- <div class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.channelMonitor.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.channelMonitor.enabledHint') }}
- </p>
- </div>
+ </template>
+ <SettingRow
+ :label="t('admin.settings.features.channelMonitor.enabled')"
+ :description="t('admin.settings.features.channelMonitor.enabledHint')"
+ >
  <Toggle v-model="form.channel_monitor_enabled" />
- </div>
+ </SettingRow>
 
- <div v-if="form.channel_monitor_enabled" class="space-y-5">
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.channelMonitor.mode') }}
- </label>
- <div class="mt-1.5 inline-flex w-full max-w-md rounded-lg border border-line bg-surface-2 p-1 ">
+ <SettingRow v-if="form.channel_monitor_enabled" :label="t('admin.settings.features.channelMonitor.mode')">
+ <div class="inline-flex w-full max-w-md rounded-lg border border-line bg-surface-2 p-1 ">
  <button
  type="button"
  class="inline-flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition"
@@ -111,7 +77,7 @@
  {{ t('admin.settings.features.channelMonitor.modeV1') }}
  </button>
  </div>
- <p class="settings-row-hint">
+ <p class="settings-row-hint mt-1.5">
  {{
  form.channel_monitor_mode === 'v1'
  ? t('admin.settings.features.channelMonitor.modeV1Hint')
@@ -121,13 +87,14 @@
  <p class="mt-1 text-xs text-muted ">
  {{ t('admin.settings.features.channelMonitor.modeHint') }}
  </p>
- </div>
+ </SettingRow>
 
- <div v-if="form.channel_monitor_mode === 'v1'">
- <label class="input-label">
- {{ t('admin.settings.features.channelMonitor.defaultInterval') }}
- <span class="text-red-500">*</span>
- </label>
+ <SettingRow
+ v-if="form.channel_monitor_enabled && form.channel_monitor_mode === 'v1'"
+ :label="t('admin.settings.features.channelMonitor.defaultInterval')"
+ :description="t('admin.settings.features.channelMonitor.defaultIntervalHint')"
+ >
+ <div class="flex items-center gap-1">
  <input
  v-model.number="form.channel_monitor_default_interval_seconds"
  type="number"
@@ -135,40 +102,29 @@
  max="3600"
  class="input"
  />
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.channelMonitor.defaultIntervalHint') }}
- </p>
+ <span class="text-danger-text">*</span>
  </div>
+ </SettingRow>
 
- <div v-if="form.channel_monitor_mode === 'v2'" class="flex items-start justify-between gap-4">
- <div class="min-w-0">
- <p class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.channelMonitor.hideThroughput') }}
- </p>
- <p class="mt-1 text-xs text-muted ">
- {{ t('admin.settings.features.channelMonitor.hideThroughputHint') }}
- </p>
- </div>
+ <SettingRow
+ v-if="form.channel_monitor_enabled && form.channel_monitor_mode === 'v2'"
+ :label="t('admin.settings.features.channelMonitor.hideThroughput')"
+ :description="t('admin.settings.features.channelMonitor.hideThroughputHint')"
+ >
  <Toggle v-model="form.channel_monitor_hide_throughput" />
- </div>
+ </SettingRow>
 
- <div v-if="form.channel_monitor_mode === 'v1'" class="flex items-start justify-between gap-4">
- <div class="min-w-0">
- <p class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.channelMonitor.showQuota') }}
- </p>
- <p class="mt-1 text-xs text-muted ">
- {{ t('admin.settings.features.channelMonitor.showQuotaHint') }}
- </p>
- </div>
+ <SettingRow
+ v-if="form.channel_monitor_enabled && form.channel_monitor_mode === 'v1'"
+ :label="t('admin.settings.features.channelMonitor.showQuota')"
+ :description="t('admin.settings.features.channelMonitor.showQuotaHint')"
+ >
  <Toggle v-model="form.channel_monitor_show_quota" />
- </div>
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
- <div class="glass-card settings-card">
- <div class="settings-card-head">
+ <SettingsSection>
+ <template #header>
  <h2 class="settings-card-title">
  {{ t('admin.settings.features.availableChannels.title') }}
  </h2>
@@ -184,98 +140,61 @@
  <span aria-hidden="true">→</span>
  </router-link>
  </p>
- </div>
- <div class="settings-card-body">
- <div class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.availableChannels.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.availableChannels.enabledHint') }}
- </p>
- </div>
+ </template>
+ <SettingRow
+ :label="t('admin.settings.features.availableChannels.enabled')"
+ :description="t('admin.settings.features.availableChannels.enabledHint')"
+ >
  <Toggle v-model="form.available_channels_enabled" />
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
- <div class="glass-card settings-card">
- <div class="settings-card-head">
- <h2 class="settings-card-title">
- {{ t('admin.settings.features.modelPlaza.title') }}
- </h2>
- <p class="settings-card-desc">
- {{ t('admin.settings.features.modelPlaza.description') }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.modelPlaza.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.modelPlaza.enabledHint') }}
- </p>
- </div>
+ <SettingsSection
+ :title="t('admin.settings.features.modelPlaza.title')"
+ :description="t('admin.settings.features.modelPlaza.description')"
+ >
+ <SettingRow
+ :label="t('admin.settings.features.modelPlaza.enabled')"
+ :description="t('admin.settings.features.modelPlaza.enabledHint')"
+ >
  <Toggle v-model="form.model_plaza_enabled" />
- </div>
+ </SettingRow>
 
- <div v-if="form.model_plaza_enabled" class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.modelPlaza.requireAuth') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.modelPlaza.requireAuthHint') }}
- </p>
- </div>
+ <SettingRow
+ v-if="form.model_plaza_enabled"
+ :label="t('admin.settings.features.modelPlaza.requireAuth')"
+ :description="t('admin.settings.features.modelPlaza.requireAuthHint')"
+ >
  <Toggle v-model="form.model_plaza_require_auth" />
- </div>
+ </SettingRow>
 
- <div v-if="form.model_plaza_enabled">
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.modelPlaza.priceDescription') }}
- </label>
- <p class="mb-2 mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.modelPlaza.priceDescriptionHint') }}
- </p>
+ <SettingRow
+ v-if="form.model_plaza_enabled"
+ :label="t('admin.settings.features.modelPlaza.priceDescription')"
+ :description="t('admin.settings.features.modelPlaza.priceDescriptionHint')"
+ >
  <textarea
  v-model="form.model_plaza_description"
  rows="6"
  class="input font-mono text-sm"
  ></textarea>
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
- <div class="glass-card settings-card">
- <div class="settings-card-head">
- <h2 class="settings-card-title">
- {{ t('admin.settings.features.pluginManagement.title') }}
- </h2>
- <p class="settings-card-desc">
- {{ t('admin.settings.features.pluginManagement.description') }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="flex items-center justify-between gap-4">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.pluginManagement.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.pluginManagement.enabledHint') }}
- </p>
- </div>
+ <SettingsSection
+ :title="t('admin.settings.features.pluginManagement.title')"
+ :description="t('admin.settings.features.pluginManagement.description')"
+ >
+ <SettingRow
+ :label="t('admin.settings.features.pluginManagement.enabled')"
+ :description="t('admin.settings.features.pluginManagement.enabledHint')"
+ >
  <Toggle v-model="form.plugin_management_enabled" />
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
- <div class="glass-card settings-card">
- <div class="settings-card-head">
+ <SettingsSection>
+ <template #header>
  <h2 class="settings-card-title">
  {{ t('admin.settings.features.riskControl.title') }}
  </h2>
@@ -291,88 +210,59 @@
  <span aria-hidden="true">→</span>
  </router-link>
  </p>
- </div>
- <div class="settings-card-body">
- <div class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.riskControl.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.riskControl.enabledHint') }}
- </p>
- </div>
+ </template>
+ <SettingRow
+ :label="t('admin.settings.features.riskControl.enabled')"
+ :description="t('admin.settings.features.riskControl.enabledHint')"
+ >
  <Toggle v-model="form.risk_control_enabled" />
- </div>
+ </SettingRow>
 
- <div class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.riskControl.cyberSessionBlock') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.riskControl.cyberSessionBlockHint') }}
- </p>
- </div>
+ <SettingRow
+ :label="t('admin.settings.features.riskControl.cyberSessionBlock')"
+ :description="t('admin.settings.features.riskControl.cyberSessionBlockHint')"
+ >
  <Toggle v-model="form.cyber_session_block_enabled" />
- </div>
+ </SettingRow>
 
- <div v-if="form.cyber_session_block_enabled">
- <label class="input-label">
- {{ t('admin.settings.features.riskControl.cyberSessionBlockTTL') }}
- <span class="text-red-500">*</span>
- </label>
+ <SettingRow v-if="form.cyber_session_block_enabled" :label="t('admin.settings.features.riskControl.cyberSessionBlockTTL')">
+ <div class="flex items-center gap-1">
  <input
  v-model.number="form.cyber_session_block_ttl_seconds"
  type="number"
  min="1"
  class="input"
  />
+ <span class="text-danger-text">*</span>
  </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
  <!-- Affiliate (邀请返利) feature card -->
- <div class="glass-card settings-card">
- <div class="settings-card-head">
- <h2 class="settings-card-title">
- {{ t('admin.settings.features.affiliate.title') }}
- </h2>
- <p class="settings-card-desc">
- {{ t('admin.settings.features.affiliate.description') }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.affiliate.enabled') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.affiliate.enabledHint') }}
- </p>
- </div>
+ <SettingsSection
+ :title="t('admin.settings.features.affiliate.title')"
+ :description="t('admin.settings.features.affiliate.description')"
+ >
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.enabled')"
+ :description="t('admin.settings.features.affiliate.enabledHint')"
+ >
  <Toggle v-model="form.affiliate_enabled" />
- </div>
+ </SettingRow>
 
- <div v-if="form.affiliate_enabled" class="space-y-6">
- <div class="flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.features.affiliate.adminRechargeRebate') }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t('admin.settings.features.affiliate.adminRechargeRebateHint') }}
- </p>
- </div>
+ <template v-if="form.affiliate_enabled">
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.adminRechargeRebate')"
+ :description="t('admin.settings.features.affiliate.adminRechargeRebateHint')"
+ >
  <Toggle v-model="form.affiliate_admin_recharge_enabled" />
- </div>
+ </SettingRow>
 
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.affiliate.rebateRate') }}
- </label>
- <div class="relative">
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.rebateRate')"
+ :description="t('admin.settings.features.affiliate.rebateRateHint')"
+ >
+ <div class="relative max-w-[420px]">
  <input
  v-model.number="form.affiliate_rebate_rate"
  type="number"
@@ -384,15 +274,12 @@
  />
  <span class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted">%</span>
  </div>
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.affiliate.rebateRateHint') }}
- </p>
- </div>
+ </SettingRow>
 
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.affiliate.freezeHours') }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.freezeHours')"
+ :description="t('admin.settings.features.affiliate.freezeHoursDesc')"
+ >
  <input
  v-model.number="form.affiliate_rebate_freeze_hours"
  type="number"
@@ -401,15 +288,12 @@
  max="720"
  class="input"
  />
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.affiliate.freezeHoursDesc') }}
- </p>
- </div>
+ </SettingRow>
 
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.affiliate.durationDays') }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.durationDays')"
+ :description="t('admin.settings.features.affiliate.durationDaysDesc')"
+ >
  <input
  v-model.number="form.affiliate_rebate_duration_days"
  type="number"
@@ -418,15 +302,12 @@
  max="3650"
  class="input"
  />
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.affiliate.durationDaysDesc') }}
- </p>
- </div>
+ </SettingRow>
 
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.affiliate.perInviteeCap') }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.perInviteeCap')"
+ :description="t('admin.settings.features.affiliate.perInviteeCapDesc')"
+ >
  <input
  v-model.number="form.affiliate_rebate_per_invitee_cap"
  type="number"
@@ -434,15 +315,12 @@
  min="0"
  class="input"
  />
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.affiliate.perInviteeCapDesc') }}
- </p>
- </div>
+ </SettingRow>
 
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.affiliate.lifetimeCap') }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.lifetimeCap')"
+ :description="t('admin.settings.features.affiliate.lifetimeCapDesc')"
+ >
  <input
  v-model.number="form.affiliate_rebate_cap"
  type="number"
@@ -450,15 +328,12 @@
  min="0"
  class="input"
  />
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.affiliate.lifetimeCapDesc') }}
- </p>
- </div>
+ </SettingRow>
 
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.affiliate.inviteeLimit') }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.inviteeLimit')"
+ :description="t('admin.settings.features.affiliate.inviteeLimitDesc')"
+ >
  <input
  v-model.number="form.affiliate_rebate_invitee_limit"
  type="number"
@@ -466,15 +341,12 @@
  min="0"
  class="input"
  />
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.affiliate.inviteeLimitDesc') }}
- </p>
- </div>
+ </SettingRow>
 
- <div>
- <label class="input-label">
- {{ t('admin.settings.features.affiliate.signupBonus') }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.features.affiliate.signupBonus')"
+ :description="t('admin.settings.features.affiliate.signupBonusDesc')"
+ >
  <input
  v-model.number="form.affiliate_signup_bonus"
  type="number"
@@ -482,13 +354,10 @@
  min="0"
  class="input"
  />
- <p class="mt-1 text-xs text-muted">
- {{ t('admin.settings.features.affiliate.signupBonusDesc') }}
- </p>
- </div>
+ </SettingRow>
 
  <!-- 专属用户管理 -->
- <div class="border-t border-line pt-6 ">
+ <div class="settings-card-body">
  <div class="mb-3 flex items-center justify-between">
  <div>
  <h3 class="text-sm font-semibold text-foreground ">
@@ -582,7 +451,7 @@
  </button>
  <button
  type="button"
- class="text-red-600 hover:underline"
+ class="text-danger-text hover:underline"
  @click="askResetAffiliateUser(entry)"
  >
  {{ t('common.delete') }}
@@ -619,9 +488,8 @@
  </div>
  </div>
  </div>
- </div>
- </div>
- </div>
+ </template>
+ </SettingsSection>
 
  <!-- Affiliate add/edit modal -->
  <div
@@ -630,7 +498,7 @@
  @click.self="closeAffiliateModal"
  >
  <div class="w-full max-w-md glass-card-solid rounded-hero p-6">
- <h3 class="mb-4 text-lg font-semibold">
+ <h3 class="mb-4 settings-card-title">
  {{ affiliateModal.mode === 'add' ? t('admin.settings.features.affiliate.modal.addTitle') : t('admin.settings.features.affiliate.modal.editTitle') }}
  </h3>
  <div class="space-y-4">
@@ -647,7 +515,7 @@
  </div>
  <button
  type="button"
- class="text-lg leading-none text-muted hover:text-red-600"
+ class="text-lg leading-none text-muted hover:text-danger-text"
  :title="t('admin.settings.features.affiliate.modal.changeUser')"
  @click="clearSelectedAffiliateUser"
  >
@@ -755,7 +623,7 @@
  @click.self="affiliateBatchModal.open = false"
  >
  <div class="w-full max-w-md glass-card-solid rounded-hero p-6">
- <h3 class="mb-4 text-lg font-semibold">
+ <h3 class="mb-4 settings-card-title">
  {{ t('admin.settings.features.affiliate.batchModal.title', { count: affiliateState.selected.length }) }}
  </h3>
  <p class="mb-4 text-sm text-muted">
@@ -800,6 +668,8 @@ import { inject } from "vue";
 import { SettingsFormKey } from "../useSettingsForm";
 import { reactive, computed } from "vue";
 import Toggle from "@/components/common/Toggle.vue";
+import SettingsSection from "@/components/ui/SettingsSection.vue";
+import SettingRow from "@/components/ui/SettingRow.vue";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage } from "@/utils/apiError";
 

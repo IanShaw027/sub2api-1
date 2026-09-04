@@ -1,208 +1,159 @@
 <template>
     <div class="space-y-6">
       <!-- S3 Storage Config -->
-      <div class="glass-card p-6">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 class="text-base font-semibold text-foreground ">
-              {{ t('admin.backup.s3.title') }}
-            </h3>
-            <p class="mt-1 text-sm text-muted ">
-              {{ t('admin.backup.s3.descriptionPrefix') }}
-              <button type="button" class="text-accent underline hover:text-accent  " @click="showR2Guide = true">Cloudflare R2</button>
-              {{ t('admin.backup.s3.descriptionSuffix') }}
-            </p>
+      <SettingsSection>
+        <template #header>
+          <h2 class="ui-settings-section-title">
+            {{ t('admin.backup.s3.title') }}
+          </h2>
+          <p class="ui-settings-section-description">
+            {{ t('admin.backup.s3.descriptionPrefix') }}
+            <button type="button" class="text-accent underline hover:text-accent" @click="showR2Guide = true">Cloudflare R2</button>
+            {{ t('admin.backup.s3.descriptionSuffix') }}
+          </p>
+        </template>
+
+        <SettingRow :label="t('admin.backup.s3.endpoint')">
+          <input v-model="s3Form.endpoint" class="input" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.region')">
+          <input v-model="s3Form.region" class="input" placeholder="auto" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.bucket')">
+          <input v-model="s3Form.bucket" class="input" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.prefix')">
+          <input v-model="s3Form.prefix" class="input" placeholder="backups/" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.accessKeyId')">
+          <input v-model="s3Form.access_key_id" class="input" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.secretAccessKey')">
+          <input v-model="s3Form.secret_access_key" type="password" class="input" :placeholder="s3SecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.forcePathStyle')">
+          <Toggle v-model="s3Form.force_path_style" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.mediaEnabled')">
+          <Toggle v-model="mediaEnabled" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.mediaPublicBaseUrl')">
+          <input v-model="s3Form.media_public_base_url" class="input" :placeholder="t('admin.backup.s3.mediaPublicBaseUrlPlaceholder')" :disabled="!s3Form.media_enabled" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.mediaPrefix')">
+          <input v-model="s3Form.media_prefix" class="input" placeholder="media/" :disabled="!s3Form.media_enabled" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.s3.mediaSigningSecret')">
+          <input
+            v-model="s3Form.media_download_signing_secret"
+            type="password"
+            class="input"
+            :placeholder="s3Form.media_download_signing_secret_configured ? t('admin.backup.s3.secretConfigured') : t('admin.backup.s3.mediaSigningSecretPlaceholder')"
+            :disabled="!s3Form.media_enabled"
+          />
+        </SettingRow>
+
+        <div class="settings-card-body">
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="testingS3" @click="testS3">
+              {{ testingS3 ? t('common.loading') : t('admin.backup.s3.testConnection') }}
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" :disabled="savingS3" @click="saveS3Config">
+              {{ savingS3 ? t('common.loading') : t('common.save') }}
+            </button>
           </div>
         </div>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.endpoint') }}</label>
-            <input v-model="s3Form.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.region') }}</label>
-            <input v-model="s3Form.region" class="input w-full" placeholder="auto" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.bucket') }}</label>
-            <input v-model="s3Form.bucket" class="input w-full" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.prefix') }}</label>
-            <input v-model="s3Form.prefix" class="input w-full" placeholder="backups/" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.accessKeyId') }}</label>
-            <input v-model="s3Form.access_key_id" class="input w-full" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.secretAccessKey') }}</label>
-            <input v-model="s3Form.secret_access_key" type="password" class="input w-full" :placeholder="s3SecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
-          </div>
-          <label class="inline-flex items-center gap-2 text-sm text-foreground  md:col-span-2">
-            <input v-model="s3Form.force_path_style" type="checkbox" />
-            <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
-          </label>
-          <label class="inline-flex items-center gap-2 text-sm text-foreground  md:col-span-2">
-            <input v-model="s3Form.media_enabled" type="checkbox" />
-            <span>{{ t('admin.backup.s3.mediaEnabled') }}</span>
-          </label>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.mediaPublicBaseUrl') }}</label>
-            <input v-model="s3Form.media_public_base_url" class="input w-full" :placeholder="t('admin.backup.s3.mediaPublicBaseUrlPlaceholder')" :disabled="!s3Form.media_enabled" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.mediaPrefix') }}</label>
-            <input v-model="s3Form.media_prefix" class="input w-full" placeholder="media/" :disabled="!s3Form.media_enabled" />
-          </div>
-          <div class="md:col-span-2">
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.mediaSigningSecret') }}</label>
-            <input
-              v-model="s3Form.media_download_signing_secret"
-              type="password"
-              class="input w-full"
-              :placeholder="s3Form.media_download_signing_secret_configured ? t('admin.backup.s3.secretConfigured') : t('admin.backup.s3.mediaSigningSecretPlaceholder')"
-              :disabled="!s3Form.media_enabled"
-            />
-          </div>
-        </div>
-        <div class="mt-4 flex flex-wrap gap-2">
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="testingS3" @click="testS3">
-            {{ testingS3 ? t('common.loading') : t('admin.backup.s3.testConnection') }}
-          </button>
-          <button type="button" class="btn btn-primary btn-sm" :disabled="savingS3" @click="saveS3Config">
-            {{ savingS3 ? t('common.loading') : t('common.save') }}
-          </button>
-        </div>
-      </div>
+      </SettingsSection>
 
       <!-- Async image object storage -->
-      <div class="glass-card p-6">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 class="text-base font-semibold text-foreground ">
-              {{ t('admin.backup.imageStorage.title') }}
-            </h3>
-            <p class="mt-1 text-sm text-muted ">
-              {{ t('admin.backup.imageStorage.description') }}
-            </p>
-          </div>
-          <label class="inline-flex items-center gap-2 text-sm text-foreground ">
-            <input v-model="imageStorageForm.enabled" type="checkbox" />
-            <span>{{ t('admin.backup.imageStorage.enabled') }}</span>
-          </label>
-        </div>
+      <SettingsSection
+        :title="t('admin.backup.imageStorage.title')"
+        :description="t('admin.backup.imageStorage.description')"
+      >
+        <SettingRow :label="t('admin.backup.imageStorage.enabled')">
+          <Toggle v-model="imageStorageForm.enabled" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.imageStorage.reuseBackupS3')">
+          <Toggle v-model="imageStorageForm.reuse_backup_s3" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.imageStorage.bucket')">
+          <input v-model="imageStorageForm.bucket" class="input" :placeholder="imageStorageForm.reuse_backup_s3 ? t('admin.backup.imageStorage.bucketInherited') : ''" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.imageStorage.prefix')">
+          <input v-model="imageStorageForm.prefix" class="input" placeholder="images/" />
+        </SettingRow>
 
-        <label class="inline-flex items-center gap-2 text-sm text-foreground ">
-          <input v-model="imageStorageForm.reuse_backup_s3" type="checkbox" />
-          <span>{{ t('admin.backup.imageStorage.reuseBackupS3') }}</span>
-        </label>
+        <template v-if="!imageStorageForm.reuse_backup_s3">
+          <SettingRow :label="t('admin.backup.s3.endpoint')">
+            <input v-model="imageStorageForm.endpoint" class="input" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
+          </SettingRow>
+          <SettingRow :label="t('admin.backup.s3.region')">
+            <input v-model="imageStorageForm.region" class="input" placeholder="auto" />
+          </SettingRow>
+          <SettingRow :label="t('admin.backup.s3.accessKeyId')">
+            <input v-model="imageStorageForm.access_key_id" class="input" />
+          </SettingRow>
+          <SettingRow :label="t('admin.backup.s3.secretAccessKey')">
+            <input v-model="imageStorageForm.secret_access_key" type="password" class="input" :placeholder="imageStorageSecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
+          </SettingRow>
+          <SettingRow :label="t('admin.backup.s3.forcePathStyle')">
+            <Toggle v-model="imageStorageForm.force_path_style" />
+          </SettingRow>
+        </template>
 
-        <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.imageStorage.bucket') }}</label>
-            <input v-model="imageStorageForm.bucket" class="input w-full" :placeholder="imageStorageForm.reuse_backup_s3 ? t('admin.backup.imageStorage.bucketInherited') : ''" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.imageStorage.prefix') }}</label>
-            <input v-model="imageStorageForm.prefix" class="input w-full" placeholder="images/" />
-          </div>
+        <SettingRow :label="t('admin.backup.imageStorage.publicBaseUrl')">
+          <input v-model="imageStorageForm.public_base_url" class="input" :placeholder="t('admin.backup.imageStorage.publicBaseUrlPlaceholder')" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.imageStorage.presignExpiryHours')">
+          <input v-model.number="imageStorageForm.presign_expiry_hours" type="number" min="1" class="input" />
+        </SettingRow>
 
-          <template v-if="!imageStorageForm.reuse_backup_s3">
-            <div>
-              <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.endpoint') }}</label>
-              <input v-model="imageStorageForm.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
-            </div>
-            <div>
-              <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.region') }}</label>
-              <input v-model="imageStorageForm.region" class="input w-full" placeholder="auto" />
-            </div>
-            <div>
-              <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.accessKeyId') }}</label>
-              <input v-model="imageStorageForm.access_key_id" class="input w-full" />
-            </div>
-            <div>
-              <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.s3.secretAccessKey') }}</label>
-              <input v-model="imageStorageForm.secret_access_key" type="password" class="input w-full" :placeholder="imageStorageSecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
-            </div>
-            <label class="inline-flex items-center gap-2 text-sm text-foreground  md:col-span-2">
-              <input v-model="imageStorageForm.force_path_style" type="checkbox" />
-              <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
-            </label>
-          </template>
-
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.imageStorage.publicBaseUrl') }}</label>
-            <input v-model="imageStorageForm.public_base_url" class="input w-full" :placeholder="t('admin.backup.imageStorage.publicBaseUrlPlaceholder')" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.imageStorage.presignExpiryHours') }}</label>
-            <input v-model.number="imageStorageForm.presign_expiry_hours" type="number" min="1" class="input w-full" />
+        <div class="settings-card-body">
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="testingImageStorage" @click="testImageStorage">
+              {{ testingImageStorage ? t('common.loading') : t('admin.backup.s3.testConnection') }}
+            </button>
+            <button type="button" class="btn btn-primary btn-sm" :disabled="savingImageStorage" @click="saveImageStorageConfig">
+              {{ savingImageStorage ? t('common.loading') : t('common.save') }}
+            </button>
           </div>
         </div>
-
-        <div class="mt-4 flex flex-wrap gap-2">
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="testingImageStorage" @click="testImageStorage">
-            {{ testingImageStorage ? t('common.loading') : t('admin.backup.s3.testConnection') }}
-          </button>
-          <button type="button" class="btn btn-primary btn-sm" :disabled="savingImageStorage" @click="saveImageStorageConfig">
-            {{ savingImageStorage ? t('common.loading') : t('common.save') }}
-          </button>
-        </div>
-      </div>
+      </SettingsSection>
 
       <!-- Schedule Config -->
-      <div class="glass-card p-6">
-        <div class="mb-4">
-          <h3 class="text-base font-semibold text-foreground ">
-            {{ t('admin.backup.schedule.title') }}
-          </h3>
-          <p class="mt-1 text-sm text-muted ">
-            {{ t('admin.backup.schedule.description') }}
-          </p>
-        </div>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label class="inline-flex items-center gap-2 text-sm text-foreground  md:col-span-2">
-            <input v-model="scheduleForm.enabled" type="checkbox" />
-            <span>{{ t('admin.backup.schedule.enabled') }}</span>
-          </label>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.schedule.cronExpr') }}</label>
-            <input v-model="scheduleForm.cron_expr" class="input w-full" placeholder="0 2 * * *" />
-            <p class="mt-1 text-xs text-muted ">{{ t('admin.backup.schedule.cronHint') }}</p>
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.schedule.retainDays') }}</label>
-            <input v-model.number="scheduleForm.retain_days" type="number" min="0" class="input w-full" />
-            <p class="mt-1 text-xs text-muted ">{{ t('admin.backup.schedule.retainDaysHint') }}</p>
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-muted ">{{ t('admin.backup.schedule.retainCount') }}</label>
-            <input v-model.number="scheduleForm.retain_count" type="number" min="0" class="input w-full" />
-            <p class="mt-1 text-xs text-muted ">{{ t('admin.backup.schedule.retainCountHint') }}</p>
-          </div>
-        </div>
-        <div class="mt-4">
+      <SettingsSection
+        :title="t('admin.backup.schedule.title')"
+        :description="t('admin.backup.schedule.description')"
+      >
+        <SettingRow :label="t('admin.backup.schedule.enabled')">
+          <Toggle v-model="scheduleForm.enabled" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.schedule.cronExpr')" :description="t('admin.backup.schedule.cronHint')">
+          <input v-model="scheduleForm.cron_expr" class="input" placeholder="0 2 * * *" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.schedule.retainDays')" :description="t('admin.backup.schedule.retainDaysHint')">
+          <input v-model.number="scheduleForm.retain_days" type="number" min="0" class="input" />
+        </SettingRow>
+        <SettingRow :label="t('admin.backup.schedule.retainCount')" :description="t('admin.backup.schedule.retainCountHint')">
+          <input v-model.number="scheduleForm.retain_count" type="number" min="0" class="input" />
+        </SettingRow>
+
+        <div class="settings-card-body">
           <button type="button" class="btn btn-primary btn-sm" :disabled="savingSchedule" @click="saveSchedule">
             {{ savingSchedule ? t('common.loading') : t('common.save') }}
           </button>
         </div>
-      </div>
+      </SettingsSection>
 
       <!-- Backup Operations -->
-      <div class="glass-card p-6">
-        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 class="text-base font-semibold text-foreground ">
-              {{ t('admin.backup.operations.title') }}
-            </h3>
-            <p class="mt-1 text-sm text-muted ">
-              {{ t('admin.backup.operations.description') }}
-            </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
+      <SettingsSection
+        :title="t('admin.backup.operations.title')"
+        :description="t('admin.backup.operations.description')"
+      >
+        <div class="settings-card-body">
+          <div class="mb-4 flex flex-wrap items-center justify-end gap-2">
             <div class="flex items-center gap-1">
-              <label class="text-xs text-muted ">{{ t('admin.backup.operations.expireDays') }}</label>
+              <label class="text-xs text-muted">{{ t('admin.backup.operations.expireDays') }}</label>
               <input v-model.number="manualExpireDays" type="number" min="0" class="input w-20 text-xs" />
             </div>
             <button type="button" class="btn btn-primary btn-sm" :disabled="creatingBackup" @click="createBackup">
@@ -212,85 +163,71 @@
               {{ loadingBackups ? t('common.loading') : t('common.refresh') }}
             </button>
           </div>
-        </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[800px] text-sm">
-            <thead>
-              <tr class="border-b border-line text-left text-xs uppercase tracking-wide text-muted  ">
-                <th class="py-2 pr-4">ID</th>
-                <th class="py-2 pr-4">{{ t('admin.backup.columns.status') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.backup.columns.fileName') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.backup.columns.size') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.backup.columns.parts') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.backup.columns.expiresAt') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.backup.columns.triggeredBy') }}</th>
-                <th class="py-2 pr-4">{{ t('admin.backup.columns.startedAt') }}</th>
-                <th class="py-2">{{ t('admin.backup.columns.actions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="record in backups" :key="record.id" class="border-b border-line align-top ">
-                <td class="py-3 pr-4 font-mono text-xs">{{ record.id }}</td>
-                <td class="py-3 pr-4">
-                  <span
-                    class="rounded px-2 py-0.5 text-xs"
-                    :class="statusClass(record.status)"
-                  >
-                    {{ record.status === 'running' && record.progress
-                      ? t(`admin.backup.progress.${record.progress}`)
-                      : t(`admin.backup.status.${record.status}`) }}
-                  </span>
-                </td>
-                <td class="py-3 pr-4 text-xs">{{ record.file_name }}</td>
-                <td class="py-3 pr-4 text-xs">{{ formatSize(record.size_bytes) }}</td>
-                <td class="py-3 pr-4 text-xs">{{ record.parts?.length || (record.status === 'running' ? '-' : 1) }}</td>
-                <td class="py-3 pr-4 text-xs">
-                  {{ record.expires_at ? formatDate(record.expires_at) : t('admin.backup.neverExpire') }}
-                </td>
-                <td class="py-3 pr-4 text-xs">
-                  {{ record.triggered_by === 'scheduled' ? t('admin.backup.trigger.scheduled') : t('admin.backup.trigger.manual') }}
-                </td>
-                <td class="py-3 pr-4 text-xs">{{ formatDate(record.started_at) }}</td>
-                <td class="py-3 text-xs">
-                  <div class="flex flex-wrap gap-1">
-                    <button
-                      v-if="record.status === 'completed'"
-                      type="button"
-                      class="btn btn-secondary btn-xs"
-                      @click="downloadBackup(record.id)"
-                    >
-                      {{ t('admin.backup.actions.download') }}
-                    </button>
-                    <button
-                      v-if="record.status === 'completed'"
-                      type="button"
-                      class="btn btn-secondary btn-xs"
-                      :disabled="restoringId === record.id"
-                      @click="restoreBackup(record.id)"
-                    >
-                      {{ restoringId === record.id ? t('common.loading') : t('admin.backup.actions.restore') }}
-                    </button>
-                    <button
-                      v-if="record.status !== 'running'"
-                      type="button"
-                      class="btn btn-danger btn-xs"
-                      @click="removeBackup(record.id)"
-                    >
-                      {{ t('common.delete') }}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="backups.length === 0">
-                <td colspan="9" class="py-6 text-center text-sm text-muted ">
-                  {{ t('admin.backup.empty') }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <DataTable :columns="backupColumns" :data="backups" :loading="loadingBackups" row-key="id">
+            <template #empty>
+              <div class="empty-state">
+                <Icon name="inbox" class="empty-state-icon" :stroke-width="1.6" aria-hidden="true" />
+                <p class="empty-state-title">{{ t('admin.backup.empty') }}</p>
+              </div>
+            </template>
+            <template #cell-id="{ value }">
+              <span class="font-mono text-xs">{{ value }}</span>
+            </template>
+            <template #cell-status="{ row }">
+              <span
+                class="rounded px-2 py-0.5 text-xs"
+                :class="statusClass(row.status)"
+              >
+                {{ row.status === 'running' && row.progress
+                  ? t(`admin.backup.progress.${row.progress}`)
+                  : t(`admin.backup.status.${row.status}`) }}
+              </span>
+            </template>
+            <template #cell-parts="{ row }">
+              {{ row.parts?.length || (row.status === 'running' ? '-' : 1) }}
+            </template>
+            <template #cell-expires_at="{ value }">
+              {{ value ? formatDate(value) : t('admin.backup.neverExpire') }}
+            </template>
+            <template #cell-triggered_by="{ value }">
+              {{ value === 'scheduled' ? t('admin.backup.trigger.scheduled') : t('admin.backup.trigger.manual') }}
+            </template>
+            <template #cell-started_at="{ value }">
+              {{ formatDate(value) }}
+            </template>
+            <template #cell-actions="{ row }">
+              <div class="flex flex-wrap gap-1">
+                <button
+                  v-if="row.status === 'completed'"
+                  type="button"
+                  class="btn btn-secondary btn-xs"
+                  @click="downloadBackup(row.id)"
+                >
+                  {{ t('admin.backup.actions.download') }}
+                </button>
+                <button
+                  v-if="row.status === 'completed'"
+                  type="button"
+                  class="btn btn-secondary btn-xs"
+                  :disabled="restoringId === row.id"
+                  @click="promptRestoreBackup(row.id)"
+                >
+                  {{ restoringId === row.id ? t('common.loading') : t('admin.backup.actions.restore') }}
+                </button>
+                <button
+                  v-if="row.status !== 'running'"
+                  type="button"
+                  class="btn btn-danger btn-xs"
+                  @click="promptRemoveBackup(row.id)"
+                >
+                  {{ t('common.delete') }}
+                </button>
+              </div>
+            </template>
+          </DataTable>
         </div>
-      </div>
+      </SettingsSection>
     </div>
 
     <!-- Cloudflare R2 Setup Guide Modal -->
@@ -418,6 +355,40 @@
         </div>
       </transition>
     </teleport>
+
+    <!-- Restore confirmation (password required) -->
+    <ConfirmDialog
+      :show="restoreConfirmOpen"
+      :title="t('admin.backup.actions.restore')"
+      :message="t('admin.backup.actions.restoreConfirm')"
+      tone="danger"
+      :confirm-text="t('admin.backup.actions.restore')"
+      :confirming="restoreConfirming"
+      @confirm="confirmRestoreBackup"
+      @cancel="cancelRestoreConfirm"
+    >
+      <label class="input-label">{{ t('admin.backup.actions.restorePasswordPrompt') }}</label>
+      <input
+        v-model="restorePassword"
+        type="password"
+        class="input w-full"
+        autofocus
+        @keydown.enter="confirmRestoreBackup"
+      />
+    </ConfirmDialog>
+
+    <!-- Delete confirmation -->
+    <ConfirmDialog
+      :show="deleteConfirmOpen"
+      :title="t('common.delete')"
+      :message="t('admin.backup.actions.deleteConfirm')"
+      tone="danger"
+      :confirm-text="t('common.delete')"
+      :confirming="deleteConfirming"
+      @confirm="confirmRemoveBackup"
+      @cancel="cancelDeleteConfirm"
+    />
+
     <TotpStepUpDialog :controller="backupStepUp" />
 </template>
 
@@ -435,6 +406,13 @@ import type {
 } from '@/api/admin/backup'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
+import SettingsSection from '@/components/ui/SettingsSection.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
+import Toggle from '@/components/common/Toggle.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
+import type { Column } from '@/components/common/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -469,6 +447,12 @@ const s3Form = ref<BackupS3Config>({
 const s3SecretConfigured = ref(false)
 const savingS3 = ref(false)
 const testingS3 = ref(false)
+// `media_enabled` is optional on the wire (may be omitted by older configs); Toggle
+// requires a non-optional boolean v-model, so normalize through a computed proxy.
+const mediaEnabled = computed<boolean>({
+  get: () => s3Form.value.media_enabled !== false,
+  set: (value) => { s3Form.value.media_enabled = value },
+})
 
 // Async image object storage. Shares the S3 client with backups, so the default is
 // to reuse the credentials configured above and only differ by prefix.
@@ -507,6 +491,51 @@ const restoringId = ref('')
 const manualExpireDays = ref(14)
 const downloadParts = ref<BackupDownloadPart[]>([])
 const downloadPartsModalOpen = ref(false)
+
+const backupColumns = computed<Column[]>(() => [
+  { key: 'id', label: 'ID' },
+  { key: 'status', label: t('admin.backup.columns.status') },
+  { key: 'file_name', label: t('admin.backup.columns.fileName') },
+  { key: 'size_bytes', label: t('admin.backup.columns.size'), formatter: (value: number) => formatSize(value) },
+  { key: 'parts', label: t('admin.backup.columns.parts') },
+  { key: 'expires_at', label: t('admin.backup.columns.expiresAt') },
+  { key: 'triggered_by', label: t('admin.backup.columns.triggeredBy') },
+  { key: 'started_at', label: t('admin.backup.columns.startedAt') },
+  { key: 'actions', label: t('admin.backup.columns.actions') },
+])
+
+// Restore confirmation (glass ConfirmDialog replaces window.confirm + window.prompt)
+const restoreConfirmOpen = ref(false)
+const restorePassword = ref('')
+const pendingRestoreId = ref('')
+const restoreConfirming = ref(false)
+
+function promptRestoreBackup(id: string) {
+  pendingRestoreId.value = id
+  restorePassword.value = ''
+  restoreConfirmOpen.value = true
+}
+
+function cancelRestoreConfirm() {
+  restoreConfirmOpen.value = false
+  pendingRestoreId.value = ''
+  restorePassword.value = ''
+}
+
+// Delete confirmation (glass ConfirmDialog replaces window.confirm)
+const deleteConfirmOpen = ref(false)
+const pendingDeleteId = ref('')
+const deleteConfirming = ref(false)
+
+function promptRemoveBackup(id: string) {
+  pendingDeleteId.value = id
+  deleteConfirmOpen.value = true
+}
+
+function cancelDeleteConfirm() {
+  deleteConfirmOpen.value = false
+  pendingDeleteId.value = ''
+}
 
 // Polling
 const pollingTimer = ref<ReturnType<typeof setInterval> | null>(null)
@@ -635,7 +664,7 @@ async function loadS3Config() {
       access_key_id: cfg.access_key_id || '',
       secret_access_key: '',
       prefix: cfg.prefix || 'backups/',
-      force_path_style: cfg.force_path_style,
+      force_path_style: Boolean(cfg.force_path_style),
       media_enabled: cfg.media_enabled !== false,
       media_public_base_url: cfg.media_public_base_url || '',
       media_prefix: cfg.media_prefix || 'media/',
@@ -673,6 +702,9 @@ async function loadImageStorageConfig() {
       prefix: config.prefix || 'images/',
       region: config.region || 'auto',
       secret_access_key: '',
+      enabled: Boolean(config.enabled),
+      reuse_backup_s3: Boolean(config.reuse_backup_s3),
+      force_path_style: Boolean(config.force_path_style),
     }
     imageStorageSecretConfigured.value = secret_configured
   } catch (error) {
@@ -821,17 +853,18 @@ function closeDownloadParts() {
   downloadParts.value = []
 }
 
-async function restoreBackup(id: string) {
-  if (!window.confirm(t('admin.backup.actions.restoreConfirm'))) return
-  const password = window.prompt(t('admin.backup.actions.restorePasswordPrompt'))
-  if (!password) return
-  restoringId.value = id
+async function confirmRestoreBackup() {
+  if (!restorePassword.value) return
+  const id = pendingRestoreId.value
+  const password = restorePassword.value
+  restoreConfirming.value = true
   try {
     const record = await backupStepUp.run(() => adminAPI.backup.restoreBackup(id, password))
     updateRecordInList(record)
+    restoreConfirmOpen.value = false
+    restoringId.value = id
     startRestorePolling(id)
   } catch (error: any) {
-    restoringId.value = ''
     if (isStepUpCancelled(error)) return
     if (reportStepUpBlocked(error)) return
     // apiClient 拦截器把 HTTP 错误归一化为顶层 { status } 平面对象（无 response 字段）
@@ -840,19 +873,28 @@ async function restoreBackup(id: string) {
     } else {
       appStore.showError(error?.message || t('errors.networkError'))
     }
+  } finally {
+    restoreConfirming.value = false
+    restorePassword.value = ''
+    pendingRestoreId.value = ''
   }
 }
 
-async function removeBackup(id: string) {
-  if (!window.confirm(t('admin.backup.actions.deleteConfirm'))) return
+async function confirmRemoveBackup() {
+  const id = pendingDeleteId.value
+  deleteConfirming.value = true
   try {
     await backupStepUp.run(() => adminAPI.backup.deleteBackup(id))
     appStore.showSuccess(t('admin.backup.actions.deleted'))
+    deleteConfirmOpen.value = false
+    pendingDeleteId.value = ''
     await loadBackups()
   } catch (error) {
     if (isStepUpCancelled(error)) return
     if (reportStepUpBlocked(error)) return
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
+  } finally {
+    deleteConfirming.value = false
   }
 }
 

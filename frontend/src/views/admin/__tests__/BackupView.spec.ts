@@ -161,13 +161,22 @@ describe('admin BackupView 分卷备份', () => {
   it('删除备份通过 step-up 验证后执行', async () => {
     listBackups.mockResolvedValue({ items: [baseRecord('delete-me')] })
     deleteBackup.mockResolvedValue(undefined)
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     const wrapper = mountBackupView()
     await flushPromises()
     const deleteButton = wrapper.findAll('button').find(button => button.text() === 'common.delete')
     expect(deleteButton).toBeDefined()
     await deleteButton!.trigger('click')
+    await flushPromises()
+
+    // Delete is now a two-step glass ConfirmDialog flow: the row button only opens
+    // a confirmation dialog (teleported to document.body); the actual delete only
+    // fires after clicking the dialog's own confirm button.
+    const confirmButton = Array.from(document.body.querySelectorAll('button')).find(
+      (button) => button.textContent === 'common.delete',
+    )
+    expect(confirmButton).toBeDefined()
+    confirmButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     await flushPromises()
 
     expect(stepUpRun).toHaveBeenCalledTimes(1)

@@ -80,3 +80,10 @@
 - eslint 0；vitest 3/3；ui-lint 4 文件 total 0；i18n parity 8899/8899；anchor-diff 无丢失。
 - 探针：h1 74/35；announcements filter-bar 146 h36，thead h42。
 - lead 补充：mock 新增 `GET /api/v1/admin/plugins`（2 个种子插件，含 compatibility 版本字段）；此前无路由时回落到分页信封导致插件页空白（11D 发现，非回归）。
+
+### 组 10 系统设置（10A + 10B，2026-09-04）
+- vue-tsc 0（settings 范围）；eslint 0；vitest settings/backup/ui 111/111；ui-lint total 0（`repo#123` issue 引用误报已在 ui-lint 排除）；i18n parity 8905/8905。
+- pixel-diff 通用 tab：light 9.66% / dark 7.90%（General 卡片保留全部真实字段，高度约为原型 2 倍，为主要差异来源）。
+- 探针：内容 146；导航 224 + 934；卡间距 12；SettingRow 67/84；各 tab 卡片 top 146。
+- 行数：GatewayTab 42（拆为 gateway/ 15 个分区）；SecurityTab 3012、useSettingsForm.ts 2709 仍超 1500（后续 6.3 remainder）。
+- anchor-diff：tabs 0 lost（GatewayTab 加 `--scope gateway`）；BackupView 3 处重命名（两步确认函数、`mediaEnabled` computed）。

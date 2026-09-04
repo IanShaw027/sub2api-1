@@ -1325,7 +1325,7 @@ export default {
         version: 'Version',
         codexSync: 'Codex version sync'
       },
-      saveSettings: 'Save Settings',
+      saveSettings: 'Save Changes',
       saving: 'Saving...',
       settingsSaved: 'Settings saved successfully',
       smtpConnectionSuccess: 'SMTP connection successful',

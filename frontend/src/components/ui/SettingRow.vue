@@ -37,6 +37,7 @@ const titleId = `ui-setting-row-${useId()}`
 
 .ui-setting-row-title {
   font-size: 13px;
+  line-height: 19px;
   font-weight: 600;
   color: var(--foreground);
 }
@@ -44,6 +45,7 @@ const titleId = `ui-setting-row-${useId()}`
 .ui-setting-row-description {
   margin-top: 2px;
   font-size: 12px;
+  line-height: 17px;
   color: var(--muted);
 }
 

@@ -1,23 +1,15 @@
 <template>
  <div v-show="activeTab === 'general'" class="settings-stack">
  <!-- Site Settings -->
- <div class="glass-card settings-card">
- <div
- class="settings-card-head"
+ <SettingsSection
+ :title="t('admin.settings.site.title')"
+ :description="t('admin.settings.site.description')"
  >
- <h2 class="settings-card-title">
- {{ t("admin.settings.site.title") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.site.description") }}
- </p>
- </div>
- <div class="settings-card-body">
  <!-- Backend Mode -->
- <div class="settings-row">
- <label class="settings-row-label">
- {{ t("admin.settings.site.backendMode") }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.site.backendMode')"
+ :description="t('admin.settings.site.backendModeDescription')"
+ >
  <div class="flex items-center gap-3">
  <Toggle v-model="form.backend_mode_enabled" />
  <span class="settings-warning-hint">
@@ -39,91 +31,61 @@
  {{ t("admin.settings.site.backendModeWarning") }}
  </span>
  </div>
- <p class="settings-row-hint">
- {{ t("admin.settings.site.backendModeDescription") }}
- </p>
- </div>
+ </SettingRow>
 
-	 <div class="settings-row-group">
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.site.siteName')"
+ :description="t('admin.settings.site.siteNameHint')"
  >
- {{ t("admin.settings.site.siteName") }}
- </label>
  <input
  v-model="form.site_name"
  type="text"
  class="input"
  :placeholder="t('admin.settings.site.siteNamePlaceholder')"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.siteNameHint") }}
- </p>
- </div>
- <div class="settings-row">
- <label
- class="settings-row-label"
+ </SettingRow>
+ <SettingRow
+ :label="t('admin.settings.site.siteSubtitle')"
+ :description="t('admin.settings.site.siteSubtitleHint')"
  >
- {{ t("admin.settings.site.siteSubtitle") }}
- </label>
  <input
  v-model="form.site_subtitle"
  type="text"
  class="input"
- :placeholder="
- t('admin.settings.site.siteSubtitlePlaceholder')
- "
+ :placeholder="t('admin.settings.site.siteSubtitlePlaceholder')"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.siteSubtitleHint") }}
- </p>
- </div>
- </div>
+ </SettingRow>
 
  <!-- API Base URL -->
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.site.apiBaseUrl')"
+ :description="t('admin.settings.site.apiBaseUrlHint')"
  >
- {{ t("admin.settings.site.apiBaseUrl") }}
- </label>
  <input
  v-model="form.api_base_url"
  type="text"
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.apiBaseUrlPlaceholder')"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.apiBaseUrlHint") }}
- </p>
- </div>
-
+ </SettingRow>
 
  <!-- Contact Info -->
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.site.contactInfo')"
+ :description="t('admin.settings.site.contactInfoHint')"
  >
- {{ t("admin.settings.site.contactInfo") }}
- </label>
  <input
  v-model="form.contact_info"
  type="text"
  class="input"
  :placeholder="t('admin.settings.site.contactInfoPlaceholder')"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.contactInfoHint") }}
- </p>
- </div>
+ </SettingRow>
 
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.site.supportQRCodes')"
+ :description="t('admin.settings.site.supportQRCodesHint')"
  >
- {{ t("admin.settings.site.supportQRCodes") }}
- </label>
  <div class="space-y-4">
  <div
  v-if="form.support_qr_codes.length > 0"
@@ -133,7 +95,7 @@
  <div
  v-for="(item, index) in form.support_qr_codes"
  :key="`support-qr-${index}`"
- class="rounded-2xl border border-line bg-surface-2/80 p-4 "
+ class="rounded-hero border border-line bg-surface-2/80 p-4 "
  >
  <div class="flex items-start justify-between gap-3">
  <div class="min-w-0 flex-1 space-y-4">
@@ -160,7 +122,7 @@
  </div>
  <button
  type="button"
- class="btn-glass-secondary shrink-0 text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary shrink-0 text-danger-text "
  @click="removeSupportQRCode(index)"
  >
  {{ t("admin.settings.site.remove") }}
@@ -178,53 +140,35 @@
  {{ t("admin.settings.site.addSupportQRCode") }}
  </button>
  </div>
- <p class="settings-row-hint">
- {{ t("admin.settings.site.supportQRCodesHint") }}
- </p>
- </div>
+ </SettingRow>
 
  <!-- Doc URL -->
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.site.docUrl')"
+ :description="t('admin.settings.site.docUrlHint')"
  >
- {{ t("admin.settings.site.docUrl") }}
- </label>
  <input
  v-model="form.doc_url"
  type="url"
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.docUrlPlaceholder')"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.docUrlHint") }}
- </p>
- </div>
+ </SettingRow>
 
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.site.downloadToolsUrl')"
+ :description="t('admin.settings.site.downloadToolsUrlHint')"
  >
- {{ t("admin.settings.site.downloadToolsUrl") }}
- </label>
  <input
  v-model="form.download_tools_url"
  type="url"
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.downloadToolsUrlPlaceholder')"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.downloadToolsUrlHint") }}
- </p>
- </div>
+ </SettingRow>
 
  <!-- Site Logo Upload -->
- <div class="settings-row">
- <label
- class="settings-row-label"
- >
- {{ t("admin.settings.site.siteLogo") }}
- </label>
+ <SettingRow :label="t('admin.settings.site.siteLogo')">
  <ImageUpload
  v-model="form.site_logo"
  mode="image"
@@ -233,63 +177,46 @@
  :hint="t('admin.settings.site.logoHint')"
  :max-size="300 * 1024"
  />
- </div>
+ </SettingRow>
 
  <!-- Home Content -->
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingRow
+ :label="t('admin.settings.site.homeContent')"
+ :description="t('admin.settings.site.homeContentHint')"
  >
- {{ t("admin.settings.site.homeContent") }}
- </label>
  <textarea
  v-model="form.home_content"
  rows="6"
  class="input font-mono text-sm"
  :placeholder="t('admin.settings.site.homeContentPlaceholder')"
  ></textarea>
- <p class="settings-row-hint">
- {{ t("admin.settings.site.homeContentHint") }}
- </p>
  <!-- iframe CSP Warning -->
- <p class="mt-2 text-xs text-amber-600 ">
+ <p class="mt-2 text-xs text-warning-text ">
  {{ t("admin.settings.site.homeContentIframeWarning") }}
  </p>
- </div>
+ </SettingRow>
 
  <!-- Compact Home Page -->
- <div class="flex items-center justify-between border-t border-line pt-4 ">
- <div>
- <label class="font-medium text-foreground ">{{
- t("admin.settings.site.compactHome")
- }}</label>
- <p class="text-sm text-muted ">
- {{ t("admin.settings.site.compactHomeHint") }}
- </p>
- </div>
+ <SettingRow
+ :label="t('admin.settings.site.compactHome')"
+ :description="t('admin.settings.site.compactHomeHint')"
+ >
  <Toggle v-model="form.compact_home_enabled" data-testid="compact-home-toggle" />
- </div>
+ </SettingRow>
 
  <!-- Hide CCS Import Button -->
- <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ <SettingRow
+ :label="t('admin.settings.site.hideCcsImportButton')"
+ :description="t('admin.settings.site.hideCcsImportButtonHint')"
  >
- <div>
- <label class="font-medium text-foreground ">{{
- t("admin.settings.site.hideCcsImportButton")
- }}</label>
- <p class="text-sm text-muted ">
- {{ t("admin.settings.site.hideCcsImportButtonHint") }}
- </p>
- </div>
  <Toggle v-model="form.hide_ccs_import_button" />
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
  <!-- Custom Endpoints -->
- <div class="glass-card settings-card">
- <div class="settings-card-head settings-list-head">
+ <SettingsSection>
+ <template #header>
+ <div class="settings-list-head">
  <div class="settings-list-head-text">
  <h2 class="settings-card-title">
  {{ t("admin.settings.site.customEndpoints.title") }}
@@ -319,6 +246,7 @@
  {{ t("admin.settings.site.customEndpoints.add") }}
  </button>
  </div>
+ </template>
  <div class="settings-card-body">
  <div
  v-for="(ep, index) in form.custom_endpoints"
@@ -380,25 +308,17 @@
  {{ t("common.noData") }}
  </p>
  </div>
- </div>
+ </SettingsSection>
 
  <!-- Global Table Preferences -->
- <div class="glass-card settings-card">
- <div class="settings-card-head">
- <h2 class="settings-card-title">
- {{ t("admin.settings.site.tablePreferencesTitle") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.site.tablePreferencesDescription") }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="settings-row">
- <label
- class="settings-row-label"
+ <SettingsSection
+ :title="t('admin.settings.site.tablePreferencesTitle')"
+ :description="t('admin.settings.site.tablePreferencesDescription')"
  >
- {{ t("admin.settings.site.tableDefaultPageSize") }}
- </label>
+ <SettingRow
+ :label="t('admin.settings.site.tableDefaultPageSize')"
+ :description="t('admin.settings.site.tableDefaultPageSizeHint')"
+ >
  <input
  v-model.number="form.table_default_page_size"
  type="number"
@@ -407,16 +327,11 @@
  step="1"
  class="input w-40"
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.tableDefaultPageSizeHint") }}
- </p>
- </div>
- <div class="settings-row">
- <label
- class="settings-row-label"
+ </SettingRow>
+ <SettingRow
+ :label="t('admin.settings.site.tablePageSizeOptions')"
+ :description="t('admin.settings.site.tablePageSizeOptionsHint')"
  >
- {{ t("admin.settings.site.tablePageSizeOptions") }}
- </label>
  <input
  v-model="tablePageSizeOptionsInput"
  type="text"
@@ -425,25 +340,14 @@
  t('admin.settings.site.tablePageSizeOptionsPlaceholder')
  "
  />
- <p class="settings-row-hint">
- {{ t("admin.settings.site.tablePageSizeOptionsHint") }}
- </p>
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 
  <!-- Custom Menu Items -->
- <div class="glass-card settings-card">
- <div
- class="settings-card-head"
+ <SettingsSection
+ :title="t('admin.settings.customMenu.title')"
+ :description="t('admin.settings.customMenu.description')"
  >
- <h2 class="settings-card-title">
- {{ t("admin.settings.customMenu.title") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.customMenu.description") }}
- </p>
- </div>
  <div class="settings-card-body">
  <!-- Existing menu items -->
  <div
@@ -507,7 +411,7 @@
  <!-- Delete -->
  <button
  type="button"
- class="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600 "
+ class="rounded p-1 text-danger-text hover:bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] "
  :title="t('admin.settings.customMenu.remove')"
  @click="removeMenuItem(index)"
  >
@@ -624,8 +528,8 @@
  {{ t("admin.settings.customMenu.add") }}
  </button>
  </div>
+ </SettingsSection>
  </div>
-	 </div>
 </template>
 
 <script setup lang="ts">
@@ -633,6 +537,8 @@ import { inject } from "vue";
 import { SettingsFormKey } from "../useSettingsForm";
 import Toggle from "@/components/common/Toggle.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
+import SettingsSection from "@/components/ui/SettingsSection.vue";
+import SettingRow from "@/components/ui/SettingRow.vue";
 
 const settingsForm = inject(SettingsFormKey)!;
 const {
