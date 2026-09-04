@@ -117,3 +117,4 @@
 - 11.24 `/admin/risk-control`：审核记录表行高 62，双行 `cell-stack` 内容的结构性特征，与预警表容差先例一致，接受。
 - 11.25 `/admin/prompt-audit`：事件表 15 列，采用 DataTable 标准 `table-wrapper is-scrollable` 内部横向滚动，body 级无溢出，接受。
 - 外壳（15.x 待办）：`components/layout/AppHeader.vue` 的 `.topbar-mobile-btn` 阴影仍含字面 `rgba()`，需随全局阴影令牌统一，暂留 ui-lint 1 条命中。
+- 对比度（13.2 / 15.x 待办）：`node scripts/check-contrast.js` 当前 26 通过 / 4 失败，全部落在亮色主题的非文本 3:1 阈值：`--border` 对 `--canvas` 1.06:1、对 `--background` 1.24:1、对 `--surface` 1.35:1，`--accent` 对 `--canvas` 2.90:1。暗色主题全部通过（`--border` 在暗色为 51% 明度）。根因是亮色 `--border: oklch(90% 0.003 259.82)` 为原型的发丝描边，与 WCAG 1.4.11 冲突。卡片描边可论证为装饰（`--surface` 100% 与 `--canvas` 92% 本身已可区分卡片边界），但**表单控件描边与焦点环是真实可访问性缺陷**：`.field`/`.input` 的边框是控件边界的唯一提示，`--accent` 焦点环在 canvas 上仅 2.90:1。修复需改 `src/styles/tokens.css` 并会波及全站已验收视觉基线，故不在组 12 并发期间进行，留待组 13.2 / 15.x 统一处理（建议方案：为控件边框与焦点环引入独立的 `--border-strong` / `--focus-ring` 令牌，不动装饰性 `--border`）。
