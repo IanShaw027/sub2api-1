@@ -58,7 +58,7 @@
  >
  <td
  class="max-w-[100px] truncate py-1.5 font-medium"
- :class="enableBreakdown && group.group_id > 0 ? 'text-blue-600 hover:text-blue-800' : 'text-foreground'"
+ :class="enableBreakdown && group.group_id > 0 ? 'text-accent hover:underline' : 'text-foreground'"
  :title="group.group_name || String(group.group_id)"
  >
  <span class="inline-flex items-center gap-1">
@@ -73,10 +73,10 @@
  <td class="py-1.5 text-right text-muted">
  {{ formatTokens(group.total_tokens) }}
  </td>
- <td class="py-1.5 text-right text-green-600">
+ <td class="py-1.5 text-right text-success-text">
  ${{ formatCost(group.actual_cost) }}
  </td>
- <td v-if="showAccountCost" class="py-1.5 text-right text-orange-500">
+ <td v-if="showAccountCost" class="py-1.5 text-right text-warning-text">
  ${{ formatCost(group.account_cost) }}
  </td>
  <td class="py-1.5 text-right text-muted">
@@ -116,10 +116,12 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
 import type { GroupStat, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
+import { baseChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 const { t } = useI18n()
+const theme = useChartTheme()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
 
@@ -175,18 +177,11 @@ const toggleBreakdown = async (type: string, id: number | string) => {
  }
 }
 
-const chartColors = [
- '#3b82f6',
- '#10b981',
- '#f59e0b',
- '#ef4444',
- '#8b5cf6',
- '#ec4899',
- '#14b8a6',
- '#f97316',
- '#6366f1',
- '#84cc16'
-]
+/** Cycles through the token series palette so any slice count stays on-brand. */
+const seriesColor = (index: number): string => {
+ const series = theme.value.series
+ return series[index % series.length]
+}
 
 const displayGroupStats = computed(() => {
  if (!props.groupStats?.length) return []
@@ -203,21 +198,22 @@ const chartData = computed(() => {
  datasets: [
  {
  data: displayGroupStats.value.map((g) => toFiniteNumber(props.metric === 'actual_cost' ? g.actual_cost : g.total_tokens)),
- backgroundColor: chartColors.slice(0, displayGroupStats.value.length),
+ backgroundColor: displayGroupStats.value.map((_, i) => seriesColor(i)),
  borderWidth: 0
  }
  ]
  }
 })
 
-const doughnutOptions = computed(() => ({
- responsive: true,
- maintainAspectRatio: false,
+const doughnutOptions = computed(() => {
+ const base = baseChartOptions(theme.value)
+ return {
+ ...base,
  plugins: {
- legend: {
- display: false
- },
+ ...base.plugins,
+ legend: { display: false },
  tooltip: {
+ ...base.plugins.tooltip,
  callbacks: {
  label: (context: any) => {
  const value = context.raw as number
@@ -231,7 +227,8 @@ const doughnutOptions = computed(() => ({
  }
  }
  }
-}))
+ }
+})
 
 const formatTokens = (value: number): string => {
  if (value >= 1_000_000_000) {

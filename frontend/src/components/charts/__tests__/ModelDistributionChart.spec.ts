@@ -183,8 +183,10 @@ describe('ModelDistributionChart', () => {
       'Others',
     ])
     expect(chartData.datasets[0].data).toEqual([12, 8, 0, 10])
+    // chartTheme() falls back to its FALLBACK token map under jsdom (no computed styles available):
+    // --accent -> #3b82f6 (series[0]), --muted -> #6b7280 (the dedicated "Others" tone).
     expect(chartData.datasets[0].backgroundColor[0]).toBe('#3b82f6')
-    expect(chartData.datasets[0].backgroundColor[3]).toBe('#94a3b8')
+    expect(chartData.datasets[0].backgroundColor[3]).toBe('#6b7280')
     expect(chartData.datasets[0].backgroundColor[3]).not.toBe(chartData.datasets[0].backgroundColor[0])
 
     const rows = wrapper.findAll('tbody tr')

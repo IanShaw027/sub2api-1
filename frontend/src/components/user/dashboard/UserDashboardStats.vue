@@ -1,26 +1,16 @@
 <template>
  <div class="dash-stats">
- <!-- Row 1: Core Stats -->
+ <!-- ============================= StatCard grid ============================= -->
  <div class="dash-stat-grid">
- <StatCard
- v-if="!isSimple"
- :label="t('dashboard.balance')"
- :value="`$${formatBalance(balance)}`"
- :sub="t('common.available')"
- class="dash-stat-card cursor-pointer"
- @click="emit('balance-history')"
- />
  <StatCard
  :label="t('dashboard.apiKeys')"
  :value="stats?.total_api_keys || 0"
  :sub="`${stats?.active_api_keys || 0} ${t('common.active')}`"
- class="dash-stat-card"
  />
  <StatCard
  :label="t('dashboard.todayRequests')"
  :value="stats?.today_requests || 0"
  :sub="`${t('common.total')}: ${formatNumber(stats?.total_requests || 0)}`"
- class="dash-stat-card"
  >
  <template v-if="requestsSpark" #sparkline>
  <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
@@ -30,27 +20,9 @@
  </template>
  </StatCard>
  <StatCard
- :label="t('dashboard.todayCost')"
- :value="`$${formatCost(stats?.today_actual_cost || 0)}`"
- :sub="`${t('common.total')}: $${formatCost(stats?.total_actual_cost || 0)}`"
- class="dash-stat-card"
- >
- <template v-if="costSpark" #sparkline>
- <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
- <path :d="costSpark.area" class="dash-spark-area" />
- <path :d="costSpark.line" class="dash-spark-line" />
- </svg>
- </template>
- </StatCard>
- </div>
-
- <!-- Row 2: Token Stats -->
- <div class="dash-stat-grid">
- <StatCard
  :label="t('dashboard.todayTokens')"
  :value="formatTokens(stats?.today_tokens || 0)"
  :sub="`${t('dashboard.input')}: ${formatTokens(stats?.today_input_tokens || 0)} / ${t('dashboard.output')}: ${formatTokens(stats?.today_output_tokens || 0)}`"
- class="dash-stat-card"
  >
  <template v-if="tokensSpark" #sparkline>
  <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
@@ -60,36 +32,59 @@
  </template>
  </StatCard>
  <StatCard
+ :label="t('dashboard.todayCost')"
+ :value="`$${formatCost(stats?.today_actual_cost || 0)}`"
+ :sub="`${t('common.total')}: $${formatCost(stats?.total_actual_cost || 0)}`"
+ >
+ <template v-if="costSpark" #sparkline>
+ <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
+ <path :d="costSpark.area" class="dash-spark-area" />
+ <path :d="costSpark.line" class="dash-spark-line" />
+ </svg>
+ </template>
+ </StatCard>
+
+ <StatCard
+ :label="t('dashboard.totalRequests')"
+ :value="formatNumber(stats?.total_requests || 0)"
+ :sub="t('dashboard.averageTime')"
+ :delta="t('common.total')"
+ delta-tone="neutral"
+ />
+ <StatCard
  :label="t('dashboard.totalTokens')"
  :value="formatTokens(stats?.total_tokens || 0)"
  :sub="`${t('dashboard.input')}: ${formatTokens(stats?.total_input_tokens || 0)} / ${t('dashboard.output')}: ${formatTokens(stats?.total_output_tokens || 0)}`"
- class="dash-stat-card"
+ :delta="t('common.total')"
+ delta-tone="neutral"
  />
  <StatCard
- :label="t('dashboard.performance')"
- :value="liveRpmUsed"
- :sub="perfSub"
- class="dash-stat-card"
+ :label="t('dashboard.totalCost')"
+ :value="`$${formatCost(stats?.total_actual_cost || 0)}`"
+ :sub="`${t('dashboard.standard')}: $${formatCost(stats?.total_cost || 0)}`"
+ :delta="t('common.total')"
+ delta-tone="neutral"
  />
  <StatCard
  :label="t('dashboard.avgResponse')"
  :value="formatDuration(stats?.average_duration_ms || 0)"
  :sub="t('dashboard.averageTime')"
- class="dash-stat-card"
  />
  </div>
 
- <!-- Row 3: Per-platform breakdown -->
- <GlassCard v-if="!isSimple && platformCards.length > 0" padding="md" class="dash-platform-card">
- <div class="card-header dash-list-header">
- <span class="card-title">{{ t('dashboard.platformBreakdown') }}</span>
- <span class="card-subtitle">{{ t('dashboard.platformCount', { count: sortedPlatforms.length }) }}</span>
+ <!-- ==================== Platform split — 1fr 1fr 1fr panels ==================== -->
+ <section v-if="!isSimple && platformCards.length > 0" class="dash-platform-section">
+ <div class="dash-panel-head">
+ <div class="dash-panel-heading">
+ <span class="dash-panel-title">{{ t('dashboard.platformBreakdown') }}</span>
+ <span class="dash-panel-sub">{{ t('dashboard.platformCount', { count: sortedPlatforms.length }) }}</span>
+ </div>
  </div>
  <div class="dash-platform-grid">
  <div
  v-for="item in platformCards"
  :key="item.platform"
- :class="['dash-platform-tile', item.isOther ? 'dash-platform-tile-other' : '']"
+ :class="['glass-inset', 'dash-platform-tile', item.isOther ? 'dash-platform-tile-other' : '']"
  >
  <div class="dash-platform-tile-top">
  <span class="dash-platform-tile-name">
@@ -151,14 +146,13 @@
  </div>
  </div>
  </div>
- </GlassCard>
+ </section>
  </div>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import StatCard from '@/components/ui/StatCard.vue'
-import GlassCard from '@/components/ui/GlassCard.vue'
 import ProgressBar from '@/components/ui/ProgressBar.vue'
 import { platformTileBackground, platformLabel as tilePlatformLabel } from '@/utils/platformTile'
 import type { UserDashboardStats as UserStatsType } from '@/api/usage'
@@ -176,28 +170,11 @@ interface FusedPlatformCard {
 
 const props = defineProps<{
  stats: UserStatsType
- balance: number
  isSimple: boolean
  platformQuotas?: PlatformQuotaItem[] | null
- liveRpmUsed?: number
- liveRpmLimit?: number
- currentConcurrency?: number
  trend?: TrendDataPoint[]
 }>()
-const emit = defineEmits<{
- 'balance-history': []
-}>()
 const { t } = useI18n()
-
-const liveRpmUsed = computed(() => props.liveRpmUsed ?? 0)
-const currentConcurrency = computed(() => props.currentConcurrency ?? 0)
-const perfSub = computed(() => {
- const limit = props.liveRpmLimit ?? 0
- const rpmPart = limit > 0
- ? `RPM ${liveRpmUsed.value}/${limit}`
- : `${formatTokens(props.stats?.rpm || 0)} ${t('dashboard.avgRpm')}`
- return `${rpmPart} · ${currentConcurrency.value} ${t('dashboard.currentConcurrency')}`
-})
 
 const PLATFORM_LABELS: Record<string, string> = {
  anthropic: 'Claude',
@@ -216,7 +193,7 @@ const sortedPlatforms = computed(() => {
 
 // 处理"各平台之和 < 总值"的差值：后端按平台聚合时过滤了无法归属平台的行
 // （group 与 account 都缺 platform）。这里把差值作为"其他"卡片显式展示，
-// 避免 Row 1 总值与 Row 3 平台拆分加总对不上、用户困惑。
+// 避免 StatCard 总值与平台拆分加总对不上、用户困惑。
 const OTHER_THRESHOLD = 0.0001
 const platformCards = computed<FusedPlatformCard[]>(() => {
  // 建立 by_platform Map
@@ -321,12 +298,6 @@ function formatResetTime(iso: string | null | undefined): string {
  })
 }
 
-const formatBalance = (b: number) =>
- new Intl.NumberFormat('en-US', {
- minimumFractionDigits: 2,
- maximumFractionDigits: 2
- }).format(b)
-
 const formatNumber = (n: number) => n.toLocaleString()
 const formatCost = (c: number) => c.toFixed(4)
 const formatTokens = (t: number) => {
@@ -370,12 +341,10 @@ const costSpark = computed(() => buildSparkline((props.trend ?? []).map((d) => d
  grid-template-columns: repeat(4, minmax(0, 1fr));
  gap: 12px;
 }
-:deep(.ui-stat-card) {
- padding: 14px 16px !important;
-}
-:deep(.ui-stat-card-value) {
- font-size: 28px !important;
- letter-spacing: -0.04em !important;
+.dash-stat-grid :deep(.ui-stat-card-sparkline > div) {
+ margin-left: 0;
+ width: 100%;
+ height: 100%;
 }
 .dash-spark {
  width: 96px;
@@ -393,24 +362,40 @@ const costSpark = computed(() => buildSparkline((props.trend ?? []).map((d) => d
  stroke-linecap: round;
  stroke-linejoin: round;
 }
-.dash-platform-card {
- padding: 0 !important;
+
+/* ==================== Platform split (1fr 1fr 1fr glass-inset panels) ==================== */
+.dash-platform-section {
+ display: flex;
+ flex-direction: column;
+ gap: 12px;
 }
-.dash-list-header {
- flex-direction: row;
+.dash-panel-head {
+ display: flex;
  align-items: center;
  justify-content: space-between;
+ gap: 12px;
+}
+.dash-panel-heading {
+ display: flex;
+ flex-direction: column;
+ gap: 2px;
+ min-width: 0;
+}
+.dash-panel-title {
+ font-size: 14px;
+ line-height: 1.3;
+ font-weight: 600;
+ color: var(--foreground);
+}
+.dash-panel-sub {
+ font-size: 12px;
+ line-height: 1.3;
+ color: var(--muted);
 }
 .dash-platform-grid {
  display: grid;
- grid-template-columns: repeat(4, minmax(0, 1fr));
+ grid-template-columns: repeat(3, minmax(0, 1fr));
  gap: 12px;
- padding: 16px 20px;
-}
-.dash-platform-tile {
- border-radius: 12px;
- border: 1px solid var(--border);
- padding: 12px;
 }
 .dash-platform-tile-other {
  border-style: dashed;

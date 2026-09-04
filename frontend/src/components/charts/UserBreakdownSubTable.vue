@@ -22,10 +22,10 @@
  <td class="py-1 text-right text-muted">
  {{ formatTokens(user.total_tokens) }}
  </td>
- <td class="py-1 text-right text-green-600">
+ <td class="py-1 text-right text-success-text">
  ${{ formatCost(user.actual_cost) }}
  </td>
- <td v-if="showAccountCost" class="py-1 text-right text-orange-500">
+ <td v-if="showAccountCost" class="py-1 text-right text-warning-text">
  ${{ formatCost(user.account_cost) }}
  </td>
  <td class="py-1 pr-1 text-right text-muted">

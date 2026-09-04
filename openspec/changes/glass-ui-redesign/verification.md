@@ -113,3 +113,19 @@
 - 品牌色集中到 `components/payment/paymentBrandColors.ts`；DailyRevenueChart 改 chartTheme()。
 - lead 已补 mock：`/admin/payment/dashboard`（符合 DashboardStats 契约）、`/admin/payment/orders`(+`/:id`)、`/admin/payment/plans`、`/admin/payment/invoices`(+`/:id`)。
 - 11.9/11.11 复核（lead 补 mock 后）：redeem 行 58、affiliates 三页行 59（原 90，三行叠 → NameIdCell 两行）；日期筛选 TextInput type=date h36。共享待办：抽 `components/ui/DateInput.vue`（tickets / affiliates / audit-logs / usage 共用），归 15.x。
+
+## 11G 复核（commit 4263f23ef）
+- /admin/tickets：thead 42 w1160（卡内 1172，无横向溢出）；行 61；筛选行 36（DateRangePicker + ToggleSwitch 替换原生控件）。
+- /admin/audit-logs：thead 42；行 60。
+- 回复模板：`/admin/tickets/reply-templates` 端点正确，工单 501 页面渲染 3 个模板 chip。
+- 门禁：eslint/vue-tsc 通过；ui-lint scoped 无新增；i18n parity 8906/8906；anchor-diff TicketsView 丢失 4 个（原生日期框 aria-label ×2、common.yes/no ×2，为控件替换的预期变化）。
+
+## mock：channel monitors（commit 4e42cb81e）
+- v1 `/channel-monitors`、`/admin/channel-monitors(/:id|/:id/history)`、`/channel-monitors/:id/status`；v2 `/(admin/)channel-monitor-v2/{dimensions,snapshot,matrix,models,errors,users}` + `/admin/channel-monitor-v2/config`（确定性生成，health score 0–100）。
+- `/monitor` 首屏渲染确认；现状缺陷：StatCard 行被趋势卡遮挡 → 交 12B。
+
+## 12.1 用户仪表盘（12A）
+- probe 1440×1080 user：hero top 74 h219；h1 top 130；工具条 101–129；StatCard 网格 top 309（列 284 gap 12）；图表行 2fr:1fr w773/w387。纵向下推源于用户端「按平台拆分」模块（proto 03 无）。
+- charts/* 全部 chartTheme()；vitest 16 files / 77 通过；eslint/vue-tsc 0；i18n 8917/8917；anchor-diff 丢失 2（PageHeader→hero，键改名）。
+- 复核修复：hero 工具条与小卡重叠（absolute→文档流，min-height 219）。
+- 待裁决（15.x）：`layout/DashboardPageLayout.vue` 无消费者，admin/user 仪表盘均为内联 hero；决定：保留内联写法，15 阶段删除该组件及其 spec 或收敛为共享骨架。
