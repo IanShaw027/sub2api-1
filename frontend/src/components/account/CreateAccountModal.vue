@@ -628,7 +628,7 @@
 
           <div v-if="customErrorCodesEnabled" class="space-y-3">
             <div class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3">
-              <p class="text-xs text-amber-700">
+              <p class="text-xs text-warning-text">
                 <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
                 {{ t('admin.accounts.customErrorCodesWarning') }}
               </p>
@@ -644,7 +644,7 @@
                 :class="[
  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
  selectedErrorCodes.includes(code.value)
- ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-red-500'
+ ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-danger-text'
  : 'bg-surface-2 text-muted hover:bg-surface-3'
  ]"
               >
@@ -686,7 +686,7 @@
                 <button
                   type="button"
                   @click="removeErrorCode(code)"
-                  class="hover:text-red-900"
+                  class="hover:text-danger-text"
                 >
                   <Icon name="x" size="sm" :stroke-width="2" />
                 </button>
@@ -870,76 +870,15 @@
 
         <!-- Model Restriction Section for Bedrock -->
         <div class="border-t border-line pt-4">
-          <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
-
-          <!-- Mode Toggle -->
-          <div class="mb-4 flex gap-2">
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'whitelist'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'whitelist'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              {{ t('admin.accounts.modelWhitelist') }}
-            </button>
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'mapping'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'mapping'
- ? 'bg-purple-100 text-purple-700'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              {{ t('admin.accounts.modelMapping') }}
-            </button>
-          </div>
-
-          <!-- Whitelist Mode -->
-          <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector
-              v-model="allowedModels"
-              platform="anthropic"
-              :sync-credentials="syncPreviewCredentials"
-              @upstream-synced="upstreamModelsPreviewed = true"
-            />
-            <p class="text-xs text-muted">
-              {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-              <span v-if="allowedModels.length === 0">{{ t('admin.accounts.supportsAllModels') }}</span>
-            </p>
-          </div>
-
-          <!-- Mapping Mode -->
-          <div v-else class="space-y-3">
-            <div v-for="(mapping, index) in modelMappings" :key="index" class="flex items-center gap-2">
-              <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
-              <span class="text-muted">→</span>
-              <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
-              <button type="button" @click="modelMappings.splice(index, 1)" class="text-red-500 hover:text-red-700">
-                <Icon name="trash" size="sm" />
-              </button>
-            </div>
-            <button type="button" @click="modelMappings.push({ from: '', to: '' })" class="btn btn-secondary text-sm">
-              + {{ t('admin.accounts.addMapping') }}
-            </button>
-            <!-- Bedrock Preset Mappings -->
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="preset in bedrockPresets"
-                :key="preset.from"
-                type="button"
-                @click="addPresetMapping(preset.from, preset.to)"
-                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
-              >
-                + {{ preset.label }}
-              </button>
-            </div>
-          </div>
+          <ModelRestrictionEditor
+            v-model:mode="modelRestrictionMode"
+            v-model:allowed-models="allowedModels"
+            v-model:model-mappings="modelMappings"
+            platform="anthropic"
+            :sync-credentials="syncPreviewCredentials"
+            :presets="bedrockPresets"
+            @upstream-synced="upstreamModelsPreviewed = true"
+          />
         </div>
 
         <!-- Pool Mode Section for Bedrock -->
@@ -1291,7 +1230,7 @@
                   <button
                     type="button"
                     @click="removeTempUnschedRule(index)"
-                    class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
+                    class="rounded p-1 text-danger-text transition-colors hover:text-danger-text"
                   >
                     <Icon name="x" size="sm" :stroke-width="2" />
                   </button>
@@ -2136,7 +2075,7 @@
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-muted">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
-              <button type="button" @click="removeOpenAICompactModelMapping(index)" class="text-red-500 hover:text-red-700">
+              <button type="button" @click="removeOpenAICompactModelMapping(index)" class="text-danger-text hover:text-danger-text">
                 <Icon name="trash" size="sm" />
               </button>
             </div>
@@ -2170,7 +2109,7 @@
         </div>
         <p
           v-if="!openAITextGenerationCapabilityEnabled"
-          class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-amber-700"
+          class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-warning-text"
           data-testid="openai-responses-mode-not-applicable"
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
@@ -2711,7 +2650,6 @@ const GrokPanel = defineAsyncComponent(() => import('@/components/account/platfo
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
-import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import ModelRestrictionEditor from '@/components/account/ModelRestrictionEditor.vue'
 import OpenAIPanel from '@/components/account/platform/OpenAIPanel.vue'
 import KiroPanel from '@/components/account/platform/KiroPanel.vue'
@@ -3779,14 +3717,6 @@ const addOpenAICompactModelMapping = () => {
 
 const removeOpenAICompactModelMapping = (index: number) => {
   openAICompactModelMappings.value.splice(index, 1)
-}
-
-const addPresetMapping = (from: string, to: string) => {
-  if (modelMappings.value.some((m) => m.from === from)) {
-    appStore.showInfo(t('admin.accounts.mappingExists', { model: from }))
-    return
-  }
-  modelMappings.value.push({ from, to })
 }
 
 // Error code toggle helper

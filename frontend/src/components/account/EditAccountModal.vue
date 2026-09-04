@@ -111,103 +111,15 @@
         v-if="account.platform === 'kiro'"
         class="border-t border-line pt-4"
       >
-        <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
-
-        <div class="mb-4 flex gap-2">
-          <button
-            type="button"
-            @click="modelRestrictionMode = 'whitelist'"
-            :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'whitelist'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-          >
-            {{ t('admin.accounts.modelWhitelist') }}
-          </button>
-          <button
-            type="button"
-            @click="modelRestrictionMode = 'mapping'"
-            :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'mapping'
- ? 'bg-purple-100 text-purple-700'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-          >
-            {{ t('admin.accounts.modelMapping') }}
-          </button>
-        </div>
-
-        <div v-if="modelRestrictionMode === 'whitelist'">
-          <ModelWhitelistSelector v-model="allowedModels" platform="kiro" :account-id="account?.id" />
-          <p class="text-xs text-muted">
-            {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-            <span v-if="allowedModels.length === 0">{{ t('admin.accounts.supportsAllModels') }}</span>
-          </p>
-        </div>
-
-        <div v-else>
-          <div class="mb-3 rounded-lg bg-purple-50 p-3">
-            <p class="text-xs text-purple-700">
-              {{ t('admin.accounts.mapRequestModels') }}
-            </p>
-          </div>
-
-          <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-            <div
-              v-for="(mapping, index) in modelMappings"
-              :key="'kiro-' + getModelMappingKey(mapping)"
-              class="flex items-center gap-2"
-            >
-              <input
-                v-model="mapping.from"
-                type="text"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.requestModel')"
-              />
-              <svg class="h-4 w-4 flex-shrink-0 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-              </svg>
-              <input
-                v-model="mapping.to"
-                type="text"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.actualModel')"
-              />
-              <button
-                type="button"
-                @click="removeModelMapping(index)"
-                class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-              >
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            @click="addModelMapping"
-            class="mb-3 w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-muted transition-colors hover:border-line hover:text-foreground"
-          >
-            + {{ t('admin.accounts.addMapping') }}
-          </button>
-
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="preset in presetMappings"
-              :key="'kiro-preset-' + preset.from"
-              type="button"
-              @click="addPresetMapping(preset.from, preset.to)"
-              :class="['rounded-lg px-3 py-2 text-sm font-medium transition-colors', preset.color]"
-            >
-              + {{ preset.label }}
-            </button>
-          </div>
-        </div>
+        <ModelRestrictionEditor
+          v-model:mode="modelRestrictionMode"
+          v-model:allowed-models="allowedModels"
+          v-model:model-mappings="modelMappings"
+          platform="kiro"
+          :account-id="account?.id"
+          preset-button-class="rounded-lg px-3 py-2 text-sm font-medium transition-colors"
+          :presets="presetMappings"
+        />
       </div>
 
       <!-- API Key fields (only for apikey type) -->
@@ -358,188 +270,16 @@
 
         <!-- Model Restriction Section (不适用于 Antigravity) -->
         <div v-if="account.platform !== 'antigravity'" class="border-t border-line pt-4">
-          <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
-
-          <div
-            v-if="isOpenAIModelRestrictionDisabled"
-            class="mb-3 rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3"
-          >
-            <p class="text-xs text-amber-700">
-              {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
-            </p>
-          </div>
-
-          <template v-else>
-            <!-- Mode Toggle -->
-            <div class="mb-4 flex gap-2">
-              <button
-                type="button"
-                @click="modelRestrictionMode = 'whitelist'"
-                :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'whitelist'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-              >
-                <svg
-                  class="mr-1.5 inline h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                {{ t('admin.accounts.modelWhitelist') }}
-              </button>
-              <button
-                type="button"
-                @click="modelRestrictionMode = 'mapping'"
-                :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'mapping'
- ? 'bg-purple-100 text-purple-700'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-              >
-                <svg
-                  class="mr-1.5 inline h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-                  />
-                </svg>
-                {{ t('admin.accounts.modelMapping') }}
-              </button>
-            </div>
-
-            <!-- Whitelist Mode -->
-            <div v-if="modelRestrictionMode === 'whitelist'">
-              <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
-              <p class="text-xs text-muted">
-                {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-                <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
-                  t('admin.accounts.supportsAllModels')
-                }}</span>
-              </p>
-            </div>
-
-            <!-- Mapping Mode -->
-            <div v-else>
-              <div class="mb-3 rounded-lg bg-purple-50 p-3">
-                <p class="text-xs text-purple-700">
-                  <svg
-                    class="mr-1 inline h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  {{ t('admin.accounts.mapRequestModels') }}
-                </p>
-              </div>
-
-            <!-- Model Mapping List -->
-            <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
-                v-for="(mapping, index) in modelMappings"
-                :key="getModelMappingKey(mapping)"
-                class="flex items-center gap-2"
-              >
-                <input
-                  v-model="mapping.from"
-                  type="text"
-                  class="input flex-1"
-                  :placeholder="t('admin.accounts.requestModel')"
-                />
-                <svg
-                  class="h-4 w-4 flex-shrink-0 text-muted"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M14 5l7 7m0 0l-7 7m7-7H3"
-                  />
-                </svg>
-                <input
-                  v-model="mapping.to"
-                  type="text"
-                  class="input flex-1"
-                  :placeholder="t('admin.accounts.actualModel')"
-                />
-                <button
-                  type="button"
-                  @click="removeModelMapping(index)"
-                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-                >
-                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              @click="addModelMapping"
-              class="mb-3 w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-muted transition-colors hover:border-line hover:text-foreground"
-            >
-              <svg
-                class="mr-1 inline h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-              {{ t('admin.accounts.addMapping') }}
-            </button>
-
-              <!-- Quick Add Buttons -->
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="preset in presetMappings"
-                  :key="preset.label"
-                  type="button"
-                  @click="addPresetMapping(preset.from, preset.to)"
-                  :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
-                >
-                  + {{ preset.label }}
-                </button>
-              </div>
-            </div>
-          </template>
+          <ModelRestrictionEditor
+            v-model:mode="modelRestrictionMode"
+            v-model:allowed-models="allowedModels"
+            v-model:model-mappings="modelMappings"
+            :platform="account?.platform || 'anthropic'"
+            :account-id="account?.id"
+            :disabled-by-passthrough="isOpenAIModelRestrictionDisabled"
+            :show-icons="true"
+            :presets="presetMappings"
+          />
         </div>
 
         <!-- Pool Mode Section -->
@@ -634,7 +374,7 @@
 
           <div v-if="customErrorCodesEnabled" class="space-y-3">
             <div class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3">
-              <p class="text-xs text-amber-700">
+              <p class="text-xs text-warning-text">
                 <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
                 {{ t('admin.accounts.customErrorCodesWarning') }}
               </p>
@@ -650,7 +390,7 @@
                 :class="[
  'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
  selectedErrorCodes.includes(code.value)
- ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-red-500'
+ ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-danger-text'
  : 'bg-surface-2 text-muted hover:bg-surface-3'
  ]"
               >
@@ -692,7 +432,7 @@
                 <button
                   type="button"
                   @click="removeErrorCode(code)"
-                  class="hover:text-red-900"
+                  class="hover:text-danger-text"
                 >
                   <Icon name="x" size="sm" :stroke-width="2" />
                 </button>
@@ -813,135 +553,15 @@
         v-if="(account.platform === 'openai' || account.platform === 'grok') && account.type === 'oauth'"
         class="border-t border-line pt-4"
       >
-        <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
-
-        <div
-          v-if="isOpenAIModelRestrictionDisabled"
-          class="mb-3 rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3"
-        >
-          <p class="text-xs text-amber-700">
-            {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
-          </p>
-        </div>
-
-        <template v-else>
-          <!-- Mode Toggle -->
-          <div class="mb-4 flex gap-2">
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'whitelist'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'whitelist'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              {{ t('admin.accounts.modelWhitelist') }}
-            </button>
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'mapping'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'mapping'
- ? 'bg-purple-100 text-purple-700'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              {{ t('admin.accounts.modelMapping') }}
-            </button>
-          </div>
-
-          <!-- Whitelist Mode -->
-          <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
-            <p class="text-xs text-muted">
-              {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-              <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
-                t('admin.accounts.supportsAllModels')
-              }}</span>
-            </p>
-          </div>
-
-          <!-- Mapping Mode -->
-          <div v-else>
-            <div class="mb-3 rounded-lg bg-purple-50 p-3">
-              <p class="text-xs text-purple-700">
-                {{ t('admin.accounts.mapRequestModels') }}
-              </p>
-            </div>
-
-            <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
-                v-for="(mapping, index) in modelMappings"
-                :key="'oauth-' + getModelMappingKey(mapping)"
-                class="flex items-center gap-2"
-              >
-                <input
-                  v-model="mapping.from"
-                  type="text"
-                  class="input flex-1"
-                  :placeholder="t('admin.accounts.requestModel')"
-                />
-                <svg
-                  class="h-4 w-4 flex-shrink-0 text-muted"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M14 5l7 7m0 0l-7 7m7-7H3"
-                  />
-                </svg>
-                <input
-                  v-model="mapping.to"
-                  type="text"
-                  class="input flex-1"
-                  :placeholder="t('admin.accounts.actualModel')"
-                />
-                <button
-                  type="button"
-                  @click="removeModelMapping(index)"
-                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-                >
-                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              @click="addModelMapping"
-              class="mb-3 w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-muted transition-colors hover:border-line hover:text-foreground"
-            >
-              + {{ t('admin.accounts.addMapping') }}
-            </button>
-
-            <!-- Quick Add Buttons -->
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="preset in presetMappings"
-                :key="'oauth-' + preset.label"
-                type="button"
-                @click="addPresetMapping(preset.from, preset.to)"
-                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
-              >
-                + {{ preset.label }}
-              </button>
-            </div>
-          </div>
-        </template>
+        <ModelRestrictionEditor
+          v-model:mode="modelRestrictionMode"
+          v-model:allowed-models="allowedModels"
+          v-model:model-mappings="modelMappings"
+          :platform="account?.platform || 'anthropic'"
+          :account-id="account?.id"
+          :disabled-by-passthrough="isOpenAIModelRestrictionDisabled"
+          :presets="presetMappings"
+        />
       </div>
 
       <!-- Upstream fields (only for upstream type) -->
@@ -1009,177 +629,14 @@
 
         <!-- Model Restriction Section for Service Account -->
         <div class="border-t border-line pt-4">
-          <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
-
-          <!-- Mode Toggle -->
-          <div class="mb-4 flex gap-2">
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'whitelist'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'whitelist'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              <svg
-                class="mr-1.5 inline h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              {{ t('admin.accounts.modelWhitelist') }}
-            </button>
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'mapping'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'mapping'
- ? 'bg-purple-100 text-purple-700'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              <svg
-                class="mr-1.5 inline h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-                />
-              </svg>
-              {{ t('admin.accounts.modelMapping') }}
-            </button>
-          </div>
-
-          <!-- Whitelist Mode -->
-          <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" :platform="account?.platform || 'anthropic'" :account-id="account?.id" />
-            <p class="text-xs text-muted">
-              {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-              <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{
-                t('admin.accounts.supportsAllModels')
-              }}</span>
-            </p>
-          </div>
-
-          <!-- Mapping Mode -->
-          <div v-else>
-            <div class="mb-3 rounded-lg bg-purple-50 p-3">
-              <p class="text-xs text-purple-700">
-                <svg
-                  class="mr-1 inline h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                {{ t('admin.accounts.mapRequestModels') }}
-              </p>
-            </div>
-
-            <!-- Model Mapping List -->
-            <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-              <div
-                v-for="(mapping, index) in modelMappings"
-                :key="getModelMappingKey(mapping)"
-                class="flex items-center gap-2"
-              >
-                <input
-                  v-model="mapping.from"
-                  type="text"
-                  class="input flex-1"
-                  :placeholder="t('admin.accounts.requestModel')"
-                />
-                <svg
-                  class="h-4 w-4 flex-shrink-0 text-muted"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M14 5l7 7m0 0l-7 7m7-7H3"
-                  />
-                </svg>
-                <input
-                  v-model="mapping.to"
-                  type="text"
-                  class="input flex-1"
-                  :placeholder="t('admin.accounts.actualModel')"
-                />
-                <button
-                  type="button"
-                  @click="removeModelMapping(index)"
-                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-                >
-                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              @click="addModelMapping"
-              class="mb-3 w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-muted transition-colors hover:border-line hover:text-foreground"
-            >
-              <svg
-                class="mr-1 inline h-4 w-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-              {{ t('admin.accounts.addMapping') }}
-            </button>
-
-            <!-- Quick Add Buttons -->
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="preset in presetMappings"
-                :key="preset.label"
-                type="button"
-                @click="addPresetMapping(preset.from, preset.to)"
-                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
-              >
-                + {{ preset.label }}
-              </button>
-            </div>
-          </div>
+          <ModelRestrictionEditor
+            v-model:mode="modelRestrictionMode"
+            v-model:allowed-models="allowedModels"
+            v-model:model-mappings="modelMappings"
+            :platform="account?.platform || 'anthropic'"
+            :account-id="account?.id"
+            :presets="presetMappings"
+          />
         </div>
       </div>
 
@@ -1279,7 +736,7 @@
               :class="[
  'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
  modelRestrictionMode === 'mapping'
- ? 'bg-purple-100 text-purple-700'
+ ? 'bg-[color-mix(in_oklch,var(--accent)_16%,transparent)] text-accent'
  : 'bg-surface-2 text-muted hover:bg-surface-3'
  ]"
             >
@@ -1302,7 +759,7 @@
               <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
               <span class="text-muted">→</span>
               <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
-              <button type="button" @click="modelMappings.splice(index, 1)" class="text-red-500 hover:text-red-700">
+              <button type="button" @click="modelMappings.splice(index, 1)" class="text-danger-text hover:text-danger-text">
                 <Icon name="trash" size="sm" />
               </button>
             </div>
@@ -1411,8 +868,8 @@
 
         <!-- Mapping Mode Only (no toggle for Antigravity) -->
         <div>
-          <div class="mb-3 rounded-lg bg-purple-50 p-3">
-            <p class="text-xs text-purple-700">{{ t('admin.accounts.mapRequestModels') }}</p>
+          <div class="mb-3 rounded-lg bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] p-3">
+            <p class="text-xs text-accent">{{ t('admin.accounts.mapRequestModels') }}</p>
           </div>
 
           <div class="mb-3 flex flex-wrap gap-2">
@@ -1420,7 +877,7 @@
               type="button"
               @click="syncAntigravityUpstreamModels"
               :disabled="isSyncingAntigravityUpstream || !account?.id"
-              class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-success-text hover:bg-[color-mix(in_oklch,var(--success)_16%,transparent)] disabled:cursor-not-allowed disabled:opacity-60"
+              class="rounded-lg border border-success px-3 py-1.5 text-sm text-success-text hover:bg-[color-mix(in_oklch,var(--success)_16%,transparent)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {{ isSyncingAntigravityUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
             </button>
@@ -1438,7 +895,7 @@
                   type="text"
                   :class="[
  'input flex-1',
- !isValidWildcardPattern(mapping.from) ? 'border-red-500' : '',
+ !isValidWildcardPattern(mapping.from) ? 'border-danger-text' : '',
  mapping.to.includes('*') ? '' : ''
  ]"
                   :placeholder="t('admin.accounts.requestModel')"
@@ -1451,14 +908,14 @@
                   type="text"
                   :class="[
  'input flex-1',
- mapping.to.includes('*') ? 'border-red-500' : ''
+ mapping.to.includes('*') ? 'border-danger-text' : ''
  ]"
                   :placeholder="t('admin.accounts.actualModel')"
                 />
                 <button
                   type="button"
                   @click="removeAntigravityModelMapping(index)"
-                  class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
+                  class="rounded-lg p-2 text-danger-text transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path
@@ -1471,10 +928,10 @@
                 </button>
               </div>
               <!-- 校验错误提示 -->
-              <p v-if="!isValidWildcardPattern(mapping.from)" class="text-xs text-red-500">
+              <p v-if="!isValidWildcardPattern(mapping.from)" class="text-xs text-danger-text">
                 {{ t('admin.accounts.wildcardOnlyAtEnd') }}
               </p>
-              <p v-if="mapping.to.includes('*')" class="text-xs text-red-500">
+              <p v-if="mapping.to.includes('*')" class="text-xs text-danger-text">
                 {{ t('admin.accounts.targetNoWildcard') }}
               </p>
             </div>
@@ -1583,7 +1040,7 @@
                   <button
                     type="button"
                     @click="removeTempUnschedRule(index)"
-                    class="rounded p-1 text-red-500 transition-colors hover:text-red-600"
+                    class="rounded p-1 text-danger-text transition-colors hover:text-danger-text"
                   >
                     <Icon name="x" size="sm" :stroke-width="2" />
                   </button>
@@ -1867,9 +1324,9 @@
         v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
         class="border-t border-line pt-4"
       >
-        <div class="overflow-hidden rounded-lg border border-sky-100 bg-sky-50/60 shadow-sm">
+        <div class="overflow-hidden rounded-lg border border-[color-mix(in_oklch,var(--accent)_20%,transparent)] bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] shadow-sm">
           <div class="flex items-start gap-3 px-4 py-3">
-            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface text-sky-600 shadow-sm ring-1 ring-sky-100">
+            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface text-accent shadow-sm ring-1 ring-[color-mix(in_oklch,var(--accent)_20%,transparent)]">
               <Icon name="sparkles" size="sm" />
             </div>
             <div class="min-w-0 flex-1">
@@ -1882,12 +1339,12 @@
                   {{ codexImageToolBadgeLabel }}
                 </span>
               </div>
-              <p class="mt-1 text-xs leading-5 text-slate-600">
+              <p class="mt-1 text-xs leading-5 text-muted">
                 {{ t('admin.accounts.openai.codexImageToolDesc') }}
               </p>
             </div>
           </div>
-          <div class="border-t border-sky-100 bg-surface/70 p-2">
+          <div class="border-t border-[color-mix(in_oklch,var(--accent)_20%,transparent)] bg-surface/70 p-2">
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 v-for="option in codexImageToolOptions"
@@ -1899,7 +1356,7 @@
  'group flex min-h-[62px] items-start gap-2 rounded-md border px-3 py-2 text-left transition-all',
  codexImageToolMode === option.value
  ? option.selectedCardClass
- : 'border-transparent bg-transparent text-slate-600 hover:border-line hover:bg-surface-2'
+ : 'border-transparent bg-transparent text-muted hover:border-line hover:bg-surface-2'
  ]"
               >
                 <span
@@ -1914,7 +1371,7 @@
                 </span>
                 <span class="min-w-0">
                   <span class="block text-sm font-medium">{{ option.label }}</span>
-                  <span class="mt-0.5 block text-xs leading-4 text-slate-500">{{ option.description }}</span>
+                  <span class="mt-0.5 block text-xs leading-4 text-muted">{{ option.description }}</span>
                 </span>
               </button>
             </div>
@@ -1972,7 +1429,7 @@
         </div>
         <div
           v-else
-          class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-amber-700"
+          class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-warning-text"
           data-testid="openai-responses-mode-not-applicable"
         >
           {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
@@ -2365,7 +1822,7 @@
                 class="input flex-1"
                 :placeholder="t('admin.accounts.toModel')"
               />
-              <button type="button" @click="removeOpenAICompactModelMapping(index)" class="text-red-500 hover:text-red-700">
+              <button type="button" @click="removeOpenAICompactModelMapping(index)" class="text-danger-text hover:text-danger-text">
                 <Icon name="trash" size="sm" />
               </button>
             </div>
@@ -3146,6 +2603,7 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
+import ModelRestrictionEditor from '@/components/account/ModelRestrictionEditor.vue'
 import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
@@ -3420,8 +2878,8 @@ const kiroProfileStatusLabel = computed(() => {
 })
 const kiroProfileStatusBadgeClass = computed(() => {
   return effectiveKiroProfileChoice.value
-    ? 'bg-violet-100 text-violet-700'
-    : 'bg-slate-100 text-slate-700'
+    ? 'bg-[color-mix(in_oklch,var(--accent)_16%,transparent)] text-accent'
+    : 'bg-surface-3 text-muted'
 })
 const kiroProfilePendingHint = computed(() => {
   if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_KEEP) return ''
@@ -3753,29 +3211,29 @@ const codexImageToolOptions = computed<Array<{
     value: 'inherit',
     label: t('admin.accounts.openai.codexImageToolInherit'),
     description: t('admin.accounts.openai.codexImageToolInheritDesc'),
-    selectedCardClass: 'border-sky-300 bg-sky-50 text-sky-900 shadow-sm ring-1 ring-sky-200',
-    selectedDotClass: 'border-sky-500 bg-sky-500 text-white'
+    selectedCardClass: 'border-[color-mix(in_oklch,var(--accent)_45%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent shadow-sm ring-1 ring-[color-mix(in_oklch,var(--accent)_25%,transparent)]',
+    selectedDotClass: 'border-accent bg-accent text-white'
   },
   {
     value: 'enabled',
     label: t('admin.accounts.openai.codexImageToolEnabled'),
     description: t('admin.accounts.openai.codexImageToolEnabledDesc'),
-    selectedCardClass: 'border-emerald-300 bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-emerald-900 shadow-sm ring-1 ring-emerald-200',
-    selectedDotClass: 'border-emerald-500 bg-emerald-500 text-white'
+    selectedCardClass: 'border-success bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text shadow-sm ring-1 ring-[color-mix(in_oklch,var(--success)_30%,transparent)]',
+    selectedDotClass: 'border-success bg-[var(--success)] text-white'
   },
   {
     value: 'disabled',
     label: t('admin.accounts.openai.codexImageToolDisabled'),
     description: t('admin.accounts.openai.codexImageToolDisabledDesc'),
-    selectedCardClass: 'border-amber-300 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-amber-900 shadow-sm ring-1 ring-amber-200',
-    selectedDotClass: 'border-amber-500 bg-amber-500 text-white'
+    selectedCardClass: 'border-warning bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text shadow-sm ring-1 ring-[color-mix(in_oklch,var(--warning)_30%,transparent)]',
+    selectedDotClass: 'border-warning bg-[var(--warning)] text-white'
   },
   {
     value: 'block',
     label: t('admin.accounts.openai.codexImageToolBlock'),
     description: t('admin.accounts.openai.codexImageToolBlockDesc'),
-    selectedCardClass: 'border-rose-300 bg-rose-50 text-rose-900 shadow-sm ring-1 ring-rose-200',
-    selectedDotClass: 'border-rose-500 bg-rose-500 text-white'
+    selectedCardClass: 'border-danger-text bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text shadow-sm ring-1 ring-[color-mix(in_oklch,var(--danger)_30%,transparent)]',
+    selectedDotClass: 'border-danger-text bg-[var(--danger)] text-white'
   }
 ])
 const codexImageToolBadgeLabel = computed(() => {
@@ -3795,11 +3253,11 @@ const codexImageToolBadgeClass = computed(() => {
     case 'enabled':
       return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
     case 'disabled':
-      return 'bg-amber-100 text-amber-700'
+      return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
     case 'block':
-      return 'bg-rose-100 text-rose-700'
+      return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
     default:
-      return 'bg-slate-100 text-slate-600'
+      return 'bg-surface-3 text-muted'
   }
 })
 const openAICompactModeOptions = computed(() => [
@@ -4562,24 +4020,6 @@ watch(
   },
   { immediate: true }
 )
-
-// Model mapping helpers
-const addModelMapping = () => {
-  modelMappings.value.push({ from: '', to: '' })
-}
-
-const removeModelMapping = (index: number) => {
-  modelMappings.value.splice(index, 1)
-}
-
-const addPresetMapping = (from: string, to: string) => {
-  const exists = modelMappings.value.some((m) => m.from === from)
-  if (exists) {
-    appStore.showInfo(t('admin.accounts.mappingExists', { model: from }))
-    return
-  }
-  modelMappings.value.push({ from, to })
-}
 
 const applyKiroModelRestrictionPatch = (
   newCredentials: Record<string, unknown>,

@@ -65,3 +65,7 @@
 - 截图脚本主题参数：应用 `localStorage.theme` 只认 `light|dark`，mock `/setup/seed` 现在把 `glass-dark|glass-light` 归一化，`shot.cjs … glass-dark` 才会真正切到暗色（此前暗色截图实际是亮色，导致暗色 diff 虚高 98%）。`pixel-diff.mjs` 参数解析已修，`--ref-offset 0,34` 不再被当成热图路径（之前会在 `frontend/` 生成名为 `0,34` 的文件）。
 - 门禁脚本（2026-09-04 起可用）：`npm run lint:ui`（`scripts/ui-lint.mjs --scoped`，遗留类 / 颜色字面量 / views scoped 非布局声明，白名单含 `i18n/locales`）、`npm run i18n:diff`（vite-node 深比对 + 重复键）、`node scripts/anchor-diff.mjs <file> --base 65529a248 --scope <子组件目录>`（锚点集合比对，允许因拆分迁移到 scope 目录）。组 9 之后的当前树基线：legacy 181（views/admin 80、components/admin 25、components/user 24、views/user 20、channel-monitor-v2 14）、color 361（views/admin 77、channel-monitor-v2 70、components/admin 53、components/charts 42、views/user 30）、scoped 242（views/admin 175、views/user 49、KeyUsageView 11、views/public 7）。组 11–14 各代理负责把所属路由的命中清零；15.1 以 0 收口。KeysView anchor-diff：v-model `groupSearchQuery`、handler `changeGroup` 迁入 `KeyGroupPicker`，`keys.rateLimit*`/`common.name`/`common.total` 改为字符串三元/列定义，非丢失。
 - 壳层几何修正（组 7–9 复核时发现）：原型 header 为 content-box，`height:60px + padding-top:6px` 实际 66px；紧凑页头 h1 24px 的 normal 行高渲染为 35px、描述 13px 为 19px。已改 `AppHeader .topbar` 66px、`PageHeader`/`.page-title`/`.page-description` 行高、`TablePageLayout` 高度 100vh−98。修正后 `/keys` 页头（h1 74..109、描述 113..132、首块内容 146）与原型逐像素一致。
+
+### 8B 阶段 2（账号弹窗拆分，2026-09-04）
+- vue-tsc：account 范围 0 错误（其余错误来自 11B 进行中的 ProxiesView）；eslint 0；vitest account 范围 341/341；ui-lint（BulkEdit/bulk/*/Create/Edit）legacy 0 / color 0 / scoped 0。
+- 未完成：Create/Edit 弹窗仍 5963/5372 行，见 deviations。

@@ -73,6 +73,7 @@
         <ModelWhitelistSelector
           v-model="allowedModels"
           :platform="platform"
+          :account-id="accountId"
           :sync-credentials="syncCredentials"
           @upstream-synced="emit('upstream-synced')"
         />
@@ -197,6 +198,7 @@ interface SyncCredentials {
 
 interface Props {
   platform: string
+  accountId?: number
   syncCredentials?: SyncCredentials
   disabledByPassthrough?: boolean
   showIcons?: boolean
@@ -205,6 +207,7 @@ interface Props {
 }
 
 withDefaults(defineProps<Props>(), {
+  accountId: undefined,
   syncCredentials: undefined,
   disabledByPassthrough: false,
   showIcons: false,

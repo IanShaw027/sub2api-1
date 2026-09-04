@@ -243,102 +243,10 @@
       />
 
       <!-- Custom error codes -->
-      <div class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <label
-              id="bulk-edit-custom-error-codes-label"
-              class="input-label mb-0"
-              for="bulk-edit-custom-error-codes-enabled"
-            >
-              {{ t('admin.accounts.customErrorCodes') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.customErrorCodesHint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableCustomErrorCodes"
-            id="bulk-edit-custom-error-codes-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-custom-error-codes-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-
-        <div v-if="enableCustomErrorCodes" id="bulk-edit-custom-error-codes-body" class="space-y-3">
-          <div class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3">
-            <p class="text-xs text-warning-text">
-              <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
-              {{ t('admin.accounts.customErrorCodesWarning') }}
-            </p>
-          </div>
-
-          <!-- Error Code Buttons -->
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="code in commonErrorCodes"
-              :key="code.value"
-              type="button"
-              :class="[
- 'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
- selectedErrorCodes.includes(code.value)
- ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-red-500'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-              @click="toggleErrorCode(code.value)"
-            >
-              {{ code.value }} {{ code.label }}
-            </button>
-          </div>
-
-          <!-- Manual input -->
-          <div class="flex items-center gap-2">
-            <input
-              v-model="customErrorCodeInput"
-              id="bulk-edit-custom-error-code-input"
-              type="number"
-              min="100"
-              max="599"
-              class="input flex-1"
-              :placeholder="t('admin.accounts.enterErrorCode')"
-              aria-labelledby="bulk-edit-custom-error-codes-label"
-              @keyup.enter="addCustomErrorCode"
-            />
-            <button type="button" class="btn btn-secondary px-3" @click="addCustomErrorCode">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-            </button>
-          </div>
-
-          <!-- Selected codes summary -->
-          <div class="flex flex-wrap gap-1.5">
-            <span
-              v-for="code in selectedErrorCodes.sort((a, b) => a - b)"
-              :key="code"
-              class="inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] px-2.5 py-0.5 text-sm font-medium text-danger-text"
-            >
-              {{ code }}
-              <button
-                type="button"
-                class="hover:text-danger-text"
-                @click="removeErrorCode(code)"
-              >
-                <Icon name="x" size="xs" class="h-3.5 w-3.5" :stroke-width="2" />
-              </button>
-            </span>
-            <span v-if="selectedErrorCodes.length === 0" class="text-xs text-muted">
-              {{ t('admin.accounts.noneSelectedUsesDefault') }}
-            </span>
-          </div>
-        </div>
-      </div>
+      <CustomErrorCodesSection
+        v-model:enabled="enableCustomErrorCodes"
+        v-model:selected-codes="selectedErrorCodes"
+      />
 
       <!-- Intercept warmup requests (Anthropic only) -->
       <div class="border-t border-line pt-4">
@@ -383,67 +291,12 @@
       </div>
 
       <!-- Header Override (eligible API-key platforms + grok OAuth) -->
-      <div v-if="allHeaderOverrideCapable" class="border-t border-line pt-4">
-        <div class="flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-header-override-label"
-              class="input-label mb-0"
-              for="bulk-edit-header-override-enabled"
-            >
-              {{ t('admin.accounts.headerOverride.title') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.headerOverride.hint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableHeaderOverride"
-            id="bulk-edit-header-override-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-header-override-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div v-if="enableHeaderOverride" id="bulk-edit-header-override-body" class="mt-3 space-y-3">
-          <button
-            type="button"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- headerOverrideEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            @click="headerOverrideEnabled = !headerOverrideEnabled"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                headerOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-
-          <div v-if="headerOverrideEnabled" class="space-y-3">
-            <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-              <p class="text-xs text-accent">
-                <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
-                {{ t('admin.accounts.headerOverride.info') }}
-              </p>
-            </div>
-
-            <p class="text-xs text-warning-text">
-              {{ t('admin.accounts.headerOverride.bulkReplaceHint') }}
-            </p>
-
-            <HeaderOverrideEditor
-              :rows="headerOverrideRows"
-              @update:rows="headerOverrideRows = $event"
-            />
-          </div>
-          <p v-else class="text-xs text-muted">
-            {{ t('admin.accounts.headerOverride.bulkDisableHint') }}
-          </p>
-        </div>
-      </div>
+      <HeaderOverrideSection
+        :show="allHeaderOverrideCapable"
+        v-model:enable-header-override="enableHeaderOverride"
+        v-model:header-override-enabled="headerOverrideEnabled"
+        v-model:header-override-rows="headerOverrideRows"
+      />
 
       <!-- Proxy -->
       <div class="border-t border-line pt-4">
@@ -518,356 +371,55 @@
         </div>
       </div>
 
-      <!-- OpenAI OAuth WS mode -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-ws-mode-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-ws-mode-enabled"
-          >
-            {{ t('admin.accounts.openai.wsMode') }}
-          </label>
-          <input
-            v-model="enableOpenAIWSMode"
-            id="bulk-edit-openai-ws-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-ws-mode"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-ws-mode"
-          :class="!enableOpenAIWSMode && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.wsModeDesc') }}
-          </p>
-          <p class="mb-3 text-xs text-muted">
-            {{ t(openAIWSModeConcurrencyHintKey) }}
-          </p>
-          <Select
-            v-model="openaiOAuthResponsesWebSocketV2Mode"
-            data-testid="bulk-edit-openai-ws-mode-select"
-            :options="openAIWSModeOptions"
-            aria-labelledby="bulk-edit-openai-ws-mode-label"
-          />
-        </div>
-      </div>
-
-      <!-- OpenAI OAuth Codex CLI only -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-codex-cli-only-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-codex-cli-only-enabled"
-          >
-            {{ t('admin.accounts.openai.codexCLIOnly') }}
-          </label>
-          <input
-            v-model="enableCodexCLIOnly"
-            id="bulk-edit-openai-codex-cli-only-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-codex-cli-only"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-codex-cli-only"
-          :class="!enableCodexCLIOnly && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.codexCLIOnlyDesc') }}
-          </p>
-          <button
-            id="bulk-edit-openai-codex-cli-only-toggle"
-            type="button"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- codexCLIOnlyEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            @click="codexCLIOnlyEnabled = !codexCLIOnlyEnabled"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                codexCLIOnlyEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-      </div>
-
-      <!-- OpenAI OAuth: Codex app-server -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-codex-app-server-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-codex-app-server-enabled"
-          >
-            {{ t('admin.accounts.openai.codexCLIOnlyAppServer') }}
-          </label>
-          <input
-            v-model="enableCodexCLIOnlyAppServer"
-            id="bulk-edit-openai-codex-app-server-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-codex-app-server"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-codex-app-server"
-          :class="!enableCodexCLIOnlyAppServer && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.codexCLIOnlyAppServerDesc') }}
-          </p>
-          <button
-            id="bulk-edit-openai-codex-app-server-toggle"
-            type="button"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- codexCLIOnlyAppServerEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            @click="codexCLIOnlyAppServerEnabled = !codexCLIOnlyAppServerEnabled"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                codexCLIOnlyAppServerEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-      </div>
-
-      <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
-          <input
-            id="bulk-edit-openai-codex-fingerprint-mode-enabled"
-            v-model="enableCodexFingerprintMode"
-            type="checkbox"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div :class="!enableCodexFingerprintMode && 'pointer-events-none opacity-50'">
-          <p class="mb-2 text-xs text-muted">
-            {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
-          </p>
-          <Select v-model="codexFingerprintMode" data-testid="bulk-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
-        </div>
-      </div>
+      <!-- OpenAI OAuth toggles (WS mode, Codex CLI only, Codex app-server, fingerprint mode) -->
+      <OpenAIOAuthTogglesSection
+        :show="allOpenAIOAuth"
+        :openAIWSModeOptions="openAIWSModeOptions"
+        :openAIWSModeConcurrencyHintKey="openAIWSModeConcurrencyHintKey"
+        :codexFingerprintModeOptions="codexFingerprintModeOptions"
+        v-model:enableOpenAIWSMode="enableOpenAIWSMode"
+        v-model:openaiOAuthResponsesWebSocketV2Mode="openaiOAuthResponsesWebSocketV2Mode"
+        v-model:enableCodexCLIOnly="enableCodexCLIOnly"
+        v-model:codexCLIOnlyEnabled="codexCLIOnlyEnabled"
+        v-model:enableCodexCLIOnlyAppServer="enableCodexCLIOnlyAppServer"
+        v-model:codexCLIOnlyAppServerEnabled="codexCLIOnlyAppServerEnabled"
+        v-model:enableCodexFingerprintMode="enableCodexFingerprintMode"
+        v-model:codexFingerprintMode="codexFingerprintMode"
+      />
 
       <!-- Upstream billing auto probe (any API-key platform) -->
-      <div v-if="allBillingProbeCapable" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-upstream-billing-auto-probe-label"
-              class="input-label mb-0"
-              for="bulk-edit-upstream-billing-auto-probe-enabled"
-            >
-              {{ t('admin.accounts.upstreamBilling.autoProbe') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableUpstreamBillingAutoProbe"
-            id="bulk-edit-upstream-billing-auto-probe-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-upstream-billing-auto-probe"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-upstream-billing-auto-probe"
-          :class="!enableUpstreamBillingAutoProbe && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-upstream-billing-auto-probe-label"
-        >
-          <Select
-            v-model="upstreamBillingAutoProbeMode"
-            :disabled="!enableUpstreamBillingAutoProbe"
-            data-testid="bulk-edit-upstream-billing-auto-probe-select"
-            :options="upstreamBillingAutoProbeOptions"
-            aria-labelledby="bulk-edit-upstream-billing-auto-probe-label"
-          />
-        </div>
-      </div>
+      <UpstreamBillingAutoProbeSection
+        :show="allBillingProbeCapable"
+        :upstreamBillingAutoProbeOptions="upstreamBillingAutoProbeOptions"
+        v-model:enableUpstreamBillingAutoProbe="enableUpstreamBillingAutoProbe"
+        v-model:upstreamBillingAutoProbeMode="upstreamBillingAutoProbeMode"
+      />
 
-      <!-- OpenAI API Key endpoint capabilities -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between gap-4">
-          <div class="flex-1">
-            <label
-              id="bulk-edit-openai-endpoint-capabilities-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-endpoint-capabilities-enabled"
-            >
-              {{ t('admin.accounts.openai.endpointCapabilities') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAIEndpointCapabilities"
-            id="bulk-edit-openai-endpoint-capabilities-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-endpoint-capabilities-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-endpoint-capabilities-body"
-          :class="!enableOpenAIEndpointCapabilities && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-openai-endpoint-capabilities-label"
-        >
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label
-              v-for="option in openAIEndpointCapabilityOptions"
-              :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm"
-            >
-              <input
-                type="checkbox"
-                :disabled="!enableOpenAIEndpointCapabilities"
-                class="rounded border-line text-accent focus:ring-accent"
-                :data-testid="`bulk-edit-openai-endpoint-capability-${option.value}`"
-                :checked="openAIEndpointCapabilities.includes(option.value)"
-                @change="toggleOpenAIEndpointCapability(option.value, $event)"
-              />
-              <span class="text-foreground">{{ option.label }}</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <!-- OpenAI API Key Responses route -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between gap-4">
-          <div class="flex-1">
-            <label
-              id="bulk-edit-openai-responses-mode-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-responses-mode-enabled"
-            >
-              {{ t('admin.accounts.openai.responsesMode') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.responsesModeDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAIResponsesMode"
-            id="bulk-edit-openai-responses-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-responses-mode-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-responses-mode-body"
-          :class="!enableOpenAIResponsesMode && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-openai-responses-mode-label"
-        >
-          <Select
-            v-model="openAIResponsesMode"
-            :disabled="!enableOpenAIResponsesMode || !openAIResponsesModeApplicable"
-            data-testid="bulk-edit-openai-responses-mode-select"
-            :options="openAIResponsesModeOptions"
-            aria-labelledby="bulk-edit-openai-responses-mode-label"
-          />
-          <p
-            v-if="enableOpenAIEndpointCapabilities && !openAITextGenerationCapabilityEnabled"
-            class="mt-2 rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-warning-text"
-            data-testid="bulk-edit-openai-responses-mode-not-applicable"
-          >
-            {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
-          </p>
-        </div>
-      </div>
-
-      <!-- OpenAI API Key WS mode -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-apikey-ws-mode-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-apikey-ws-mode-enabled"
-          >
-            {{ t('admin.accounts.openai.wsMode') }}
-          </label>
-          <input
-            v-model="enableOpenAIAPIKeyWSMode"
-            id="bulk-edit-openai-apikey-ws-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-apikey-ws-mode"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-apikey-ws-mode"
-          :class="!enableOpenAIAPIKeyWSMode && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.wsModeDesc') }}
-          </p>
-          <p class="mb-3 text-xs text-muted">
-            {{ t(openAIAPIKeyWSModeConcurrencyHintKey) }}
-          </p>
-          <Select
-            v-model="openaiAPIKeyResponsesWebSocketV2Mode"
-            data-testid="bulk-edit-openai-apikey-ws-mode-select"
-            :options="openAIWSModeOptions"
-            aria-labelledby="bulk-edit-openai-apikey-ws-mode-label"
-          />
-        </div>
-      </div>
+      <!-- OpenAI API Key toggles (endpoint capabilities, responses route, WS mode) -->
+      <OpenAIApiKeyTogglesSection
+        :show="allOpenAIAPIKey"
+        :openAIEndpointCapabilityOptions="openAIEndpointCapabilityOptions"
+        :openAIResponsesModeOptions="openAIResponsesModeOptions"
+        :openAIResponsesModeApplicable="openAIResponsesModeApplicable"
+        :openAITextGenerationCapabilityEnabled="openAITextGenerationCapabilityEnabled"
+        :openAIWSModeOptions="openAIWSModeOptions"
+        :openAIAPIKeyWSModeConcurrencyHintKey="openAIAPIKeyWSModeConcurrencyHintKey"
+        v-model:enableOpenAIEndpointCapabilities="enableOpenAIEndpointCapabilities"
+        v-model:openAIEndpointCapabilities="openAIEndpointCapabilities"
+        v-model:enableOpenAIResponsesMode="enableOpenAIResponsesMode"
+        v-model:openAIResponsesMode="openAIResponsesMode"
+        v-model:enableOpenAIAPIKeyWSMode="enableOpenAIAPIKeyWSMode"
+        v-model:openaiAPIKeyResponsesWebSocketV2Mode="openaiAPIKeyResponsesWebSocketV2Mode"
+        @toggle-capability="toggleOpenAIEndpointCapability"
+      />
 
       <!-- OpenAI Compact mode -->
-      <div v-if="allOpenAIPassthroughCapable" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-openai-compact-mode-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-compact-mode-enabled"
-            >
-              {{ t('admin.accounts.openai.compactMode') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.compactModeDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAICompactMode"
-            id="bulk-edit-openai-compact-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-compact-mode"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-compact-mode"
-          :class="!enableOpenAICompactMode && 'pointer-events-none opacity-50'"
-        >
-          <Select
-            v-model="openAICompactMode"
-            data-testid="bulk-edit-openai-compact-mode-select"
-            :options="openAICompactModeOptions"
-            aria-labelledby="bulk-edit-openai-compact-mode-label"
-          />
-        </div>
-      </div>
+      <OpenAICompactModeSection
+        :show="allOpenAIPassthroughCapable"
+        :openAICompactModeOptions="openAICompactModeOptions"
+        v-model:enableOpenAICompactMode="enableOpenAICompactMode"
+        v-model:openAICompactMode="openAICompactMode"
+      />
 
       <!-- OpenAI Compact model mapping -->
       <OpenAICompactModelMappingSection
@@ -991,12 +543,16 @@ import ModelRestrictionSection from '@/components/account/bulk/ModelRestrictionS
 import OpenAICompactModelMappingSection from '@/components/account/bulk/OpenAICompactModelMappingSection.vue'
 import ConcurrencyPrioritySection from '@/components/account/bulk/ConcurrencyPrioritySection.vue'
 import RpmLimitSection from '@/components/account/bulk/RpmLimitSection.vue'
-import Icon from '@/components/icons/Icon.vue'
+import CustomErrorCodesSection from '@/components/account/bulk/CustomErrorCodesSection.vue'
+import HeaderOverrideSection from '@/components/account/bulk/HeaderOverrideSection.vue'
+import OpenAIOAuthTogglesSection from '@/components/account/bulk/OpenAIOAuthTogglesSection.vue'
+import UpstreamBillingAutoProbeSection from '@/components/account/bulk/UpstreamBillingAutoProbeSection.vue'
+import OpenAIApiKeyTogglesSection from '@/components/account/bulk/OpenAIApiKeyTogglesSection.vue'
+import OpenAICompactModeSection from '@/components/account/bulk/OpenAICompactModeSection.vue'
 import {
   buildModelMappingObject as buildModelMappingPayload,
   getPresetMappingsByPlatform
 } from '@/composables/useModelWhitelist'
-import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import {
   buildHeaderOverridesObject,
   isHeaderOverrideCapable,
@@ -1180,7 +736,6 @@ const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
 const modelMappings = ref<ModelMapping[]>([])
 const selectedErrorCodes = ref<number[]>([])
-const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
@@ -1227,17 +782,6 @@ const umqModeOptions = computed(() => [
   { value: 'throttle', label: t('admin.accounts.quotaControl.rpmLimit.umqModeThrottle') },
   { value: 'serialize', label: t('admin.accounts.quotaControl.rpmLimit.umqModeSerialize') },
 ])
-
-// Common HTTP error codes
-const commonErrorCodes = [
-  { value: 401, label: 'Unauthorized' },
-  { value: 403, label: 'Forbidden' },
-  { value: 429, label: 'Rate Limit' },
-  { value: 500, label: 'Server Error' },
-  { value: 502, label: 'Bad Gateway' },
-  { value: 503, label: 'Unavailable' },
-  { value: 529, label: 'Overloaded' }
-]
 
 const statusOptions = computed(() => [
   { value: 'active', label: t('common.active') },
@@ -1333,57 +877,6 @@ const openAIAPIKeyWSModeConcurrencyHintKey = computed(() =>
 
 // Model mapping helpers (whitelist/mapping editing lives in ModelRestrictionSection /
 // OpenAICompactModelMappingSection)
-
-// Error code helpers
-const toggleErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index === -1) {
-    // Adding code - check for 429/529 warning
-    if (code === 429) {
-      if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-        return
-      }
-    } else if (code === 529) {
-      if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-        return
-      }
-    }
-    selectedErrorCodes.value.push(code)
-  } else {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
-
-const addCustomErrorCode = () => {
-  const code = customErrorCodeInput.value
-  if (code === null || code < 100 || code > 599) {
-    appStore.showError(t('admin.accounts.invalidErrorCode'))
-    return
-  }
-  if (selectedErrorCodes.value.includes(code)) {
-    appStore.showInfo(t('admin.accounts.errorCodeExists'))
-    return
-  }
-  // Check for 429/529 warning
-  if (code === 429) {
-    if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-      return
-    }
-  } else if (code === 529) {
-    if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-      return
-    }
-  }
-  selectedErrorCodes.value.push(code)
-  customErrorCodeInput.value = null
-}
-
-const removeErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index !== -1) {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
 
 const buildModelMappingObject = (): Record<string, string> | null => {
   return buildModelMappingPayload(
@@ -1875,7 +1368,6 @@ watch(
       allowedModels.value = []
       modelMappings.value = []
       selectedErrorCodes.value = []
-      customErrorCodeInput.value = null
       interceptWarmupRequests.value = false
       headerOverrideEnabled.value = false
       headerOverrideRows.value = []
