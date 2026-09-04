@@ -58,7 +58,7 @@ import { useAppStore, useAuthStore } from '@/stores'
 import { ticketsAPI } from '@/api/tickets'
 import TicketCategoryForm from '@/components/tickets/TicketCategoryForm.vue'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { ticketCategoryOptions, validateTicketPayload } from '@/utils/tickets'
+import { sanitizeTicketPayload, ticketCategoryOptions, validateTicketPayload } from '@/utils/tickets'
 import type { TicketCategory, TicketRateGroupOption } from '@/types/ticket'
 
 const { t } = useI18n()
@@ -96,7 +96,7 @@ async function submit() {
   const form = {
     category: category.value,
     title: title.value.trim(),
-    form_payload: payload.value,
+    form_payload: sanitizeTicketPayload(category.value, payload.value),
   }
   const validationKey = validateTicketPayload(form.category, form.title, form.form_payload)
   if (validationKey) {
