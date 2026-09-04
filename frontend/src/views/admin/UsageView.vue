@@ -100,7 +100,7 @@
               </button>
               <div
                 v-if="showColumnDropdown"
-                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
+                class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-[var(--shadow-pop)]"
               >
                 <button
                   v-for="col in currentToggleableColumns"

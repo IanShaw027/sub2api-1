@@ -340,7 +340,7 @@
         top: tokenTooltipPosition.y + 'px'
       }"
     >
-      <div class="whitespace-nowrap rounded-lg border border-line bg-[var(--code-bg)] px-3 py-2.5 text-xs text-white shadow-xl">
+      <div class="whitespace-nowrap rounded-lg border border-line bg-[var(--code-bg)] px-3 py-2.5 text-xs text-white shadow-[var(--shadow-pop)]">
         <div class="space-y-1.5">
           <div>
             <div class="text-xs font-semibold text-muted mb-1">{{ t('usage.tokenDetails') }}</div>
@@ -424,7 +424,7 @@
         top: tooltipPosition.y + 'px'
       }"
     >
-      <div class="whitespace-nowrap rounded-lg border border-line bg-[var(--code-bg)] px-3 py-2.5 text-xs text-white shadow-xl">
+      <div class="whitespace-nowrap rounded-lg border border-line bg-[var(--code-bg)] px-3 py-2.5 text-xs text-white shadow-[var(--shadow-pop)]">
         <div class="space-y-1.5">
           <!-- Cost Breakdown -->
           <div class="mb-2 border-b border-line pb-1.5">

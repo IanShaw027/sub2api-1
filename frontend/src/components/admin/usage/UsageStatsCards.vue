@@ -36,7 +36,7 @@
               />
             </svg>
             <span
-              class="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-56 -translate-x-1/2 rounded-lg border border-line bg-surface p-3 text-left text-xs text-foreground shadow-lg group-hover:block group-focus:block"
+              class="pointer-events-none absolute left-1/2 top-full z-30 mt-2 hidden w-56 -translate-x-1/2 rounded-lg border border-line bg-surface p-3 text-left text-xs text-foreground shadow-[var(--shadow-pop)] group-hover:block group-focus:block"
             >
               <span class="mb-2 block font-medium text-foreground">
                 {{ cacheDetailLabel() }}

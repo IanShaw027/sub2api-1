@@ -1,86 +1,82 @@
 <template>
   <AppLayout>
-    <div class="detail-page">
-      <PageHeader
-        :title="ticket?.title || ticket?.ticket_no || t('nav.ticketManagement')"
-        :description="ticket ? `#${ticket.ticket_no} · ${t(`tickets.categories.${ticket.category}`)}` : t('tickets.detailConversationTitle')"
-      >
-        <template #actions>
-          <Button variant="secondary" @click="goBack">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
-            {{ t('common.back') }}
-          </Button>
-        </template>
-      </PageHeader>
+    <PageHeader
+      :title="ticket?.title || ticket?.ticket_no || t('nav.ticketManagement')"
+      :description="ticket ? `#${ticket.ticket_no} · ${t(`tickets.categories.${ticket.category}`)}` : t('tickets.detailConversationTitle')"
+    >
+      <template #actions>
+        <Button variant="secondary" @click="goBack">
+          <Icon name="arrowLeft" size="sm" :stroke-width="1.8" />
+          {{ t('common.back') }}
+        </Button>
+      </template>
+    </PageHeader>
 
-      <GlassCard v-if="loading" class="detail-loading">
-        {{ t('common.loading') }}
-      </GlassCard>
+    <GlassCard v-if="loading" class="detail-loading">
+      {{ t('common.loading') }}
+    </GlassCard>
 
-      <div v-else-if="ticket" class="detail-grid">
-        <div class="detail-main">
-          <TicketConversationPane
-            :title="t('tickets.detailConversationTitle')"
-            :subtitle="ticket.ticket_no"
-            :messages="messages"
-            :empty-text="t('tickets.emptyConversation')"
-            :show-composer="canReply"
-            :sending="sendingReply"
-            :reply-content="replyDraft"
-            :clear-composer-key="clearComposerKey"
-            :composer-placeholder="t('tickets.replyPlaceholderAdmin')"
-            :submit-text="t('tickets.reply')"
-            :sending-text="t('common.submitting')"
-            :ticket-id="ticketID"
-            :upload-fn="uploadAdminTicketMedia"
-            :download-fn="downloadAttachment"
-            @update:reply-content="replyDraft = $event"
-            @reply="reply"
-            @upload-error="handleUploadError"
-          >
-            <template #composer-actions>
-              <div class="template-rail" role="group" :aria-label="t('tickets.templates.button')">
-                <button
-                  v-for="template in replyTemplates"
-                  :key="template.id"
-                  ref="templateTriggerRef"
-                  type="button"
-                  class="filter-pill template-pill"
-                  :title="template.content"
-                  @click="applyTemplate(template.content)"
-                >
-                  <span class="filter-pill-value">{{ template.title }}</span>
-                </button>
-                <span v-if="replyTemplates.length === 0" class="template-empty">{{ t('tickets.templates.empty') }}</span>
-                <button type="button" class="filter-pill template-pill" @click="openTemplateDialog">
-                  <span class="filter-pill-label">{{ t('tickets.templates.manage') }}</span>
-                </button>
-              </div>
-            </template>
-          </TicketConversationPane>
-        </div>
+    <DetailPageLayout v-else-if="ticket" class="ticket-detail-layout">
+      <template #main>
+        <TicketConversationPane
+          :title="t('tickets.detailConversationTitle')"
+          :subtitle="ticket.ticket_no"
+          :messages="messages"
+          :empty-text="t('tickets.emptyConversation')"
+          :show-composer="canReply"
+          :sending="sendingReply"
+          :reply-content="replyDraft"
+          :clear-composer-key="clearComposerKey"
+          :composer-placeholder="t('tickets.replyPlaceholderAdmin')"
+          :submit-text="t('tickets.reply')"
+          :sending-text="t('common.submitting')"
+          :ticket-id="ticketID"
+          :upload-fn="uploadAdminTicketMedia"
+          :download-fn="downloadAttachment"
+          @update:reply-content="replyDraft = $event"
+          @reply="reply"
+          @upload-error="handleUploadError"
+        >
+          <template #composer-actions>
+            <div class="template-rail" role="group" :aria-label="t('tickets.templates.button')">
+              <button
+                v-for="template in replyTemplates"
+                :key="template.id"
+                ref="templateTriggerRef"
+                type="button"
+                class="filter-pill template-pill"
+                :title="template.content"
+                @click="applyTemplate(template.content)"
+              >
+                <span class="filter-pill-value">{{ template.title }}</span>
+              </button>
+              <span v-if="replyTemplates.length === 0" class="template-empty">{{ t('tickets.templates.empty') }}</span>
+              <button type="button" class="filter-pill template-pill" @click="openTemplateDialog">
+                <span class="filter-pill-label">{{ t('tickets.templates.manage') }}</span>
+              </button>
+            </div>
+          </template>
+        </TicketConversationPane>
+      </template>
 
-        <aside class="detail-side">
-          <TicketDetailPane :ticket="ticket" show-user-meta>
-            <template #actions>
-              <div v-if="canUpdateStatus" class="status-block">
-                <p class="status-label">{{ t('tickets.adminActions') }}</p>
-                <UiSelect
-                  :model-value="ticket.status"
-                  :options="statusActionOptions"
-                  :disabled="actionLoading"
-                  :searchable="false"
-                  :aria-label="t('tickets.adminActions')"
-                  @update:model-value="handleStatusSelect"
-                />
-              </div>
-            </template>
-          </TicketDetailPane>
-        </aside>
-      </div>
-    </div>
+      <template #side>
+        <TicketDetailPane :ticket="ticket" show-user-meta>
+          <template #actions>
+            <div v-if="canUpdateStatus" class="status-block">
+              <p class="status-label">{{ t('tickets.adminActions') }}</p>
+              <UiSelect
+                :model-value="ticket.status"
+                :options="statusActionOptions"
+                :disabled="actionLoading"
+                :searchable="false"
+                :aria-label="t('tickets.adminActions')"
+                @update:model-value="handleStatusSelect"
+              />
+            </div>
+          </template>
+        </TicketDetailPane>
+      </template>
+    </DetailPageLayout>
 
     <TicketReplyTemplatesDialog
       :show="showTemplateDialog"
@@ -97,10 +93,12 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import DetailPageLayout from '@/components/layout/DetailPageLayout.vue'
 import Button from '@/components/ui/Button.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import UiSelect from '@/components/ui/UiSelect.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores'
 import { adminTicketsAPI } from '@/api/admin/tickets'
 import { adminMediaAPI } from '@/api/media'
@@ -371,13 +369,6 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
 </script>
 
 <style scoped>
-.detail-page {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  min-width: 0;
-}
-
 .detail-loading {
   padding: 40px;
   text-align: center;
@@ -385,29 +376,21 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
   color: var(--muted);
 }
 
-.detail-grid {
-  display: grid;
-  min-width: 0;
-  gap: 24px;
+/* The conversation pane and side meta card both size themselves to 100% of
+   their parent (with their own internal scroll areas), so the layout needs
+   an explicit, viewport-relative height here — DetailPageLayout itself stays
+   height-agnostic for pages that just want natural page scroll. */
+.ticket-detail-layout :deep(.detail-page-layout-grid) {
   height: calc(100vh - 10rem);
   min-height: calc(100vh - 10rem);
-  overflow: hidden;
+  align-items: stretch;
 }
 
-.detail-main,
-.detail-side {
-  min-width: 0;
+.ticket-detail-layout :deep(.detail-page-layout-main),
+.ticket-detail-layout :deep(.detail-page-layout-side) {
   min-height: 0;
-}
-
-.detail-side {
   height: 100%;
-}
-
-@media (min-width: 1280px) {
-  .detail-grid {
-    grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.95fr);
-  }
+  overflow: hidden;
 }
 
 .status-block {

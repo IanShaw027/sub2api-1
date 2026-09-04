@@ -96,7 +96,7 @@
 
           <template #cell-status_code="{ row }">
             <span :class="statusBadgeClass(row.status_code)">
-              <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass(row.status_code)"></span>
+              <span class="h-1.5 w-1.5 rounded-full" :style="{ background: statusDotColor(row.status_code) }"></span>
               {{ row.status_code }}
             </span>
           </template>
@@ -112,7 +112,7 @@
           <template #cell-actions="{ row }">
             <button
               type="button"
-              class="inline-flex items-center gap-1 font-medium text-accent transition-colors hover:text-accent  "
+              class="inline-flex items-center gap-1 font-medium text-accent transition-colors hover:text-accent"
               @click="openDetail(row.id)"
             >
               <Icon name="eye" size="sm" />
@@ -159,10 +159,10 @@
 
       <div v-else-if="detail" class="space-y-5 py-2">
         <!-- Hero: action + result at a glance -->
-        <div class="rounded-2xl border border-line bg-surface-2 p-5">
+        <div class="rounded-[var(--radius-card)] border border-line bg-surface-2 p-5">
           <div class="flex flex-wrap items-center gap-3">
             <span :class="statusBadgeClass(detail.status_code)">
-              <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass(detail.status_code)"></span>
+              <span class="h-1.5 w-1.5 rounded-full" :style="{ background: statusDotColor(detail.status_code) }"></span>
               {{ detail.status_code }} {{ statusText(detail.status_code) }}
             </span>
             <span class="break-all font-mono text-base font-semibold text-foreground">
@@ -239,7 +239,7 @@
           <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             {{ t('admin.audit.detail.requestBody') }}
           </h4>
-          <pre class="max-h-72 overflow-auto rounded-xl bg-surface-2 p-4 font-mono text-xs leading-relaxed text-muted">{{ prettyBody(detail.request_body) }}</pre>
+          <pre class="code-block max-h-72 overflow-y-auto">{{ prettyBody(detail.request_body) }}</pre>
         </section>
 
         <!-- Extra -->
@@ -247,7 +247,7 @@
           <h4 class="mb-1.5 text-xs font-bold uppercase tracking-wider text-muted">
             {{ t('admin.audit.detail.extra') }}
           </h4>
-          <pre class="max-h-48 overflow-auto rounded-xl bg-surface-2 p-4 font-mono text-xs leading-relaxed text-muted">{{ JSON.stringify(detail.extra, null, 2) }}</pre>
+          <pre class="code-block max-h-48 overflow-y-auto">{{ JSON.stringify(detail.extra, null, 2) }}</pre>
         </section>
       </div>
     </BaseDialog>
@@ -656,15 +656,15 @@ function statusText(status: number): string {
 
 function statusBadgeClass(status: number): string {
   const base = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold '
-  if (status >= 500) return base + 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text  '
-  if (status >= 400) return base + 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  '
-  return base + 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  '
+  if (status >= 500) return base + 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
+  if (status >= 400) return base + 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
+  return base + 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 }
 
-function statusDotClass(status: number): string {
-  if (status >= 500) return 'bg-red-500'
-  if (status >= 400) return 'bg-amber-500'
-  return 'bg-green-500'
+function statusDotColor(status: number): string {
+  if (status >= 500) return 'var(--danger)'
+  if (status >= 400) return 'var(--warning)'
+  return 'var(--success)'
 }
 
 onMounted(fetchLogs)

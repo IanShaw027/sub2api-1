@@ -100,3 +100,9 @@
 - 探针 promo-codes：h1 74/35，thead h42；行高无法核验（mock 5 个列表端点落入 emptyPage）。
 - 代理发现并修复：RedeemBatchUpdateModal 抽取时缺 UiModal/Select import 导致弹层内容泄漏到正文流。
 - 待 lead：mock 补 `/admin/redeem-codes`、`/admin/promo-codes`、`/admin/affiliates/{invites,rebates,transfers}` 种子。
+
+### 11.19 – 11.22（tickets / ticket detail / usage / audit-logs，2026-09-04）
+- vue-tsc 0；eslint 0；vitest views/admin + usage 246/246；ui-lint legacy 0 / color 0 / scoped 10（Tickets 两页的字号字重，与 AccountsView 121 同属 15.x 全局清零项）；i18n 0/0/0；anchor-diff 4 视图无丢失。
+- 探针 tickets：h1 74/35，summary-row 146 h53，filter-row 213 h36，thead 264 h42；audit-logs thead h42。行高无法核验（mock tickets / audit-logs 无种子，见 lead 待办）。
+- usage：7 处 shadow-lg/xl → token；`components/charts/*` 调色板色归 12.1（chartTheme）。
+- 转交 11H：OpsErrorDetailModal 用 `.code-block`。

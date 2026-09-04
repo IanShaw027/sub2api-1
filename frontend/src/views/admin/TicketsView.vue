@@ -1,163 +1,166 @@
 <template>
   <AppLayout>
-    <div class="list-page">
-      <PageHeader :title="t('nav.ticketManagement')" :description="t('tickets.description')">
-        <template #actions>
-          <Button variant="secondary" @click="resetFilters">{{ t('common.reset') }}</Button>
-          <Button
-            variant="icon"
-            :disabled="loading"
-            :title="t('common.refresh')"
-            :aria-label="t('common.refresh')"
-            @click="loadTickets"
-          >
-            <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
-          </Button>
-        </template>
-      </PageHeader>
-
-      <div class="summary-row">
-        <button
-          v-for="chip in summaryChips"
-          :key="chip.key"
-          type="button"
-          class="summary-chip"
-          :class="{ 'is-active': filters.status === chip.status && filters.unread_only === chip.unreadOnly }"
-          @click="applySummaryChip(chip)"
+    <PageHeader :title="t('nav.ticketManagement')" :description="t('tickets.description')">
+      <template #actions>
+        <Button variant="secondary" @click="resetFilters">{{ t('common.reset') }}</Button>
+        <Button
+          variant="icon"
+          :disabled="loading"
+          :title="t('common.refresh')"
+          :aria-label="t('common.refresh')"
+          @click="loadTickets"
         >
-          <span class="summary-chip-label">
-            <span class="summary-chip-dot" :style="{ background: chip.color }" />
-            {{ chip.label }}
-          </span>
-          <span class="summary-chip-value">{{ chip.value }}</span>
-        </button>
-      </div>
+          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+        </Button>
+      </template>
+    </PageHeader>
 
-      <div class="filter-row">
-        <div class="filter-search">
-          <SearchInput
-            v-model="filters.search"
-            :placeholder="t('tickets.filters.adminSearch')"
-            @search="applyFilters"
+    <TablePageLayout>
+      <template #filters>
+        <div class="summary-row">
+          <button
+            v-for="chip in summaryChips"
+            :key="chip.key"
+            type="button"
+            class="summary-chip"
+            :class="{ 'is-active': filters.status === chip.status && filters.unread_only === chip.unreadOnly }"
+            @click="applySummaryChip(chip)"
+          >
+            <span class="summary-chip-label">
+              <span class="summary-chip-dot" :style="{ background: chip.color }" />
+              {{ chip.label }}
+            </span>
+            <span class="summary-chip-value">{{ chip.value }}</span>
+          </button>
+        </div>
+
+        <div class="filter-row">
+          <div class="filter-search">
+            <SearchInput
+              v-model="filters.search"
+              :placeholder="t('tickets.filters.adminSearch')"
+              @search="applyFilters"
+            />
+          </div>
+          <Select
+            v-model="filters.category"
+            class="w-[112px]"
+            :options="categoryFilterOptions"
+            :searchable="false"
+            @change="applyFilters"
+          />
+          <Select
+            v-model="filters.status"
+            class="w-[128px]"
+            :options="statusFilterOptions"
+            :searchable="false"
+            @change="applyFilters"
+          />
+          <input
+            v-model="filters.start_date"
+            type="date"
+            class="field filter-date"
+            :aria-label="t('tickets.table.createdAt')"
+            @change="applyFilters"
+          />
+          <span class="filter-dash" aria-hidden="true">–</span>
+          <input
+            v-model="filters.end_date"
+            type="date"
+            class="field filter-date"
+            :aria-label="t('tickets.table.updatedAt')"
+            @change="applyFilters"
+          />
+          <button
+            type="button"
+            class="filter-pill"
+            :class="{ 'is-active': filters.unread_only }"
+            :aria-pressed="filters.unread_only"
+            @click="toggleUnreadOnly"
+          >
+            <span class="filter-pill-label">{{ t('tickets.unreadOnly') }}</span>
+            <span class="filter-pill-value">{{ filters.unread_only ? t('common.yes') : t('common.no') }}</span>
+          </button>
+          <span class="filter-count">
+            {{ t('tickets.filters.unreadSummary') }} <b>{{ unreadCount }}</b> / {{ pagination.total }}
+          </span>
+        </div>
+      </template>
+
+      <template #table>
+        <div class="tickets-table-scroll">
+          <DataTable
+            :columns="columns"
+            :data="items"
+            :loading="showInitialLoading"
+          >
+            <template #cell-category="{ row }">
+              <span class="tag">{{ t(`tickets.categories.${row.category}`) }}</span>
+            </template>
+
+            <template #cell-title="{ row }">
+              <div class="cell-stack">
+                <span class="cell-title">
+                  {{ row.title }}
+                  <span v-if="row.unread_by_admin" class="unread-dot" :title="t('tickets.unreadOnly')" />
+                </span>
+                <span class="cell-meta">#{{ row.ticket_no }} · {{ t(`tickets.categories.${row.category}`) }}</span>
+              </div>
+            </template>
+
+            <template #cell-user_name="{ row }">
+              <div class="cell-stack">
+                <span class="cell-title">{{ row.user_name || row.user_email || '—' }}</span>
+                <span v-if="row.user_name && row.user_email" class="cell-meta">{{ row.user_email }}</span>
+              </div>
+            </template>
+
+            <template #cell-status="{ row }">
+              <StatusBadge dot :tone="ticketStatusTone(row.status)" :label="t(`tickets.statuses.${row.status}`)" />
+            </template>
+
+            <template #cell-created_at="{ value }">
+              <span class="cell-time">{{ formatRelativeWithDateTime(value) }}</span>
+            </template>
+
+            <template #cell-updated_at="{ value }">
+              <span class="cell-time">{{ formatRelativeWithDateTime(value) }}</span>
+            </template>
+
+            <template #cell-actions="{ row }">
+              <div class="row-actions">
+                <button
+                  type="button"
+                  class="icon-btn"
+                  :title="t('tickets.actions.view')"
+                  :aria-label="t('tickets.actions.view')"
+                  @click="router.push(`/admin/tickets/${row.id}`)"
+                >
+                  <Icon name="eye" size="sm" />
+                </button>
+              </div>
+            </template>
+
+            <template #empty>
+              <div class="empty-state">
+                <Icon name="inbox" class="empty-state-icon" :stroke-width="1.6" aria-hidden="true" />
+                <p class="empty-state-title">{{ t('tickets.empty') }}</p>
+              </div>
+            </template>
+          </DataTable>
+        </div>
+
+        <div v-if="pagination.total > 0" class="tickets-table-footer">
+          <Pagination
+            :page="pagination.page"
+            :total="pagination.total"
+            :page-size="pagination.page_size"
+            @update:page="handlePageChange"
+            @update:pageSize="handlePageSizeChange"
           />
         </div>
-        <Select
-          v-model="filters.category"
-          variant="pill"
-          :pill-label="t('tickets.table.category')"
-          :options="categoryFilterOptions"
-          :searchable="false"
-          @change="applyFilters"
-        />
-        <Select
-          v-model="filters.status"
-          variant="pill"
-          :pill-label="t('tickets.table.status')"
-          :options="statusFilterOptions"
-          :searchable="false"
-          @change="applyFilters"
-        />
-        <input
-          v-model="filters.start_date"
-          type="date"
-          class="field filter-date"
-          :aria-label="t('tickets.table.createdAt')"
-          @change="applyFilters"
-        />
-        <span class="filter-dash" aria-hidden="true">–</span>
-        <input
-          v-model="filters.end_date"
-          type="date"
-          class="field filter-date"
-          :aria-label="t('tickets.table.updatedAt')"
-          @change="applyFilters"
-        />
-        <button
-          type="button"
-          class="filter-pill"
-          :class="{ 'is-active': filters.unread_only }"
-          :aria-pressed="filters.unread_only"
-          @click="toggleUnreadOnly"
-        >
-          <span class="filter-pill-label">{{ t('tickets.unreadOnly') }}</span>
-          <span class="filter-pill-value">{{ filters.unread_only ? t('common.yes') : t('common.no') }}</span>
-        </button>
-        <span class="filter-count">
-          {{ t('tickets.filters.unreadSummary') }} <b>{{ unreadCount }}</b> / {{ pagination.total }}
-        </span>
-      </div>
-
-      <div class="table-card">
-        <DataTable
-          :columns="columns"
-          :data="items"
-          :loading="showInitialLoading"
-        >
-          <template #cell-category="{ row }">
-            <span class="tag">{{ t(`tickets.categories.${row.category}`) }}</span>
-          </template>
-
-          <template #cell-title="{ row }">
-            <div class="cell-stack">
-              <span class="cell-title">
-                {{ row.title }}
-                <span v-if="row.unread_by_admin" class="unread-dot" :title="t('tickets.unreadOnly')" />
-              </span>
-              <span class="cell-meta">#{{ row.ticket_no }} · {{ t(`tickets.categories.${row.category}`) }}</span>
-            </div>
-          </template>
-
-          <template #cell-user_name="{ row }">
-            <div class="cell-stack">
-              <span class="cell-title">{{ row.user_name || row.user_email || '—' }}</span>
-              <span v-if="row.user_name && row.user_email" class="cell-meta">{{ row.user_email }}</span>
-            </div>
-          </template>
-
-          <template #cell-status="{ row }">
-            <StatusBadge dot :tone="ticketStatusTone(row.status)" :label="t(`tickets.statuses.${row.status}`)" />
-          </template>
-
-          <template #cell-created_at="{ value }">
-            <span class="cell-time">{{ formatRelativeWithDateTime(value) }}</span>
-          </template>
-
-          <template #cell-updated_at="{ value }">
-            <span class="cell-time">{{ formatRelativeWithDateTime(value) }}</span>
-          </template>
-
-          <template #cell-actions="{ row }">
-            <div class="row-actions">
-              <button
-                type="button"
-                class="icon-btn"
-                :title="t('tickets.actions.view')"
-                :aria-label="t('tickets.actions.view')"
-                @click="router.push(`/admin/tickets/${row.id}`)"
-              >
-                <Icon name="eye" size="sm" />
-              </button>
-            </div>
-          </template>
-
-          <template #empty>
-            <div class="empty-state">
-              <Icon name="inbox" class="empty-state-icon" :stroke-width="1.6" aria-hidden="true" />
-              <p class="empty-state-title">{{ t('tickets.empty') }}</p>
-            </div>
-          </template>
-        </DataTable>
-
-        <Pagination
-          v-if="pagination.total > 0"
-          :page="pagination.page"
-          :total="pagination.total"
-          :page-size="pagination.page_size"
-          @update:page="handlePageChange"
-          @update:pageSize="handlePageSizeChange"
-        />
-      </div>
-    </div>
+      </template>
+    </TablePageLayout>
   </AppLayout>
 </template>
 
@@ -166,6 +169,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
@@ -347,16 +351,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.list-page {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
 .summary-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 10px;
+  margin-bottom: 14px;
 }
 
 .filter-row {
@@ -392,17 +391,17 @@ onMounted(() => {
   color: var(--foreground);
 }
 
-.table-card {
+.tickets-table-scroll {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
-  border-radius: var(--radius-card);
-  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  box-shadow: var(--shadow);
-  overflow: hidden;
+}
+
+.tickets-table-footer {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
 }
 
 .cell-stack {
@@ -462,15 +461,6 @@ onMounted(() => {
 
   .filter-count {
     margin-left: 0;
-  }
-
-  .table-card {
-    border: 0;
-    background: transparent;
-    box-shadow: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    overflow: visible;
   }
 
   .row-actions .icon-btn {
