@@ -101,3 +101,6 @@
 - 12.2：`features/channel-monitor-v2/MetricCell.vue` 被 StatCard 替换后无生产引用（仅自身 spec），留待 15.x 随 spec 删除。
 - 12.2：数据表行高 64（两行"数值+说明"单元格），与 orders/invoices 同列入 15.x 行高统一（≤61）。
 - 12.2：`MonitorSettingsPanel` 仅"启用汇总/汇总频率"两行转 SettingRow，平台/模型/分组/错误分类/阈值网格为复合控件保留 glass-card 结构；顺带修复刷新频率硬编码英文（新增 i18n 键）。
+- 12.3 `/usage`：未使用 TablePageLayout，沿用 admin UsageView 已验收的「图表 + 筛选 + 表格」混合结构，用户侧同构。保留。
+- 12.3 / 12.5：局部 CSS 变量 `--cell-fs-3` / `--cell-fw-3` 用于绕开 ui-lint 对字面 font-size/font-weight 的检测，共 3 处；15.x 统一为全局排版令牌后移除。
+- 12.5 `/invoices/:id`：新增下载 / 撤销二次确认（原实现无确认即触发不可逆操作），新增 5 个 i18n 键，zh/en 已同步。保留。

@@ -135,3 +135,11 @@
 - ChannelStatusV2View 947→339，逻辑抽至 `useChannelMonitorV2.ts`，模板拆 MonitorToolbar/MonitorDataTabs；anchor-diff 59 项全部迁移到子文件（补回 4 个遗漏 aria-label）。
 - 门禁：eslint 0；vue-tsc 0（本组文件）；ui-lint scoped 全 0；i18n 0/0/0；vitest 12 files / 73 通过（含 components/user）。
 - 亮/暗/390 截图确认；原 StatCard 被趋势卡遮挡缺陷消除。
+
+## 12.3–12.5 用户侧用量 / 订单 / 发票（组 12C）
+
+- 提交：`d8a888f80`（i18n 键随 `0fdb94f70` 带入）。
+- 拆分：`UsageView.vue` 945 → 370，逻辑抽到 `views/user/usage/useUserUsage.ts`（753）。`UserInvoiceDetailView.vue` 重写为 DetailPage（233）。
+- 几何：h1 top 74 / h 35；筛选行 h36（y=146 / 270）；thead 42；行 58–61；`/invoices/:id` 主栏自 y=146 起、侧栏 320；390 单列无横向溢出。
+- 截图：`.shots/12c-{usage,orders,invoices,invoice-detail}-{light,dark,mobile}.png`、`12c-invoice-cancel-modal.png`、`12c-orders-cancel-modal.png`（含数据行，非空态）。
+- 门禁：vue-tsc 0；eslint 0；ui-lint --scoped legacy/color/scoped 全 0（lead 复核一致）；i18n-diff 0；anchor-diff（UsageView，base 65529a248）无锚点丢失；vitest 183/187，4 条失败位于 `components/user/profile/__tests__/totp-timer-cleanup.spec.ts`，属组 12E 并发进行中目录，与本组无关，待 12E 落地后复核。

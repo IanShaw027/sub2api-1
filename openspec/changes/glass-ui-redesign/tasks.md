@@ -159,9 +159,9 @@
 批次 1（仪表盘 / 监控 / 记录）
 - [x] 12.1 `/dashboard`（`user/DashboardView.vue` + `components/user/dashboard/*` + `components/charts/*`：DashboardPage 配方；平台拆分改为 `1fr 1fr 1fr` 嵌板而非卡中卡；`TokenUsageTrend` / `ModelDistributionChart` 用 `chartTheme()`；图例 12 muted）；验证亮 / 暗 / 390 截图 + spec
 - [x] 12.2 `/monitor`（`ChannelStatusV2View.vue` + `features/channel-monitor-v2/*` + `components/user/monitor/*`；V1 视图同步令牌化或按 feature flag 保留最小改动并登记）；验证截图 + spec
-- [ ] 12.3 `/usage`（`UsageView.vue`：ListPage + 日期范围 + 明细弹层）；验证截图 + spec
-- [ ] 12.4 `/orders`（`UserOrdersView.vue` + `OrderStatusBadge.vue` + `OrderTable.vue`）；验证截图 + spec
-- [ ] 12.5 `/invoices`、`/invoices/:id`（`UserInvoicesView.vue`、`UserInvoiceDetailView.vue`：ListPage + DetailPage）；验证截图；提交 `feat(glass): user pages batch 1 (tasks 12.1–12.5)`
+- [x] 12.3 `/usage`（`UsageView.vue`：ListPage + 日期范围 + 明细弹层）；验证截图 + spec
+- [x] 12.4 `/orders`（`UserOrdersView.vue` + `OrderStatusBadge.vue` + `OrderTable.vue`）；验证截图 + spec
+- [x] 12.5 `/invoices`、`/invoices/:id`（`UserInvoicesView.vue`、`UserInvoiceDetailView.vue`：ListPage + DetailPage）；验证截图；提交 `feat(glass): user pages batch 1 (tasks 12.1–12.5)`
 
 批次 2（工单 / 订阅 / 渠道 / 设置）
 - [ ] 12.6 `/tickets`（`TicketsView.vue` + `components/tickets/*` 列表相关 + `components/ticket/*` 合并）；验证截图 + spec
