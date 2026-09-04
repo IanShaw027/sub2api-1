@@ -102,7 +102,7 @@
         <SupportQRCodesButton :entries="supportQRCodes" :legacy-contact-info="contactInfo" />
 
         <div v-if="user" class="topbar-bell">
-          <Teleport to="#topbar-mobile-bell" :disabled="!isMobile">
+          <Teleport defer to="#topbar-mobile-bell" :disabled="!isMobile">
             <AnnouncementBell />
           </Teleport>
         </div>
@@ -434,6 +434,12 @@ onBeforeUnmount(() => {
   box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px rgba(16, 24, 40, 0.06);
   cursor: pointer;
   overflow: hidden;
+}
+
+/* Teleport target for the notification bell: stays invisible until a page
+   mounts a button into it, otherwise it renders as an empty pill. */
+#topbar-mobile-bell:empty {
+  display: none;
 }
 
 .topbar-mobile-btn :deep(button) {
