@@ -8,7 +8,7 @@
         <Button @click="router.push('/orders')">{{ t('payment.invoices.fromOrders') }}</Button>
       </template>
     </PageHeader>
-    <div class="space-y-4">
+    <div class="invoices-page">
       <div class="flex flex-col gap-3">
         <FilterBar :search-placeholder="t('payment.invoices.search')">
           <template #search>
@@ -25,7 +25,7 @@
         />
       </div>
 
-      <DataTable :columns="columns" :data="invoices" :loading="loading">
+      <DataTable class="invoices-table" :columns="columns" :data="invoices" :loading="loading">
         <template #cell-id="{ value }">
           <span class="font-mono text-sm">#{{ value }}</span>
         </template>
@@ -40,14 +40,15 @@
           <span class="text-sm font-medium">{{ Number(value).toFixed(2) }}{{ row.currency ? ' ' + row.currency : '' }}</span>
         </template>
         <template #cell-applied_at="{ value }">
-          <span class="text-xs text-muted">{{ formatDateTime(value) || '-' }}</span>
+          <span v-if="value" class="text-xs text-muted" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
+          <span v-else class="text-xs text-muted">-</span>
         </template>
         <template #cell-actions="{ row }">
           <div class="flex items-center gap-2">
             <button class="text-xs text-accent hover:underline" @click="router.push(`/invoices/${row.id}`)">{{ t('common.view') }}</button>
             <button
               v-if="String(row.status).toUpperCase() === 'APPLIED'"
-              class="text-xs text-yellow-600 hover:underline"
+              class="text-xs text-warning-text hover:underline"
               @click="cancelInvoice(row.id)"
             >{{ t('common.cancel') }}</button>
           </div>
@@ -72,7 +73,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { formatDateTime } from '@/utils/format'
+import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import { useAppStore } from '@/stores'
 import type { Invoice } from '@/types/payment'
 import type { Column } from '@/components/common/types'
@@ -165,3 +166,19 @@ async function cancelInvoice(id: number) {
 
 onMounted(fetchInvoices)
 </script>
+
+<style scoped>
+.invoices-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.invoices-table :deep(.table-wrapper thead th) {
+  height: 42px;
+}
+
+.invoices-table :deep(.table-wrapper tbody td) {
+  height: 61px;
+}
+</style>

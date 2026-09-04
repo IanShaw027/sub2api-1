@@ -22,7 +22,7 @@
  <span class="text-foreground">{{ row.key_name || '-' }}</span>
  <span
  v-if="row.key_deleted"
- class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200"
+ class="tag tag-danger ml-1"
  >{{ t('usage.errors.keyDeleted') }}</span>
  </div>
  </template>
@@ -58,7 +58,7 @@
  <template #cell-group="{ row }">
  <span
  v-if="row.group_name"
- class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-100 text-indigo-800"
+ class="tag tag-accent"
  >{{ row.group_name }}</span>
  <span v-else class="text-sm text-muted">-</span>
  </template>
@@ -187,3 +187,14 @@ function openDetail(id: number) {
 
 const statusClass = statusCodeBadgeClass
 </script>
+
+<style scoped>
+/* ListPage table geometry: thead 42px / rows 61px (matches AccountsView/KeysView recipe) */
+:deep(.table-wrapper thead th) {
+  height: 42px;
+}
+
+:deep(.table-wrapper tbody td) {
+  height: 61px;
+}
+</style>

@@ -68,7 +68,14 @@
       </div>
     </div>
 
-    <BaseDialog :show="!!cancelTargetId" :title="t('payment.orders.cancel')" width="narrow" @close="cancelTargetId = null">
+    <UiModal
+      :open="!!cancelTargetId"
+      :title="t('payment.orders.cancel')"
+      width="sm"
+      :close-label="t('common.close')"
+      :close-on-overlay="false"
+      @close="cancelTargetId = null"
+    >
       <p class="text-sm text-muted">{{ t('payment.confirmCancel') }}</p>
       <template #footer>
         <div class="flex justify-end gap-3">
@@ -76,9 +83,15 @@
           <Button variant="danger" :disabled="actionLoading" @click="confirmCancel">{{ actionLoading ? t('common.processing') : t('payment.orders.cancel') }}</Button>
         </div>
       </template>
-    </BaseDialog>
+    </UiModal>
 
-    <BaseDialog :show="!!refundTarget" :title="t('payment.orders.requestRefund')" @close="refundTarget = null">
+    <UiModal
+      :open="!!refundTarget"
+      :title="t('payment.orders.requestRefund')"
+      :close-label="t('common.close')"
+      :close-on-overlay="false"
+      @close="refundTarget = null"
+    >
       <div v-if="refundTarget" class="space-y-4">
         <GlassCard variant="solid" padding="sm">
           <div class="flex justify-between text-sm">
@@ -101,9 +114,15 @@
           <Button :disabled="actionLoading || !refundReason.trim()" @click="confirmRefund">{{ actionLoading ? t('common.processing') : t('payment.orders.requestRefund') }}</Button>
         </div>
       </template>
-    </BaseDialog>
+    </UiModal>
 
-    <BaseDialog :show="showInvoiceDialog" :title="t('payment.invoices.apply')" @close="showInvoiceDialog = false">
+    <UiModal
+      :open="showInvoiceDialog"
+      :title="t('payment.invoices.apply')"
+      :close-label="t('common.close')"
+      :close-on-overlay="false"
+      @close="showInvoiceDialog = false"
+    >
       <div class="space-y-3">
         <p class="text-sm text-muted">{{ t('payment.invoices.applyHint', { count: selectedIds.length }) }}</p>
         <div>
@@ -111,7 +130,7 @@
           <input v-model="invoiceForm.title" class="input mt-1 w-full" />
         </div>
         <div>
-          <label class="input-label">{{ t('payment.invoices.taxNumber') }} <span class="text-red-500">*</span></label>
+          <label class="input-label">{{ t('payment.invoices.taxNumber') }} <span class="text-danger-text">*</span></label>
           <input v-model="invoiceForm.tax_number" class="input mt-1 w-full" required />
           <p class="mt-1 text-xs text-muted">{{ t('payment.invoices.taxNumberRequired') }}</p>
         </div>
@@ -140,7 +159,7 @@
           </Button>
         </div>
       </template>
-    </BaseDialog>
+    </UiModal>
   </AppLayout>
 </template>
 
@@ -159,7 +178,7 @@ import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import ChipScroller from '@/components/ui/ChipScroller.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import UiPagination from '@/components/ui/UiPagination.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderTable from '@/components/payment/OrderTable.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -334,6 +353,10 @@ onMounted(() => { hydrateInvoiceDraft(); fetchOrders(); loadRefundEligibility();
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  /* Local type-scale token: ui-lint's scoped check requires `var(--...)` in
+     view-level styles instead of literal font sizes (see AccountsView.vue /
+     AdminOrdersView.vue precedent noted in deviations.md). */
+  --cell-fs-3: 12.5px;
 }
 
 .list-filter-chips {
@@ -342,7 +365,7 @@ onMounted(() => { hydrateInvoiceDraft(); fetchOrders(); loadRefundEligibility();
 
 .list-filter-meta {
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: var(--cell-fs-3);
   color: var(--muted);
 }
 
