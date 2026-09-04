@@ -874,6 +874,50 @@ const MOCK_AFF_TRANSFERS = Array.from({ length: 9 }, (_, i) => {
   return { ledger_id: 7001 + i, user_id: p[0], user_email: p[1], username: p[2], amount, balance_after: 40 + i * 5, available_quota_after: 12 - i, frozen_quota_after: 3, history_quota_after: 60 + i * 5, snapshot_available: i % 3 !== 2, created_at: iso(NOW() - (i + 1) * 864e5) }
 })
 
+const TICKET_USERS = [[2, 'alice', 'alice@example.com'], [3, 'bob', 'bob@example.com'], [4, 'carol', 'carol@example.com'], [5, 'dave', 'dave@example.com']]
+const MOCK_TICKETS = Array.from({ length: 11 }, (_, i) => {
+  const u = TICKET_USERS[i % TICKET_USERS.length]
+  const categories = ['rate_apply', 'refund', 'consult', 'concurrency_apply', 'other']
+  const statuses = ['submitted', 'waiting_user', 'processing', 'closed', 'waiting_admin', 'resolved', 'withdrawn']
+  const titles = ['账号被限流，申请解除', '充值未到账', 'API 返回 500', '修改绑定邮箱', '其它问题咨询', '模型列表缺少 gemini', '订阅到期提醒错误', '密钥被禁用原因', '请求延迟很高', '发票开具', '账户合并申请']
+  const status = statuses[i % statuses.length]
+  const created = +NOW() - (i + 1) * 3600e3 * 9
+  return {
+    id: 501 + i, ticket_no: 'TK' + (240900 + i), user_id: u[0], user_name: u[1], user_email: u[2],
+    category: categories[i % categories.length], title: titles[i], status,
+    current_form_payload: { description: titles[i] + '，请协助处理。', contact: u[2] }, current_revision_no: 1,
+    latest_message_at: iso(created + 3600e3 * 2), last_reply_role: i % 2 ? 'admin' : 'user',
+    unread_by_user: i % 2 === 1, unread_by_admin: i < 3, submitted_at: iso(created),
+    closed_at: status === 'closed' ? iso(created + 864e5) : undefined, withdrawn_at: status === 'withdrawn' ? iso(created + 7200e3) : undefined,
+    created_at: iso(created), updated_at: iso(created + 3600e3 * 2),
+  }
+})
+const ticketMessages = (t) => [
+  { id: t.id * 10 + 1, ticket_id: t.id, sender_role: 'user', sender_user_id: t.user_id, sender_name_snapshot: t.user_name, message_type: 'message', content: t.current_form_payload.description, attachments: [], created_at: t.created_at },
+  { id: t.id * 10 + 2, ticket_id: t.id, sender_role: 'system', sender_name_snapshot: 'system', message_type: 'system', content: '工单已提交，等待管理员处理', created_at: t.created_at },
+  { id: t.id * 10 + 3, ticket_id: t.id, sender_role: 'admin', sender_user_id: 1, sender_name_snapshot: 'Admin', message_type: 'message', content: '您好，我们已收到您的反馈，正在排查，请稍候。', attachments: [], created_at: t.updated_at },
+]
+const MOCK_TICKET_TEMPLATES = [
+  { id: 1, title: '已收到', content: '您好，我们已收到您的反馈，正在排查，请稍候。', sort_order: 1 },
+  { id: 2, title: '已处理', content: '问题已处理完毕，如仍有异常请回复本工单。', sort_order: 2 },
+  { id: 3, title: '需补充信息', content: '请补充请求 ID 与发生时间，以便进一步定位。', sort_order: 3 },
+]
+const MOCK_AUDIT_LOGS = Array.from({ length: 16 }, (_, i) => {
+  const actions = ['account.update', 'account.create', 'apikey.delete', 'settings.update', 'user.balance.adjust', 'group.update', 'proxy.create', 'plugin.enable']
+  const methods = ['PUT', 'POST', 'DELETE', 'PUT', 'POST', 'PUT', 'POST', 'POST']
+  const paths = ['/api/v1/admin/accounts/12', '/api/v1/admin/accounts', '/api/v1/admin/api-keys/88', '/api/v1/admin/settings', '/api/v1/admin/users/2/balance', '/api/v1/admin/groups/3', '/api/v1/admin/proxies', '/api/v1/admin/plugins/1/enable']
+  const k = i % actions.length
+  const ok = i % 6 !== 5
+  return {
+    id: 9001 + i, created_at: iso(+NOW() - (i + 1) * 3600e3 * 5), actor_user_id: 1, actor_email: 'admin@sub2api.dev', actor_role: 'admin',
+    auth_method: i % 3 === 0 ? 'session' : 'api_key', credential_masked: i % 3 === 0 ? 'sess_****9f2c' : 'sk-ad****41b0',
+    action: actions[k], method: methods[k], path: paths[k], request_id: 'req_' + (0x5a3f00 + i * 977).toString(16),
+    client_ip: '203.0.113.' + (10 + i), user_agent: 'Mozilla/5.0 (Macintosh) Chrome/128.0',
+    request_body: JSON.stringify({ name: 'demo', priority: 50, note: '示例请求体 #' + i }), status_code: ok ? 200 : 403, latency_ms: 12 + i * 7,
+    extra: { changed_fields: ['priority', 'name'], before: { priority: 40 }, after: { priority: 50 } },
+  }
+})
+
 const emptyPage = (query) => ({ items: [], total: 0, page: Number(query.get('page') || 1), page_size: Number(query.get('page_size') || 20), pages: 0 })
 
 const rangeDays = (query) => {
@@ -1093,7 +1137,23 @@ const routes = {
   'GET /api/v1/admin/payment/invoices/unread-count': () => ({ count: 2 }),
   'GET /api/v1/admin/payment/dashboard': () => ({ total_orders: 4_120, paid_orders: 3_871, total_amount: 186_300, today_orders: 31, today_amount: 1_640, pending_orders: 4, refund_amount: 1_120 }),
   'GET /api/v1/admin/tickets/unread-count': () => ({ count: 3 }),
-  'GET /api/v1/admin/tickets/reply-templates': () => [],
+  'GET /api/v1/admin/tickets/reply-templates': () => MOCK_TICKET_TEMPLATES,
+  'GET /api/v1/admin/tickets': (ctx) => {
+    let items = MOCK_TICKETS
+    const st = ctx.query.get('status'); const cat = ctx.query.get('category'); const q = (ctx.query.get('keyword') || ctx.query.get('search') || '').toLowerCase()
+    if (st) items = items.filter((t) => t.status === st)
+    if (cat) items = items.filter((t) => t.category === cat)
+    if (q) items = items.filter((t) => t.title.toLowerCase().includes(q) || t.ticket_no.toLowerCase().includes(q) || (t.user_email || '').includes(q))
+    return paginate(items, ctx.query)
+  },
+  'GET /api/v1/admin/audit-logs': (ctx) => {
+    let items = MOCK_AUDIT_LOGS
+    const q = (ctx.query.get('q') || '').toLowerCase(); const m = ctx.query.get('method'); const a = ctx.query.get('action')
+    if (m) items = items.filter((l) => l.method === m)
+    if (a) items = items.filter((l) => l.action.includes(a))
+    if (q) items = items.filter((l) => l.action.includes(q) || l.path.includes(q) || l.actor_email.includes(q))
+    return paginate(items, ctx.query)
+  },
   'GET /api/v1/admin/announcements': (ctx) => emptyPage(ctx.query),
   'GET /api/v1/admin/compliance': () => ({
     required: false, version: 'v2026.06.10',
@@ -1130,6 +1190,9 @@ const routes = {
 
 // Pattern routes for parameterized paths
 const patternRoutes = [
+  [/^GET \/api\/v1\/admin\/tickets\/(\d+)$/, (ctx, m) => MOCK_TICKETS.find((t) => t.id === Number(m[1])) || MOCK_TICKETS[0]],
+  [/^GET \/api\/v1\/admin\/tickets\/(\d+)\/messages$/, (ctx, m) => ticketMessages(MOCK_TICKETS.find((t) => t.id === Number(m[1])) || MOCK_TICKETS[0])],
+  [/^GET \/api\/v1\/admin\/audit-logs\/(\d+)$/, (ctx, m) => MOCK_AUDIT_LOGS.find((l) => l.id === Number(m[1])) || MOCK_AUDIT_LOGS[0]],
   [/^GET \/api\/v1\/admin\/accounts\/(\d+)$/, (ctx, m) => ACCOUNTS.find((a) => a.id === Number(m[1])) || ACCOUNTS[0]],
   [/^GET \/api\/v1\/admin\/accounts\/(\d+)\/usage$/, (ctx, m) => accountUsage(ACCOUNTS.find((a) => a.id === Number(m[1])) || ACCOUNTS[0])],
   [/^GET \/api\/v1\/admin\/accounts\/(\d+)\/today-stats$/, (ctx, m) => accountTodayStats(ACCOUNTS.find((a) => a.id === Number(m[1])) || ACCOUNTS[0])],
