@@ -230,7 +230,6 @@ const mountView = async () => {
         SearchInput: SearchInputStub,
         Icon: IconStub,
         UseKeyModal: true,
-        EndpointPopover: true,
         GroupBadge: true,
         GroupOptionItem: true,
         Teleport: true,

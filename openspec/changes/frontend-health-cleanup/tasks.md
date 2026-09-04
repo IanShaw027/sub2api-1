@@ -12,7 +12,7 @@
 
 - [ ] 1.1 移除 `@lobehub/icons` 依赖并重新安装；验证 `ModelIcon.vue` / `ProviderIcon.vue` 渲染不变（截图）、`node_modules` 减少约 22MB、`deps-check` 0
 - [ ] 1.2 删除无人引用的 14 个文件：`OpsRuntimeSettingsCard.vue`、`OpsEmailNotificationCard.vue`、`StripePaymentInline.vue`、`PlatformUsageBreakdown.vue`、`PaymentMethodChart.vue`、`TopUsersLeaderboard.vue`、`components/ticket/TicketCategoryForm.vue`（目录一并删除）、`common/Skeleton.vue`、`common/StatusBadge.vue`、`ProfileAccountBindingsCard.vue`、`tickets/TicketInfoItem.vue`、`components/ui/index.ts`、`components/common/index.ts`、`views/auth/index.ts`；连同只覆盖它们的 spec；验证 `dead-files` 无人引用为 0、`vitest run` 0 失败、`vue-tsc` 0 错误
-- [ ] 1.3 逐个处置仅测试引用的 6 个文件：`PaymentQRDialog.vue`（若支付二维码页应使用它则接回，否则删）、`AdminOrderTable.vue` / `AdminOrderDetail.vue`（`AdminOrdersView` 已自实现则删）、`EndpointPopover.vue`（`KeysView` 改用 `EndpointCard` 则删）、`useForm.ts`（无用则删）、`OpenAIOAuthCapacityDialog.vue` + `api/admin/oauthCapacity.ts` + 其 spec（已决定删除：c664f063c 已把入口作为 `PlatformCapacityDialog` 的重复项移除）；验证 `dead-files` 仅测试引用为 0
+- [x] 1.3 逐个处置仅测试引用的 6 个文件：`PaymentQRDialog.vue`（若支付二维码页应使用它则接回，否则删）、`AdminOrderTable.vue` / `AdminOrderDetail.vue`（`AdminOrdersView` 已自实现则删）、`EndpointPopover.vue`（`KeysView` 改用 `EndpointCard` 则删）、`useForm.ts`（无用则删）、`OpenAIOAuthCapacityDialog.vue` + `api/admin/oauthCapacity.ts` + 其 spec（已决定删除：c664f063c 已把入口作为 `PlatformCapacityDialog` 的重复项移除）；验证 `dead-files` 仅测试引用为 0
 - [ ] 1.4 删除 `ui/UiDrawer / SettingRow / SettingsSection` 对桶文件的依赖（改为直接路径导入，`glass-ui-redesign` 会接入它们）；验证不可达为 0
 - [ ] 1.5 处理 `file-saver`（改用原生 `a[download]`）与 `console.log` 1 处；验证 `deps-check` 0、`console.log` 0
 - [ ] 1.6 `vitest run` 0 失败、`vue-tsc` 0 错误、`npm run health` 中 dead-files / deps 两项 PASS；提交 `chore(health): remove unreachable files and unused deps (tasks 1.1–1.5)`
