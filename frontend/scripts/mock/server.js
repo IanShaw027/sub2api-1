@@ -1720,8 +1720,10 @@ const routes = {
   'GET /api/v1/tickets/rate-groups': () => [],
   'GET /api/v1/payment/config': () => USER_PAYMENT_CONFIG,
   'GET /api/v1/payment/plans': () => [],
-  'GET /api/v1/payment/orders/my': (ctx) => emptyPage(ctx.query),
-  'GET /api/v1/payment/invoices': (ctx) => emptyPage(ctx.query),
+  'GET /api/v1/payment/orders/my': (ctx) => { let items = MOCK_PAY_ORDERS.map((o) => ({ ...o, user_id: 12 })); const st = ctx.query.get('status'); if (st) items = items.filter((o) => o.status === st); return paginate(items, ctx.query) },
+  'GET /api/v1/payment/orders/refund-eligible-providers': () => ({ provider_instance_ids: ['alipay-main', 'stripe-main'] }),
+  'GET /api/v1/payment/orders/invoice-eligible-providers': () => ({ provider_instance_ids: ['alipay-main', 'wxpay-main', 'stripe-main'] }),
+  'GET /api/v1/payment/invoices': (ctx) => paginate(MOCK_INVOICES.map((v) => ({ ...v, user_id: 12 })), ctx.query),
   'GET /api/v1/redeem/history': () => [],
   'GET /api/v1/channels/available': () => [],
   'GET /api/v1/admin/channel-monitor-v2/config': () => V2_CONFIG,
@@ -1984,6 +1986,9 @@ const routes = {
 
 // Pattern routes for parameterized paths
 const patternRoutes = [
+  [/^GET \/api\/v1\/payment\/orders\/(\d+)$/, (ctx, m) => ({ ...(MOCK_PAY_ORDERS.find((o) => o.id === Number(m[1])) || MOCK_PAY_ORDERS[0]), user_id: 12 })],
+  [/^GET \/api\/v1\/payment\/invoices\/(\d+)$/, (ctx, m) => ({ ...(MOCK_INVOICES.find((o) => o.id === Number(m[1])) || MOCK_INVOICES[0]), user_id: 12 })],
+  [/^POST \/api\/v1\/payment\/invoices\/(\d+)\/download-grant$/, () => ({ url: 'https://files.example.com/invoice.pdf', expires_at: Math.floor(+NOW() / 1000) + 600, ttl_minutes: 10 })],
   [/^GET \/api\/v1\/admin\/ops\/request-errors\/(\d+)\/upstream-errors$/, (ctx, m) => {
     const parent = OPS_ERROR_LOGS_FULL.find((e) => e.id === Number(m[1]))
     const related = OPS_ERROR_LOGS_FULL.filter((e) => e.error_source === 'upstream_http' && e.platform === (parent ? parent.platform : ''))
