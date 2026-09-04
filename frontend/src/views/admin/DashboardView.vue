@@ -61,6 +61,7 @@
           <div class="dash-hero-side">
             <div class="dash-hero-tools">
               <DateRangePicker
+                class="dash-daterange"
                 v-model:start-date="startDate"
                 v-model:end-date="endDate"
                 @change="onDateRangeChange"
@@ -79,7 +80,7 @@
             </div>
 
             <div class="dash-hero-stats">
-              <div class="dash-hero-mini">
+              <div class="dash-hero-mini glass-inset">
                 <span class="dash-mini-label">{{ t('admin.dashboard.serviceStatus') }}</span>
                 <span class="dash-mini-status">
                   <span class="dash-pulse" :class="`dash-pulse-${serviceTone}`"></span>{{ serviceStatusLabel }}
@@ -89,7 +90,7 @@
                   {{ t('admin.dashboard.accounts') }}
                 </span>
               </div>
-              <div class="dash-hero-mini">
+              <div class="dash-hero-mini glass-inset">
                 <span class="dash-mini-label">{{ t('admin.dashboard.realtimeRpm') }}</span>
                 <span class="dash-mini-value">{{ formatNumber(stats.rpm) }}</span>
                 <span v-if="requestsDelta" class="dash-mini-sub" :class="`dash-delta-${requestsDelta.tone}`">
@@ -97,7 +98,7 @@
                 </span>
                 <span v-else class="dash-mini-sub">TPM {{ formatTokens(stats.tpm) }}</span>
               </div>
-              <div class="dash-hero-mini">
+              <div class="dash-hero-mini glass-inset">
                 <span class="dash-mini-label">{{ t('admin.dashboard.realtimeTpm') }}</span>
                 <span class="dash-mini-value">{{ formatTokens(stats.tpm) }}</span>
                 <span class="dash-mini-sub">
@@ -526,11 +527,50 @@ const granularityOptions = computed(() => [
 
 const { isDark: isDarkMode } = useTheme()
 
-// Chart colors
-const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
-}))
+/** Resolve a CSS color expression (var()/color-mix()) to a concrete value the Canvas API can use. */
+const resolveCssColor = (value: string): string => {
+  if (typeof document === 'undefined') return value
+  const probe = document.createElement('span')
+  probe.style.color = value
+  document.body.appendChild(probe)
+  const resolved = getComputedStyle(probe).color
+  document.body.removeChild(probe)
+  return resolved
+}
+
+// Chart colors (resolved from design tokens so chart.js never falls back to its default palette)
+const chartColors = computed(() => {
+  void isDarkMode.value
+  return {
+    text: resolveCssColor('var(--muted)'),
+    grid: resolveCssColor('var(--border)')
+  }
+})
+
+const CHART_PALETTE_TOKENS = [
+  'var(--accent)',
+  'var(--success)',
+  'var(--warning)',
+  'var(--danger)',
+  'color-mix(in oklch, var(--accent) 55%, var(--success) 45%)',
+  'color-mix(in oklch, var(--accent) 55%, var(--danger) 45%)',
+  'color-mix(in oklch, var(--success) 55%, var(--warning) 45%)',
+  'color-mix(in oklch, var(--warning) 55%, var(--danger) 45%)',
+  'color-mix(in oklch, var(--accent) 70%, var(--foreground) 30%)',
+  'color-mix(in oklch, var(--success) 70%, var(--foreground) 30%)',
+  'color-mix(in oklch, var(--danger) 70%, var(--foreground) 30%)',
+  'color-mix(in oklch, var(--warning) 70%, var(--foreground) 30%)'
+]
+
+const chartPaletteLine = computed(() => {
+  void isDarkMode.value
+  return CHART_PALETTE_TOKENS.map((token) => resolveCssColor(token))
+})
+
+const chartPaletteFill = computed(() => {
+  void isDarkMode.value
+  return CHART_PALETTE_TOKENS.map((token) => resolveCssColor(`color-mix(in oklch, ${token} 18%, transparent)`))
+})
 
 // Line chart options (for user trend chart)
 const lineOptions = computed(() => ({
@@ -625,26 +665,14 @@ const userTrendChartData = computed(() => {
   })
 
   const sortedDates = Array.from(allDates).sort()
-  const colors = [
-    '#3b82f6',
-    '#10b981',
-    '#f59e0b',
-    '#ef4444',
-    '#8b5cf6',
-    '#ec4899',
-    '#14b8a6',
-    '#f97316',
-    '#6366f1',
-    '#84cc16',
-    '#06b6d4',
-    '#a855f7'
-  ]
+  const lineColors = chartPaletteLine.value
+  const fillColors = chartPaletteFill.value
 
   const datasets = Array.from(userGroups.values()).map((group, idx) => ({
     label: group.name,
     data: sortedDates.map((date) => group.data.get(date) || 0),
-    borderColor: colors[idx % colors.length],
-    backgroundColor: `${colors[idx % colors.length]}20`,
+    borderColor: lineColors[idx % lineColors.length],
+    backgroundColor: fillColors[idx % fillColors.length],
     fill: false,
     tension: 0.3
   }))
@@ -749,6 +777,8 @@ const heroTitleLead = computed(() =>
 const heroDescription = computed(() => {
   const summary = t('admin.dashboard.heroSummary', {
     requests: formatNumber(stats.value?.today_requests),
+    tokens: formatTokens(stats.value?.today_tokens),
+    cost: formatCost(stats.value?.today_actual_cost),
     duration: formatDuration(asNumber(stats.value?.average_duration_ms))
   })
   const errors = asNumber(stats.value?.error_accounts)
@@ -1373,6 +1403,8 @@ onMounted(() => {
 .dash-hero-kicker {
   font-size: 12.5px;
   color: var(--muted);
+  line-height: 1.3;
+  margin-bottom: 3px;
 }
 
 .dash-hero-title {
@@ -1410,6 +1442,7 @@ onMounted(() => {
   background: var(--danger);
   color: #fff;
   font-size: 10.5px;
+  line-height: 1.3;
   font-weight: 700;
   display: inline-flex;
   align-items: center;
@@ -1422,17 +1455,41 @@ onMounted(() => {
   flex-direction: column;
   justify-content: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .dash-hero-tools {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+}
+
+.dash-daterange :deep(.date-picker-trigger) {
+  height: 28px;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 12px;
 }
 
 .dash-granularity {
-  width: 96px;
+  width: 88px;
+}
+
+.dash-granularity :deep(.select-trigger) {
+  height: 28px;
+  padding: 0 8px 0 10px;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.dash-hero-tools .dash-refresh {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 .dash-hero-stats {
@@ -1442,19 +1499,19 @@ onMounted(() => {
 }
 
 .dash-hero-mini {
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
-  border: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 8px;
+  min-width: 0;
+  min-height: 111px;
 }
 
 .dash-mini-label {
   font-size: 11.5px;
   color: var(--muted);
   font-weight: 600;
+  line-height: 1.3;
 }
 
 .dash-mini-status {
@@ -1463,6 +1520,7 @@ onMounted(() => {
   gap: 8px;
   font-size: 17px;
   font-weight: 700;
+  line-height: 1.3;
 }
 
 .dash-mini-value {
@@ -1477,6 +1535,7 @@ onMounted(() => {
 .dash-mini-sub {
   font-size: 11.5px;
   color: var(--muted);
+  line-height: 1.3;
 }
 
 .dash-delta-up {
@@ -1544,6 +1603,7 @@ onMounted(() => {
   padding: 0 8px;
   border-radius: 999px;
   font-size: 11.5px;
+  line-height: 1.3;
   font-weight: 600;
   box-shadow: inset 0 0 0 1px color-mix(in oklch, currentColor 22%, transparent);
 }
@@ -1580,6 +1640,7 @@ onMounted(() => {
 
 .dash-hero-figure-delta {
   font-size: 12px;
+  line-height: 1.3;
   font-weight: 600;
   padding: 3px 7px;
   border-radius: 6px;
@@ -1611,6 +1672,7 @@ onMounted(() => {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
+  line-height: 1.3;
   color: var(--muted);
   font-family: var(--font-mono);
 }
@@ -1667,17 +1729,20 @@ onMounted(() => {
 
 .dash-panel-title {
   font-size: 14px;
+  line-height: 1.3;
   font-weight: 600;
   color: var(--foreground);
 }
 
 .dash-panel-sub {
   font-size: 12px;
+  line-height: 1.3;
   color: var(--muted);
 }
 
 .dash-panel-link {
   font-size: 12.5px;
+  line-height: 1.3;
   font-weight: 600;
   color: var(--accent);
   text-decoration: none;
@@ -1703,6 +1768,10 @@ onMounted(() => {
 .dash-empty {
   flex: 1;
   padding: 24px 16px;
+}
+
+.dash-row-split .dash-empty {
+  min-height: 151px;
 }
 
 .dash-metric-switch {
@@ -1737,6 +1806,7 @@ onMounted(() => {
 
 .dash-bar-label {
   font-size: 10.5px;
+  line-height: 1.3;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -1746,7 +1816,7 @@ onMounted(() => {
 .dash-dist {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .dash-dist-row {
@@ -1780,6 +1850,7 @@ onMounted(() => {
   justify-content: space-between;
   gap: 10px;
   font-size: 12.5px;
+  line-height: 1.3;
 }
 
 .dash-dist-tile {
@@ -1797,6 +1868,7 @@ onMounted(() => {
 .dash-dist-name {
   font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1831,6 +1903,8 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 151px;
+  overflow-y: auto;
 }
 
 .dash-health-row {
@@ -1839,6 +1913,7 @@ onMounted(() => {
   align-items: center;
   gap: 14px;
   font-size: 12.5px;
+  line-height: 1.3;
 }
 
 .dash-health-name {
@@ -1885,6 +1960,8 @@ onMounted(() => {
 .dash-events {
   display: flex;
   flex-direction: column;
+  max-height: 151px;
+  overflow-y: auto;
 }
 
 .dash-event {
@@ -1895,11 +1972,13 @@ onMounted(() => {
   padding: 8px 0;
   border-top: 1px solid var(--border);
   font-size: 12.5px;
+  line-height: 1.3;
 }
 
 .dash-event-time {
   font-family: var(--font-mono);
   font-size: 11.5px;
+  line-height: 1.3;
   color: var(--muted);
 }
 
@@ -1968,6 +2047,7 @@ onMounted(() => {
 .dash-action-title {
   display: block;
   font-size: 14px;
+  line-height: 1.3;
   font-weight: 600;
   color: var(--foreground);
 }
@@ -1975,6 +2055,7 @@ onMounted(() => {
 .dash-action-desc {
   display: block;
   font-size: 12px;
+  line-height: 1.3;
   color: var(--muted);
 }
 
@@ -1991,7 +2072,11 @@ onMounted(() => {
     grid-template-columns: 1fr;
   }
   .dash-hero-tools {
+    position: static;
     justify-content: flex-start;
+  }
+  .dash-hero-mini {
+    min-height: 0;
   }
 }
 
