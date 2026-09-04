@@ -261,16 +261,16 @@
             <table class="w-full table-fixed divide-y divide-line">
               <thead class="bg-surface-2">
                 <tr>
-                  <th class="w-[92px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.time') }}</th>
-                  <th class="w-[84px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.group') }}</th>
-                  <th class="w-[150px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.user') }}</th>
-                  <th class="w-[104px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.apiKey') }}</th>
-                  <th class="w-[152px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.endpoint') }}</th>
-                  <th class="w-[80px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.result') }}</th>
-                  <th class="w-[104px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.highest') }}</th>
-                  <th class="w-[144px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.actionMeta') }}</th>
-                  <th class="w-[92px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.latency') }}</th>
-                  <th class="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.input') }}</th>
+                  <th class="w-[92px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.time') }}</th>
+                  <th class="w-[84px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.group') }}</th>
+                  <th class="w-[150px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.user') }}</th>
+                  <th class="w-[104px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.apiKey') }}</th>
+                  <th class="w-[152px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.endpoint') }}</th>
+                  <th class="w-[80px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.result') }}</th>
+                  <th class="w-[104px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.highest') }}</th>
+                  <th class="w-[144px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.actionMeta') }}</th>
+                  <th class="w-[92px] px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.latency') }}</th>
+                  <th class="px-3 py-2.5 h-[42px] text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.input') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-line bg-surface">
