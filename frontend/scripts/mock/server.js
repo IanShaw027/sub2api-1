@@ -967,6 +967,88 @@ const paymentDashboard = (days) => {
   }
 }
 
+const MON_DEFS = [
+  ['OpenAI 官方', 'openai', 'responses', 'https://api.openai.com/v1', 'gpt-5', ['gpt-5-mini', 'gpt-4.1'], 'OpenAI Codex', 'operational', 780],
+  ['Anthropic 直连', 'anthropic', 'chat_completions', 'https://api.anthropic.com', 'claude-sonnet-4-5', ['claude-fable-4-1', 'claude-haiku-4-5'], 'Claude Max', 'operational', 1120],
+  ['Gemini 中转', 'gemini', 'chat_completions', 'https://relay.example.com/gemini', 'gemini-2.5-pro', ['gemini-2.5-flash'], 'Gemini', 'degraded', 2400],
+  ['Grok', 'grok', 'chat_completions', 'https://api.x.ai/v1', 'grok-4', [], '默认分组', 'operational', 960],
+  ['Kimi K2', 'kimi', 'chat_completions', 'https://api.moonshot.cn/v1', 'kimi-k2', ['kimi-k2-thinking'], '默认分组', 'failed', null],
+  ['智谱 GLM', 'zhipu', 'chat_completions', 'https://open.bigmodel.cn/api/paas/v4', 'glm-4.6', [], '默认分组', 'operational', 640],
+  ['DeepSeek', 'deepseek', 'chat_completions', 'https://api.deepseek.com', 'deepseek-v3.2', ['deepseek-reasoner'], '默认分组', 'error', null],
+  ['Antigravity 池', 'antigravity', 'responses', 'https://ag.example.com/v1', 'claude-sonnet-4-5', ['gemini-3-pro'], 'Antigravity', 'operational', 1480],
+]
+const monTimeline = (baseStatus, baseLat, n = 48) => Array.from({ length: n }, (_, i) => {
+  const bad = baseStatus === 'failed' || baseStatus === 'error' ? i > n - 6 : (baseStatus === 'degraded' ? i % 9 === 4 : i === 17)
+  const status = bad ? (baseStatus === 'degraded' ? 'degraded' : 'failed') : 'operational'
+  const lat = baseLat == null ? 900 : baseLat
+  return { status, latency_ms: status === 'failed' ? null : Math.round(lat * (0.75 + 0.5 * Math.abs(Math.sin(i * 1.7)))), ping_latency_ms: status === 'failed' ? null : 40 + (i * 13) % 90, checked_at: iso(+NOW() - (n - 1 - i) * 1800e3) }
+})
+const monQuota = (i) => (i % 3 === 0 ? { source: 'provider', success: true, tiers: [{ window: '5h', label: '5 小时', used_percent: 37 + i * 5, reset_at: iso(+NOW() + 3600e3 * 2) }, { window: '7d', label: '7 天', used_percent: 62, reset_at: iso(+NOW() + 864e5 * 3) }], plan_level: 'max', fetched_at: iso(+NOW() - 600e3) } : i % 3 === 1 ? { source: 'balance', success: true, balance: 128.4, currency: 'USD', balances: [{ currency: 'USD', balance: 128.4 }], fetched_at: iso(+NOW() - 900e3) } : null)
+const MOCK_MONITORS = MON_DEFS.map((d, i) => ({
+  id: 41 + i, name: d[0], provider: d[1], api_mode: d[2], endpoint: d[3], api_key_masked: 'sk-****' + (4820 + i * 37).toString(16), primary_model: d[4], extra_models: d[5], group_name: d[6],
+  enabled: i !== 6, interval_seconds: [300, 300, 600, 300, 900, 300, 300, 600][i], jitter_seconds: 30, last_checked_at: iso(+NOW() - (i + 1) * 300e3), created_by: 1, created_at: iso(+NOW() - (30 - i) * 864e5), updated_at: iso(+NOW() - i * 3600e3),
+  primary_status: d[7], primary_latency_ms: d[8], availability_7d: [99.98, 99.91, 97.4, 99.7, 88.2, 99.95, 93.1, 99.6][i],
+  extra_models_status: d[5].map((m, k) => ({ model: m, status: k === 1 && i === 1 ? 'degraded' : d[7] === 'failed' ? 'failed' : 'operational', latency_ms: d[8] == null ? null : Math.round(d[8] * (0.8 + k * 0.15)) })),
+  template_id: i % 2 ? 1 : null, extra_headers: i === 2 ? { 'X-Relay-Token': '****' } : {}, body_override_mode: i === 7 ? 'merge' : 'off', body_override: i === 7 ? { max_tokens: 64 } : null,
+  check_mode: i % 3 === 0 ? 'quota_probe' : i % 3 === 1 ? 'quota' : 'probe', account_id: i % 3 === 2 ? null : 1 + i, latest_quota: monQuota(i),
+}))
+const monitorUserView = (m, i) => ({
+  id: m.id, name: m.name, provider: m.provider, group_name: m.group_name, primary_model: m.primary_model, primary_status: m.primary_status || 'operational', primary_latency_ms: m.primary_latency_ms,
+  primary_ping_latency_ms: m.primary_latency_ms == null ? null : 40 + i * 9, availability_7d: m.availability_7d,
+  extra_models: m.extra_models_status.map((e) => ({ model: e.model, status: e.status || 'operational', latency_ms: e.latency_ms })),
+  timeline: monTimeline(m.primary_status, m.primary_latency_ms), latest_quota: m.latest_quota,
+})
+const monitorDetail = (m) => ({
+  id: m.id, name: m.name, provider: m.provider, group_name: m.group_name,
+  models: [m.primary_model, ...m.extra_models].map((model, k) => ({ model, latest_status: k === 0 ? (m.primary_status || 'operational') : (m.extra_models_status[k - 1]?.status || 'operational'), latest_latency_ms: k === 0 ? m.primary_latency_ms : m.extra_models_status[k - 1]?.latency_ms ?? null, availability_7d: m.availability_7d, availability_15d: Math.min(100, m.availability_7d + 0.3), availability_30d: Math.min(100, m.availability_7d + 0.5), avg_latency_7d_ms: m.primary_latency_ms == null ? null : Math.round(m.primary_latency_ms * 1.05) })),
+})
+const monitorHistory = (m, model, limit) => {
+  const models = [m.primary_model, ...m.extra_models]
+  const tl = monTimeline(m.primary_status, m.primary_latency_ms, 96)
+  const items = tl.map((t, i) => ({ id: m.id * 1000 + i, model: model || models[i % models.length], status: t.status, latency_ms: t.latency_ms, ping_latency_ms: t.ping_latency_ms, message: t.status === 'failed' ? 'HTTP 502 upstream timeout' : t.status === 'degraded' ? 'latency above threshold' : 'ok', checked_at: t.checked_at, quota: i % 12 === 0 ? m.latest_quota : null })).reverse()
+  return { items: items.slice(0, Math.max(1, Number(limit) || 50)) }
+}
+
+// ---- channel-monitor-v2 (user /channel-monitor-v2/* and admin /admin/channel-monitor-v2/*) ----
+const V2_PLATFORMS = [['anthropic', 'Anthropic', ['claude-sonnet-4-5', 'claude-fable-4-1', 'claude-haiku-4-5']], ['openai', 'OpenAI', ['gpt-5', 'gpt-5-codex', 'gpt-4.1']], ['gemini', 'Gemini', ['gemini-2.5-pro', 'gemini-2.5-flash']], ['antigravity', 'Antigravity', ['claude-sonnet-4-5', 'gemini-3-pro']]]
+const V2_GROUPS = [[1, '默认分组', 'anthropic'], [2, 'Claude Max', 'anthropic'], [3, 'OpenAI Codex', 'openai'], [4, 'Gemini', 'gemini'], [5, 'Antigravity', 'antigravity']]
+const V2_THRESH = { minimum_sample: 20, warning_error_rate: 0.02, critical_error_rate: 0.05, target_ttft_ms: 800, warning_ttft_ms: 1500, critical_ttft_ms: 3000, warning_cache_rate: 0.3, critical_cache_rate: 0.1, error_weight: 0.5, ttft_weight: 0.3, cache_weight: 0.2 }
+const V2_CONFIG = { version: 3, enabled: true, refresh_interval_seconds: 60, platforms: V2_PLATFORMS.map((p) => ({ platform: p[0], enabled: true, models: p[2] })), group_ids: V2_GROUPS.map((g) => g[0]), health_thresholds: V2_THRESH, ignored_error_categories: ['client_cancelled', 'content_policy'] }
+const v2Rand = (seed) => { let x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x) }
+const v2Metric = (seed, scale = 1) => {
+  const r = v2Rand(seed); const r2 = v2Rand(seed + 0.5); const r3 = v2Rand(seed + 0.25)
+  const request_count = Math.round((120 + r * 900) * scale)
+  const error_rate = r2 < 0.06 ? 0.06 + r2 / 4 : r2 < 0.18 ? 0.021 + r2 / 40 : r2 / 80
+  const error_requests = Math.round(request_count * error_rate)
+  const ttft50 = Math.round(420 + r3 * 900 + (r2 < 0.12 ? 1800 : 0))
+  const cache_den = Math.round(request_count * 3200); const cache_rate = 0.25 + r * 0.5
+  return { success_requests: request_count - error_requests, error_requests, request_count, token_count: Math.round(request_count * 4200), rpm: Number((request_count / 60).toFixed(2)), tpm: Math.round(request_count * 70), error_rate: Number(error_rate.toFixed(4)), cache_rate: Number(cache_rate.toFixed(4)), cache_rate_numerator: Math.round(cache_den * cache_rate), cache_rate_denominator: cache_den, ttft: { sample_count: request_count, p50_ms: ttft50, p90_ms: Math.round(ttft50 * 1.8), p95_ms: Math.round(ttft50 * 2.2), avg_ms: Math.round(ttft50 * 1.15) }, duration: { sample_count: request_count, p50_ms: ttft50 * 4, p90_ms: ttft50 * 7, p95_ms: ttft50 * 9, avg_ms: ttft50 * 5 }, upstream_affected_requests: Math.round(error_requests * 0.6), upstream_attempt_count: request_count + Math.round(error_requests * 0.6) }
+}
+const v2Health = (m) => {
+  const st = (v, w, c) => (v >= c ? 'critical' : v >= w ? 'warning' : 'healthy')
+  if (m.request_count < V2_THRESH.minimum_sample) return { overall: 'unknown', error_rate: 'unknown', ttft: 'unknown', cache: 'unknown', score: null, minimum_sample: V2_THRESH.minimum_sample, thresholds: V2_THRESH }
+  const er = st(m.error_rate, V2_THRESH.warning_error_rate, V2_THRESH.critical_error_rate)
+  const tt = st(m.ttft.p50_ms, V2_THRESH.warning_ttft_ms, V2_THRESH.critical_ttft_ms)
+  const ca = m.cache_rate <= V2_THRESH.critical_cache_rate ? 'critical' : m.cache_rate <= V2_THRESH.warning_cache_rate ? 'warning' : 'healthy'
+  const sc = (x) => (x === 'healthy' ? 10 : x === 'warning' ? 6.5 : 3)
+  const score = Math.round((sc(er) * V2_THRESH.error_weight + sc(tt) * V2_THRESH.ttft_weight + sc(ca) * V2_THRESH.cache_weight) * 10)
+  const overall = [er, tt, ca].includes('critical') ? 'critical' : [er, tt, ca].includes('warning') ? 'warning' : 'healthy'
+  return { overall, error_rate: er, ttft: tt, cache: ca, score, error_rate_score: sc(er) * 10, ttft_score: sc(tt) * 10, cache_score: sc(ca) * 10, minimum_sample: V2_THRESH.minimum_sample, thresholds: V2_THRESH }
+}
+const v2Buckets = (range) => ({ '90m': [18, 300], '24h': [48, 1800], '7d': [42, 14400], '30d': [30, 86400] })[range] || [48, 1800]
+const v2Coverage = (range) => { const [n, sec] = v2Buckets(range); const end = Math.floor(+NOW() / (sec * 1000)) * sec * 1000; return { requested_start: iso(end - n * sec * 1000), requested_end: iso(end), coverage_start: iso(end - n * sec * 1000), data_through: iso(end), computed_at: iso(+NOW()), aggregation_lag_seconds: 45, coverage_complete: true, bucket_seconds: sec, bootstrap: null } }
+const v2Series = (range, seed, scale) => { const [n, sec] = v2Buckets(range); const end = Math.floor(+NOW() / (sec * 1000)) * sec * 1000; return Array.from({ length: n }, (_, i) => { const m = v2Metric(seed * 100 + i, scale); return { bucket_start: iso(end - (n - i) * sec * 1000), metrics: m, health: v2Health(m) } }) }
+const v2Sum = (rows) => rows.reduce((a, r) => { const m = r.metrics; a.success_requests += m.success_requests; a.error_requests += m.error_requests; a.request_count += m.request_count; a.token_count += m.token_count; a.cache_rate_numerator += m.cache_rate_numerator; a.cache_rate_denominator += m.cache_rate_denominator; a._t += m.ttft.p50_ms * m.request_count; return a }, { success_requests: 0, error_requests: 0, request_count: 0, token_count: 0, cache_rate_numerator: 0, cache_rate_denominator: 0, _t: 0 })
+const v2Agg = (rows, sec) => { const a = v2Sum(rows); const n = Math.max(1, rows.length); const p50 = Math.round(a._t / Math.max(1, a.request_count)); return { success_requests: a.success_requests, error_requests: a.error_requests, request_count: a.request_count, token_count: a.token_count, rpm: Number((a.request_count / (n * sec / 60)).toFixed(2)), tpm: Math.round(a.token_count / (n * sec / 60)), error_rate: Number((a.error_requests / Math.max(1, a.request_count)).toFixed(4)), cache_rate: Number((a.cache_rate_numerator / Math.max(1, a.cache_rate_denominator)).toFixed(4)), cache_rate_numerator: a.cache_rate_numerator, cache_rate_denominator: a.cache_rate_denominator, ttft: { sample_count: a.request_count, p50_ms: p50, p90_ms: Math.round(p50 * 1.8), p95_ms: Math.round(p50 * 2.2), avg_ms: Math.round(p50 * 1.15) }, duration: { sample_count: a.request_count, p50_ms: p50 * 4, p90_ms: p50 * 7, p95_ms: p50 * 9, avg_ms: p50 * 5 } } }
+const v2Filter = (q) => ({ range: q.get('range') || '24h', platforms: q.getAll('platform'), groupIds: q.getAll('group_id').map(Number), models: q.getAll('model') })
+const v2Combos = (f) => { const out = []; V2_GROUPS.forEach((g) => { if (f.platforms.length && !f.platforms.includes(g[2])) return; if (f.groupIds.length && !f.groupIds.includes(g[0])) return; const plat = V2_PLATFORMS.find((p) => p[0] === g[2]); plat[2].forEach((model, k) => { if (f.models.length && !f.models.includes(model)) return; out.push({ platform: g[2], group_id: g[0], group_name: g[1], model, seed: g[0] * 7 + k * 3, scale: k === 0 ? 1.4 : 0.6 }) }) }); return out }
+const v2Snapshot = (q) => { const f = v2Filter(q); const [, sec] = v2Buckets(f.range); const combos = v2Combos(f); const series = combos.map((c) => v2Series(f.range, c.seed, c.scale)); const n = series[0]?.length || 0; const trend = Array.from({ length: n }, (_, i) => { const m = v2Agg(series.map((s) => s[i]), sec); return { bucket_start: series[0][i].bucket_start, metrics: m, health: v2Health(m) } }); const metrics = v2Agg(trend, sec); return { config: V2_CONFIG, coverage: v2Coverage(f.range), metrics, health: v2Health(metrics), trend } }
+const v2Matrix = (q) => { const f = v2Filter(q); const gb = q.get('group_by') || 'platform_group'; const [, sec] = v2Buckets(f.range); const keyOf = (c) => gb === 'platform' ? c.platform : gb === 'platform_group' ? c.platform + '|' + c.group_id : gb === 'platform_model' ? c.platform + '|' + c.model : c.platform + '|' + c.group_id + '|' + c.model; const groups = new Map(); v2Combos(f).forEach((c) => { const k = keyOf(c); if (!groups.has(k)) groups.set(k, { c, list: [] }); groups.get(k).list.push(v2Series(f.range, c.seed, c.scale)) }); const items = [...groups.values()].map(({ c, list }) => { const n = list[0].length; const buckets = Array.from({ length: n }, (_, i) => { const m = v2Agg(list.map((s) => s[i]), sec); return { bucket_start: list[0][i].bucket_start, metrics: m, health: v2Health(m) } }); const metrics = v2Agg(buckets, sec); const row = { platform: c.platform, metrics, health: v2Health(metrics), buckets }; if (gb.includes('group')) { row.group_id = c.group_id; row.group_name = c.group_name } if (gb.includes('model')) row.model = c.model; return row }); return { coverage: v2Coverage(f.range), group_by: gb, items } }
+const v2Models = (q) => { const f = v2Filter(q); const [, sec] = v2Buckets(f.range); const byModel = new Map(); v2Combos(f).forEach((c) => { const k = c.platform + '|' + c.model; if (!byModel.has(k)) byModel.set(k, { c, list: [] }); byModel.get(k).list.push(v2Series(f.range, c.seed, c.scale)) }); return { coverage: v2Coverage(f.range), items: [...byModel.values()].map(({ c, list }) => { const metrics = v2Agg(list.flat(), sec); return { platform: c.platform, model: c.model, metrics, health: v2Health(metrics) } }).sort((a, b) => b.metrics.request_count - a.metrics.request_count) } }
+const v2Errors = (q) => { const f = v2Filter(q); const total = v2Snapshot(q).metrics.error_requests || 1; const cats = [['upstream_5xx', 0.34, 502], ['rate_or_capacity', 0.22, 429], ['timeout', 0.14, 504], ['transport_or_stream', 0.1, 0], ['context_limit', 0.07, 400], ['authentication', 0.05, 401], ['client_cancelled', 0.05, 499], ['other', 0.03, 500]]; return { coverage: v2Coverage(f.range), items: cats.map(([category, share, code]) => ({ category, count: Math.round(total * share), rate: Number(share.toFixed(4)), ignored: V2_CONFIG.ignored_error_categories.includes(category), details: [{ platform: 'anthropic', model: 'claude-sonnet-4-5', error_type: category, status_code: code || undefined, upstream_status_code: code >= 500 ? code : undefined, message: category === 'upstream_5xx' ? 'upstream returned 502 Bad Gateway' : category === 'timeout' ? 'stream idle > 60s' : category.replace(/_/g, ' '), count: Math.round(total * share * 0.6) }, { platform: 'openai', model: 'gpt-5', error_type: category, status_code: code || undefined, count: Math.round(total * share * 0.4) }] })) } }
+const v2Users = (q) => { const f = v2Filter(q); const [, sec] = v2Buckets(f.range); const people = [[2, 'alice@example.com', 'alice'], [12, 'xiaoyu.lin@example.com', 'xiaoyu'], [3, 'bob@example.com', 'bob'], [4, 'carol@example.com', 'carol'], [5, 'dave@example.com', 'dave'], [6, 'erin@example.com', 'erin'], [7, 'frank@example.com', 'frank'], [8, 'grace@example.com', 'grace']]; return { coverage: v2Coverage(f.range), items: people.map((u, i) => ({ user_id: u[0], rank: i + 1, email: u[1], username: u[2], display_label: u[2], is_self: u[0] === 12, can_drilldown: true, metrics: v2Agg(v2Series(f.range, 500 + i * 11, 1.6 - i * 0.15), sec) })) } }
+const v2Dimensions = () => ({ platforms: V2_PLATFORMS.map((p, i) => ({ value: p[0], label: p[1], request_count: 42000 - i * 9000 })), groups: V2_GROUPS.map((g, i) => ({ id: g[0], name: g[1], platform: g[2], request_count: 30000 - i * 4000 })), models: V2_PLATFORMS.flatMap((p) => p[2].map((m, k) => ({ value: m, label: m, platform: p[0], request_count: 20000 - k * 5000 }))) })
+
 const emptyPage = (query) => ({ items: [], total: 0, page: Number(query.get('page') || 1), page_size: Number(query.get('page_size') || 20), pages: 0 })
 
 const rangeDays = (query) => {
@@ -1064,7 +1146,17 @@ const routes = {
   'GET /api/v1/payment/invoices': (ctx) => emptyPage(ctx.query),
   'GET /api/v1/redeem/history': () => [],
   'GET /api/v1/channels/available': () => [],
-  'GET /api/v1/channel-monitors': () => [],
+  'GET /api/v1/admin/channel-monitor-v2/config': () => V2_CONFIG,
+  'PUT /api/v1/admin/channel-monitor-v2/config': (ctx) => Object.assign(V2_CONFIG, ctx.body || {}, { version: V2_CONFIG.version + 1 }),
+  'GET /api/v1/channel-monitors': () => ({ items: MOCK_MONITORS.filter((m) => m.enabled).map(monitorUserView) }),
+  'GET /api/v1/admin/channel-monitors': (ctx) => {
+    let items = MOCK_MONITORS
+    const pv = ctx.query.get('provider'); const en = ctx.query.get('enabled'); const q = (ctx.query.get('search') || '').toLowerCase()
+    if (pv) items = items.filter((m) => m.provider === pv)
+    if (en === 'true' || en === 'false') items = items.filter((m) => String(m.enabled) === en)
+    if (q) items = items.filter((m) => m.name.toLowerCase().includes(q) || m.primary_model.includes(q))
+    return { items }
+  },
   'GET /api/v1/model-plaza': () => ({
     description: '',
     groups: [
@@ -1254,6 +1346,10 @@ const routes = {
 
 // Pattern routes for parameterized paths
 const patternRoutes = [
+  [/^GET \/api\/v1\/(?:admin\/)?channel-monitor-v2\/(dimensions|snapshot|matrix|models|errors|users)$/, (ctx, m) => ({ dimensions: v2Dimensions, snapshot: v2Snapshot, matrix: v2Matrix, models: v2Models, errors: v2Errors, users: v2Users })[m[1]](ctx.query)],
+  [/^GET \/api\/v1\/channel-monitors\/(\d+)\/status$/, (ctx, m) => monitorDetail(MOCK_MONITORS.find((x) => x.id === Number(m[1])) || MOCK_MONITORS[0])],
+  [/^GET \/api\/v1\/admin\/channel-monitors\/(\d+)\/history$/, (ctx, m) => monitorHistory(MOCK_MONITORS.find((x) => x.id === Number(m[1])) || MOCK_MONITORS[0], ctx.query.get('model'), ctx.query.get('limit'))],
+  [/^GET \/api\/v1\/admin\/channel-monitors\/(\d+)$/, (ctx, m) => MOCK_MONITORS.find((x) => x.id === Number(m[1])) || MOCK_MONITORS[0]],
   [/^GET \/api\/v1\/admin\/payment\/orders\/(\d+)$/, (ctx, m) => MOCK_PAY_ORDERS.find((o) => o.id === Number(m[1])) || MOCK_PAY_ORDERS[0]],
   [/^GET \/api\/v1\/admin\/payment\/invoices\/(\d+)$/, (ctx, m) => MOCK_INVOICES.find((o) => o.id === Number(m[1])) || MOCK_INVOICES[0]],
   [/^GET \/api\/v1\/admin\/tickets\/(\d+)$/, (ctx, m) => MOCK_TICKETS.find((t) => t.id === Number(m[1])) || MOCK_TICKETS[0]],
