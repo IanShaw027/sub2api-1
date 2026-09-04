@@ -532,7 +532,7 @@ function handleComposerKeydown(event: KeyboardEvent) {
  justify-content: center;
  border-radius: 999px;
  background: var(--danger);
- color: #fff;
+ color: white;
  font-size: 11px;
  opacity: 0;
  transition: opacity 0.15s ease;
