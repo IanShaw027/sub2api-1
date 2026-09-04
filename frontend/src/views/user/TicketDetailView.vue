@@ -12,7 +12,7 @@
       </template>
     </PageHeader>
 
-    <GlassCard v-if="loading" class="detail-loading">
+    <GlassCard v-if="loading" class="detail-loading text-[13px]">
       {{ t('common.loading') }}
     </GlassCard>
 
@@ -296,7 +296,6 @@ watch(
 .detail-loading {
   padding: 40px;
   text-align: center;
-  font-size: 13px;
   color: var(--muted);
 }
 

@@ -9,35 +9,33 @@
       </template>
     </PageHeader>
 
-    <SettingsPageLayout>
-      <template #content>
-        <SettingsSection :title="t('tickets.createBasicSection')">
-          <SettingRow :label="t('tickets.fields.category')">
-            <SegmentedControl v-model="category" :options="categorySegmentOptions" />
-          </SettingRow>
-          <SettingRow :label="t('tickets.fields.title')">
-            <TextInput v-model="title" maxlength="80" :placeholder="t('tickets.fields.title')" />
-          </SettingRow>
-        </SettingsSection>
+    <div class="ticket-create-stack">
+      <SettingsSection :title="t('tickets.createBasicSection')">
+        <SettingRow :label="t('tickets.fields.category')">
+          <SegmentedControl v-model="category" :options="categorySegmentOptions" />
+        </SettingRow>
+        <SettingRow :label="t('tickets.fields.title')">
+          <TextInput v-model="title" maxlength="80" :placeholder="t('tickets.fields.title')" />
+        </SettingRow>
+      </SettingsSection>
 
-        <SettingsSection :title="t('tickets.createDetailsSection')">
-          <div class="category-form-body">
-            <TicketCategoryForm
-              :category="category"
-              :model-value="payload"
-              :user-concurrency="authStore.user?.concurrency ?? null"
-              :rate-groups="rateGroups"
-              @update:model-value="payload = $event"
-            />
-          </div>
-        </SettingsSection>
-
-        <div class="form-actions">
-          <Button variant="secondary" to="/tickets">{{ t('common.cancel') }}</Button>
-          <Button :loading="submitting" @click="submit">{{ t('tickets.submit') }}</Button>
+      <SettingsSection :title="t('tickets.createDetailsSection')">
+        <div class="category-form-body">
+          <TicketCategoryForm
+            :category="category"
+            :model-value="payload"
+            :user-concurrency="authStore.user?.concurrency ?? null"
+            :rate-groups="rateGroups"
+            @update:model-value="payload = $event"
+          />
         </div>
-      </template>
-    </SettingsPageLayout>
+      </SettingsSection>
+
+      <div class="form-actions">
+        <Button variant="secondary" to="/tickets">{{ t('common.cancel') }}</Button>
+        <Button :loading="submitting" @click="submit">{{ t('tickets.submit') }}</Button>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -46,7 +44,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import SettingsPageLayout from '@/components/layout/SettingsPageLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
 import SettingsSection from '@/components/ui/SettingsSection.vue'
@@ -119,6 +116,13 @@ onMounted(loadTicketContext)
 </script>
 
 <style scoped>
+.ticket-create-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+
 .category-form-body {
   padding: 20px;
 }

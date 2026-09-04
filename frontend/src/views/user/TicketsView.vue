@@ -63,11 +63,11 @@
           >
             <template #cell-title="{ row }">
               <div class="cell-stack">
-                <span class="cell-title">
+                <span class="cell-title font-semibold">
                   {{ row.title }}
-                  <span v-if="row.unread_by_user" class="unread-dot" :title="t('tickets.unreadOnly')" />
+                  <span v-if="row.unread_by_user" class="unread-dot rounded-full" :title="t('tickets.unreadOnly')" />
                 </span>
-                <span class="cell-meta">#{{ row.ticket_no }} · {{ t(`tickets.categories.${row.category}`) }}</span>
+                <span class="cell-meta text-[11.5px]">#{{ row.ticket_no }} · {{ t(`tickets.categories.${row.category}`) }}</span>
               </div>
             </template>
 
@@ -76,11 +76,11 @@
             </template>
 
             <template #cell-created_at="{ value }">
-              <span class="cell-time" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
+              <span class="cell-time text-[12.5px]" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
             </template>
 
             <template #cell-updated_at="{ value }">
-              <span class="cell-time" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
+              <span class="cell-time text-[12.5px]" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
             </template>
 
             <template #cell-actions="{ row }">
@@ -335,7 +335,6 @@ onMounted(async () => {
 }
 
 .cell-title {
-  font-weight: 600;
   line-height: 1.4;
   color: var(--foreground);
   white-space: normal;
@@ -343,7 +342,6 @@ onMounted(async () => {
 }
 
 .cell-meta {
-  font-size: 11.5px;
   line-height: 1.4;
   font-family: var(--font-mono);
   color: var(--muted);
@@ -353,7 +351,6 @@ onMounted(async () => {
 }
 
 .cell-time {
-  font-size: 12.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -363,7 +360,6 @@ onMounted(async () => {
   width: 8px;
   height: 8px;
   margin-left: 6px;
-  border-radius: 999px;
   background: var(--danger);
   vertical-align: middle;
 }

@@ -152,3 +152,13 @@
 - 移动端 390：`/admin/ops` h1 单行（代理修复 scoped `:deep()` 落在同一元素导致规则失效的问题，加 `.ops-header-shell` 祖先层）。暗色 lead 亲自查看 `/admin/ops`，令牌化正确、图表取色随主题。
 - 门禁：eslint 0；`RiskControlView.spec` 4/4；ops + risk-control + prompt-audit 共 16 文件 65 用例通过；ui-lint 本次改动文件零新增命中。
 - 复核附带发现并单独修复（外壳，非本组所有权）：移动端顶栏公告铃铛缺失，`#topbar-mobile-bell` 传送目标在同组件模板内解析过早导致铃铛无处渲染，改用 `<Teleport defer>` 并对空目标隐藏（提交 `e0cdfdd34`）。
+
+## 12.6–12.7 用户侧工单（组 12D，含 lead 复核）
+
+- 提交：`0fdb94f70`（代理中途 WIP）+ 本次收尾提交；`9f76c4f97`（提交前 `sanitizeTicketPayload` 归一化）、`debb67e7a`（删除 `TicketCreateDialog.vue`）为同组前置修复。
+- 结构：建单由弹层改为独立路由 `/tickets/new`；列表页套 TablePageLayout + DataTable + ActionsCell；详情页套 DetailPageLayout（会话主区 + 侧栏信息）。
+- lead 实测几何（1440×900，seeded，11 条工单）：h1 top 74 / h 35；首屏内容 y=146；筛选行 h36；thead 42；行 61。分页区随数据量出现。
+- 截图：`.shots/12d-{tickets,detail,create}-{light,dark,mobile}.png`、`12d-create-rate.png`、lead 复核 `lead-12d-tickets.png`。
+- 门禁（lead 亲自复跑）：vue-tsc 0；eslint（三视图 + `components/tickets`）0；ui-lint --scoped total 0；i18n-diff zh/en 8943 对齐、0 差异；`vitest run src/views/user src/components/tickets` 13 文件 / 68 用例全通过。
+- anchor-diff 报 7 处 lost，逐条核实：3 处建单 handler 与 1 处状态 chip handler 属结构性重构的必然结果（已登记偏差）；`closeTicketItem` 与 `tickets.messages.created` 为工具正则局限导致的假阳性（前者经 `ActionsCell` 数组内箭头函数绑定，后者实际在未纳入 scope 的 `TicketCreateView.vue` 中使用）。
+- lead 复核附带处理：删除确认无引用的死组件 `components/tickets/TicketInfoItem.vue`；修复共享组件 `components/layout/SettingsPageLayout.vue` 在缺省 `#nav` 时把内容挤进 224px 轨道的缺陷（改为默认单列 + `.has-nav` 双栏，双栏消费者零影响，`vitest run src/components/layout` 8 文件 / 60 用例通过）。

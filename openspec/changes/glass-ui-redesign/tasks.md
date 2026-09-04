@@ -164,8 +164,8 @@
 - [x] 12.5 `/invoices`、`/invoices/:id`（`UserInvoicesView.vue`、`UserInvoiceDetailView.vue`：ListPage + DetailPage）；验证截图；提交 `feat(glass): user pages batch 1 (tasks 12.1–12.5)`
 
 批次 2（工单 / 订阅 / 渠道 / 设置）
-- [ ] 12.6 `/tickets`（`TicketsView.vue` + `components/tickets/*` 列表相关 + `components/ticket/*` 合并）；验证截图 + spec
-- [ ] 12.7 `/tickets/:id`、`/tickets/new`（`TicketDetailView.vue`、`TicketCreateView.vue`、`TicketConversationPane.vue`、`TicketDetailPane.vue`、`TicketCreateDialog` 等）；验证截图 + spec
+- [x] 12.6 `/tickets`（`TicketsView.vue` + `components/tickets/*` 列表相关 + `components/ticket/*` 合并）；验证截图 + spec
+- [x] 12.7 `/tickets/:id`、`/tickets/new`（`TicketDetailView.vue`、`TicketCreateView.vue`、`TicketConversationPane.vue`、`TicketDetailPane.vue`、`TicketCreateDialog` 等）；验证截图 + spec
 - [ ] 12.8 `/subscriptions`（`SubscriptionsView.vue` + `SubscriptionProgressMini`）；验证截图
 - [ ] 12.9 `/available-channels`（`AvailableChannelsView.vue` + `components/channels/*`：玻璃卡网格、24 底板、`.chip` 模型、tabular 价格）；验证截图
 - [ ] 12.10 `/profile`（`ProfileView.vue` + `components/user/profile/*`：SettingsPage 配方，去掉 Hero 横幅与卡中卡；资料 / 安全（密码、Passkey、2FA `UiModal`）/ 通知（余额提醒）/ 绑定 / 危险区）；验证亮 / 暗 / 390 截图 + `profile` spec；提交 `feat(glass): user pages batch 2 (tasks 12.6–12.10)`
