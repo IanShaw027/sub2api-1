@@ -93,3 +93,10 @@
 - anchor-diff：ChannelsView `handleDelete` 迁入 ActionsCell items 回调（仍被引用），ChannelMonitorView 0 lost。
 - 探针：h1 74/35，filter-bar 146 h36，thead h42。行数：ChannelsView 1722→372（ChannelFormDialog 1392 等），ChannelMonitorView 402 + monitor/ 14 文件。
 - 待 lead：mock 缺 `channel-monitors` 种子 / `history` 路由 / `channel_monitor_mode` 可切 v1（legacy 页只能空态）；`useChannelMonitorFormat.ts` 硬编码调色板色划归 12.2（monitor v2）一并整改。
+
+### 11.9 / 11.10 / 11.11（redeem / promo-codes / affiliates，2026-09-04）
+- vue-tsc 0；eslint 0；vitest views/admin + components/admin 348/348；ui-lint total 0；i18n parity 8905/8905。
+- RedeemView 1202→676（RedeemGenerateModal / RedeemBatchUpdateModal / RedeemResultModal 抽出）；PromoCodesView 仅修 1 处字面色；affiliates 4 视图审查后无需改动。
+- 探针 promo-codes：h1 74/35，thead h42；行高无法核验（mock 5 个列表端点落入 emptyPage）。
+- 代理发现并修复：RedeemBatchUpdateModal 抽取时缺 UiModal/Select import 导致弹层内容泄漏到正文流。
+- 待 lead：mock 补 `/admin/redeem-codes`、`/admin/promo-codes`、`/admin/affiliates/{invites,rebates,transfers}` 种子。

@@ -136,9 +136,9 @@
 - [x] 11.8 `/admin/announcements`（`AnnouncementsView.vue`：ListPage + Markdown 编辑器 `.field` 文本域 220 + 预览卡 + 受众 / 排期 `SettingRow`）；验证同上；提交 `feat(glass): admin lists batch 1 (tasks 11.1–11.8)`
 
 批次 2（运营）
-- [ ] 11.9 `/admin/redeem`（在 0.1 基础上完成 ListPage 配方、生成 / 批量更新 / 导出弹层）；验证截图 + `RedeemView*.spec`
-- [ ] 11.10 `/admin/promo-codes`（`PromoCodesView.vue`）；验证同上
-- [ ] 11.11 `/admin/affiliates/{invites,rebates,transfers}`（3 视图 + `AdminAffiliateRecordsTable.vue`）；验证同上
+- [x] 11.9 `/admin/redeem`（在 0.1 基础上完成 ListPage 配方、生成 / 批量更新 / 导出弹层）；验证截图 + `RedeemView*.spec`
+- [x] 11.10 `/admin/promo-codes`（`PromoCodesView.vue`）；验证同上
+- [x] 11.11 `/admin/affiliates/{invites,rebates,transfers}`（3 视图 + `AdminAffiliateRecordsTable.vue`）；验证同上
 - [ ] 11.12 `components/admin/payment/*` 与 `components/payment/*` 中管理员侧组件令牌化；验证 spec
 - [ ] 11.15 `/admin/orders`（有数据态核对：订单号 mono、用户、实付 tabular、支付方式 `.tag`、状态徽章、时间、操作；退款 / 详情弹层）；验证截图
 - [ ] 11.16 `/admin/orders/invoices`（有数据态核对 + 审批弹层）；验证截图

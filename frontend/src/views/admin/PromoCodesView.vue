@@ -59,7 +59,7 @@
                 :class="[
  'flex items-center transition-colors',
  copiedCode === value
- ? 'text-green-500'
+ ? 'text-success-text'
  : 'text-muted hover:text-foreground'
  ]"
                 :title="copiedCode === value ? t('admin.promo.copied') : t('keys.copyToClipboard')"
