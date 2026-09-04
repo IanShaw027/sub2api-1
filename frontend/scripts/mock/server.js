@@ -820,6 +820,60 @@ const MOCK_PLUGINS = [
   { id: 2, plugin_key: 'zhipu-adapter', name: '智谱 GLM 适配器', version: '0.9.1', description: '智谱 GLM API Key 账号接入（灰度）', author: 'community', manifest: pluginManifest('zhipu-adapter', '智谱 GLM 适配器', '0.9.1', 'zhipu'), signature_status: 'unsigned', state: 'disabled', last_error: '', installed_at: iso(NOW() - 5 * 864e5), updated_at: iso(NOW() - 5 * 864e5), bindings: [{ id: 21, plugin_id: 2, capability: 'zhipu.chat', platform: 'zhipu', account_type: 'apikey', enabled: false, rollout_percent: 25 }], compatibility: { compatible: true, tested: false, status: 'untested', message: '未在当前版本测试', current_sub2api_version: '1.8.2', required_sub2api_version: '>=1.6.0', recommended_sub2api_version: '1.7.0', plugin_protocol: 1, transport_api: 1, ui_bridge: 1 } },
 ]
 
+const MOCK_REDEEM_CODES = Array.from({ length: 14 }, (_, i) => {
+  const types = ['balance', 'balance', 'subscription', 'concurrency', 'invitation']
+  const statuses = ['unused', 'used', 'unused', 'expired', 'disabled']
+  const type = types[i % types.length]
+  const status = statuses[i % statuses.length]
+  return {
+    id: 101 + i,
+    code: 'RD' + (1000 + i * 37).toString(36).toUpperCase().padStart(6, 'X') + '-' + (i * 911).toString(16).toUpperCase().padStart(4, '0'),
+    type,
+    value: type === 'balance' ? [10, 50, 100][i % 3] : type === 'concurrency' ? 5 : 30,
+    status,
+    used_by: status === 'used' ? 2 : null,
+    used_at: status === 'used' ? iso(NOW() - (i + 1) * 3600e3 * 7) : null,
+    created_at: iso(NOW() - (i + 2) * 864e5),
+    expires_at: status === 'expired' ? iso(NOW() - 864e5) : iso(+NOW() + (30 + i) * 864e5),
+    updated_at: iso(NOW() - i * 3600e3),
+    notes: i % 4 === 0 ? '活动批次 #' + (i + 1) : '',
+    group_id: type === 'subscription' ? GROUPS[0].id : null,
+    validity_days: type === 'subscription' ? 30 : undefined,
+    user: status === 'used' ? { id: 2, email: 'alice@example.com', username: 'alice' } : undefined,
+    group: type === 'subscription' ? GROUPS[0] : undefined,
+  }
+})
+const MOCK_PROMO_CODES = Array.from({ length: 8 }, (_, i) => ({
+  id: 301 + i,
+  code: ['WELCOME10', 'SPRING24', 'LAUNCH', 'VIP50', 'STUDENT', 'REF2024', 'BETA', 'SUMMER'][i],
+  bonus_amount: [10, 5, 20, 50, 8, 15, 30, 12][i],
+  max_uses: i % 3 === 0 ? 0 : 100 * (i + 1),
+  used_count: [42, 17, 3, 99, 0, 250, 8, 61][i],
+  status: i % 4 === 3 ? 'disabled' : 'active',
+  expires_at: i % 2 === 0 ? iso(+NOW() + (20 + i) * 864e5) : null,
+  notes: i % 3 === 1 ? '仅限新用户' : null,
+  created_at: iso(NOW() - (i + 3) * 864e5),
+  updated_at: iso(NOW() - i * 3600e3),
+}))
+const AFF_PEOPLE = [
+  [2, 'alice@example.com', 'alice'], [3, 'bob@example.com', 'bob'], [4, 'carol@example.com', 'carol'],
+  [5, 'dave@example.com', 'dave'], [6, 'erin@example.com', 'erin'], [7, 'frank@example.com', 'frank'],
+]
+const MOCK_AFF_INVITES = Array.from({ length: 12 }, (_, i) => {
+  const inv = AFF_PEOPLE[i % 3]; const ee = AFF_PEOPLE[3 + (i % 3)]
+  return { inviter_id: inv[0], inviter_email: inv[1], inviter_username: inv[2], invitee_id: ee[0] + i, invitee_email: 'u' + (ee[0] + i) + '@example.com', invitee_username: ee[2] + i, aff_code: 'AF' + inv[2].toUpperCase() + '01', total_rebate: Number((i * 3.75).toFixed(2)), created_at: iso(NOW() - (i + 1) * 864e5 * 2) }
+})
+const MOCK_AFF_REBATES = Array.from({ length: 10 }, (_, i) => {
+  const inv = AFF_PEOPLE[i % 3]; const ee = AFF_PEOPLE[3 + (i % 3)]
+  const amt = [20, 50, 100, 30][i % 4]
+  return { order_id: 9001 + i, out_trade_no: 'OT' + (20240600 + i) + 'A' + i, inviter_id: inv[0], inviter_email: inv[1], inviter_username: inv[2], invitee_id: ee[0], invitee_email: ee[1], invitee_username: ee[2], order_amount: amt, pay_amount: amt, rebate_amount: Number((amt * 0.1).toFixed(2)), payment_type: ['alipay', 'wxpay', 'stripe'][i % 3], order_status: i % 5 === 4 ? 'refunded' : 'paid', created_at: iso(NOW() - (i + 1) * 864e5 * 3) }
+})
+const MOCK_AFF_TRANSFERS = Array.from({ length: 9 }, (_, i) => {
+  const p = AFF_PEOPLE[i % AFF_PEOPLE.length]
+  const amount = [5, 12.5, 30, 8][i % 4]
+  return { ledger_id: 7001 + i, user_id: p[0], user_email: p[1], username: p[2], amount, balance_after: 40 + i * 5, available_quota_after: 12 - i, frozen_quota_after: 3, history_quota_after: 60 + i * 5, snapshot_available: i % 3 !== 2, created_at: iso(NOW() - (i + 1) * 864e5) }
+})
+
 const emptyPage = (query) => ({ items: [], total: 0, page: Number(query.get('page') || 1), page_size: Number(query.get('page_size') || 20), pages: 0 })
 
 const rangeDays = (query) => {
@@ -1053,6 +1107,24 @@ const routes = {
   'GET /api/v1/admin/ops/dashboard/overview': () => ({}),
   'GET /api/v1/admin/ops/account-availability': () => ({ ...ACCOUNT_AVAILABILITY, timestamp: iso(NOW()) }),
   'GET /api/v1/admin/ops/errors': (ctx) => { const size = Number(ctx.query.get('page_size') || 20); return { items: OPS_ERROR_LOGS.slice(0, size), total: OPS_ERROR_LOGS.length, page: 1, page_size: size, pages: 1 } },
+  'GET /api/v1/admin/redeem-codes': (ctx) => {
+    let items = MOCK_REDEEM_CODES
+    const st = ctx.query.get('status'); const ty = ctx.query.get('type'); const q = (ctx.query.get('search') || ctx.query.get('code') || '').toLowerCase()
+    if (st) items = items.filter((c) => c.status === st)
+    if (ty) items = items.filter((c) => c.type === ty)
+    if (q) items = items.filter((c) => c.code.toLowerCase().includes(q) || (c.notes || '').toLowerCase().includes(q))
+    return paginate(items, ctx.query)
+  },
+  'GET /api/v1/admin/promo-codes': (ctx) => {
+    let items = MOCK_PROMO_CODES
+    const st = ctx.query.get('status'); const q = (ctx.query.get('search') || '').toLowerCase()
+    if (st) items = items.filter((c) => c.status === st)
+    if (q) items = items.filter((c) => c.code.toLowerCase().includes(q))
+    return paginate(items, ctx.query)
+  },
+  'GET /api/v1/admin/affiliates/invites': (ctx) => paginate(MOCK_AFF_INVITES, ctx.query),
+  'GET /api/v1/admin/affiliates/rebates': (ctx) => paginate(MOCK_AFF_REBATES, ctx.query),
+  'GET /api/v1/admin/affiliates/transfers': (ctx) => paginate(MOCK_AFF_TRANSFERS, ctx.query),
   'GET /api/v1/admin/affiliates/users': (ctx) => emptyPage(ctx.query)
 }
 
