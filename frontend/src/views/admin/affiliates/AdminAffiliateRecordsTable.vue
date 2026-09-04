@@ -17,8 +17,20 @@
             </div>
           </template>
           <template #filters>
-            <input v-model="filters.start_at" type="date" class="input w-full sm:w-44" :title="t('admin.affiliates.records.startAt')" @change="reloadFromFirstPage" />
-            <input v-model="filters.end_at" type="date" class="input w-full sm:w-44" :title="t('admin.affiliates.records.endAt')" @change="reloadFromFirstPage" />
+            <TextInput
+              v-model="filters.start_at"
+              type="date"
+              class="w-full sm:w-44"
+              :title="t('admin.affiliates.records.startAt')"
+              @change="reloadFromFirstPage"
+            />
+            <TextInput
+              v-model="filters.end_at"
+              type="date"
+              class="w-full sm:w-44"
+              :title="t('admin.affiliates.records.endAt')"
+              @change="reloadFromFirstPage"
+            />
           </template>
         </FilterBar>
       </template>
@@ -65,9 +77,9 @@
             <span class="font-mono text-sm text-foreground">{{ row.aff_code || '-' }}</span>
           </template>
           <template #cell-order="{ row }">
-            <div class="space-y-0.5">
-              <div class="font-mono text-sm text-foreground">#{{ row.order_id }}</div>
-              <div class="max-w-56 truncate text-sm text-muted">{{ row.out_trade_no }}</div>
+            <div class="flex flex-col gap-px">
+              <div class="font-mono text-sm font-semibold leading-tight text-foreground">#{{ row.order_id }}</div>
+              <div class="max-w-56 truncate font-mono text-xs leading-tight text-muted">{{ row.out_trade_no }}</div>
             </div>
           </template>
           <template #cell-payment_type="{ row }">
@@ -157,6 +169,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
 import FilterBar from '@/components/ui/FilterBar.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -363,16 +376,15 @@ const UserCell = defineComponent({
   },
   emits: ['open'],
   setup(cellProps, { emit }) {
-    return () => h('div', { class: 'space-y-0.5' }, [
-      h('div', { class: 'font-mono text-sm text-foreground ' }, `#${cellProps.id}`),
+    return () => h('div', { class: 'flex flex-col gap-px min-w-0' }, [
       h(cellProps.clickable ? 'button' : 'div', {
         class: cellProps.clickable
-          ? 'max-w-56 truncate text-left text-sm font-medium text-accent hover:text-accent hover:underline  '
-          : 'max-w-56 truncate text-sm text-foreground ',
+          ? 'max-w-56 truncate text-left text-sm font-semibold leading-tight text-accent hover:text-accent hover:underline'
+          : 'max-w-56 truncate text-sm font-semibold leading-tight text-foreground',
         type: cellProps.clickable ? 'button' : undefined,
         onClick: cellProps.clickable ? () => emit('open', cellProps.id) : undefined,
       }, cellProps.email || '-'),
-      h('div', { class: 'max-w-56 truncate text-sm text-muted ' }, cellProps.username || '-'),
+      h('div', { class: 'max-w-56 truncate font-mono text-xs leading-tight text-muted' }, `#${cellProps.id}${cellProps.username ? ' · ' + cellProps.username : ''}`),
     ])
   },
 })

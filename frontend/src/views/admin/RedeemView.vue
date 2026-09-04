@@ -134,7 +134,7 @@
           <template #cell-code="{ value, row }">
             <div class="flex items-center gap-1.5 min-w-0">
               <NameIdCell :name="value" :id="row.id" :meta="t('admin.redeem.types.' + row.type)">
-                <template #name><code class="code">{{ value }}</code></template>
+                <template #name><code class="code redeem-code-chip">{{ value }}</code></template>
               </NameIdCell>
               <button
                 type="button"
@@ -659,6 +659,30 @@ onUnmounted(() => {
 
 .redeem-fab {
   display: none;
+}
+
+/* Compact code chip: tighten the shared .code chip's line-height/padding so the
+   two-line NameIdCell (chip + type meta) fits within the recipe's 59-61px row band. */
+.redeem-code-chip {
+  padding: 1px 6px;
+  line-height: 15px;
+}
+
+/* Tighten this table's two-line NameIdCell stacks (code+type meta, used_by email+id)
+   so their combined content height keeps tbody rows within the 59-61px recipe band.
+   NameIdCell's root (.cell-name-id) carries this page's scope attribute (Vue stamps a
+   child component's root with the parent's scope id), so it matches directly; its
+   inner name/meta lines are the child's own template and need :deep() to reach. */
+.cell-name-id {
+  gap: 1px;
+}
+
+.cell-name-id :deep(.cell-name-id-name) {
+  line-height: 16px;
+}
+
+.cell-name-id :deep(.cell-name-id-meta) {
+  line-height: 13px;
 }
 
 @media (max-width: 767px) {

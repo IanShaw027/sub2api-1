@@ -112,3 +112,4 @@
 - 探针（lead 补 mock 后）：orders / invoices thead 197 h42、行 64；plans 行 64/58；payment dashboard hero h1 95（主仪表盘 130，二级页轻量 hero，接受）。行 64 → ≤61 归入 15.x 行高统一清单。
 - 品牌色集中到 `components/payment/paymentBrandColors.ts`；DailyRevenueChart 改 chartTheme()。
 - lead 已补 mock：`/admin/payment/dashboard`（符合 DashboardStats 契约）、`/admin/payment/orders`(+`/:id`)、`/admin/payment/plans`、`/admin/payment/invoices`(+`/:id`)。
+- 11.9/11.11 复核（lead 补 mock 后）：redeem 行 58、affiliates 三页行 59（原 90，三行叠 → NameIdCell 两行）；日期筛选 TextInput type=date h36。共享待办：抽 `components/ui/DateInput.vue`（tickets / affiliates / audit-logs / usage 共用），归 15.x。
