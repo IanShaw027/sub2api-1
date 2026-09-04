@@ -1,4 +1,12 @@
 <template>
+  <div class="acct-usage-cell-wrap" :class="{ 'is-compact': compact }">
+    <UsageWindowCell
+      v-if="compact"
+      class="acct-usage-cell-summary"
+      :windows="summaryWindows"
+    />
+    <span v-if="compact && summaryWindows.length === 0" class="acct-usage-cell-empty">-</span>
+    <div class="acct-usage-cell-detail">
   <div ref="rootRef" v-if="showUsageWindows">
     <!-- Anthropic OAuth and Setup Token accounts: fetch real usage data -->
     <template
@@ -686,6 +694,8 @@
       >-</div>
     </div>
   </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -704,6 +714,7 @@ import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
 import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
 import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
+import UsageWindowCell, { type UsageWindow } from '@/components/common/cells/UsageWindowCell.vue'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -719,6 +730,10 @@ const props = withDefaults(
     batchedUsageError?: string | null
     batchedUsageLoading?: boolean
     requestBatchedUsage?: ((account: Account, options?: { force?: boolean }) => void) | null
+    /** Render a compact 2-line summary (5h/7d or 1d/7d) with the full detail moved into a hover popover.
+     * Used by the accounts table (glass-04) to keep row height fixed; other consumers (e.g. the
+     * account monitor view) keep the full always-expanded layout by leaving this false. */
+    compact?: boolean
   }>(),
   {
     todayStats: null,
@@ -727,7 +742,8 @@ const props = withDefaults(
     batchedUsage: null,
     batchedUsageError: null,
     batchedUsageLoading: false,
-    requestBatchedUsage: null
+    requestBatchedUsage: null,
+    compact: false
   }
 )
 
@@ -1602,6 +1618,44 @@ const quotaTotalBar = computed((): QuotaBarInfo | null => {
   return makeQuotaBar(props.account.quota_used ?? 0, limit)
 })
 
+/** Compact-mode summary rows (glass-04 table). Prefers the Anthropic-style 5h/7d windows,
+ * falls back to the API-key style 1d/7d/total quota bars, otherwise renders empty (the
+ * compact trigger then shows a plain "-" and the full detail still covers every other case). */
+const summaryWindows = computed((): UsageWindow[] => {
+  if (usageInfo.value?.five_hour || usageInfo.value?.seven_day) {
+    const windows: UsageWindow[] = []
+    if (usageInfo.value.five_hour) windows.push({ label: '5h', percent: usageInfo.value.five_hour.utilization })
+    if (usageInfo.value.seven_day) windows.push({ label: '7d', percent: usageInfo.value.seven_day.utilization })
+    return windows
+  }
+  if (quotaDailyBar.value || quotaWeeklyBar.value || quotaTotalBar.value) {
+    const windows: UsageWindow[] = []
+    if (quotaDailyBar.value) windows.push({ label: '1d', percent: quotaDailyBar.value.utilization })
+    if (quotaWeeklyBar.value) windows.push({ label: '7d', percent: quotaWeeklyBar.value.utilization })
+    if (!quotaDailyBar.value && !quotaWeeklyBar.value && quotaTotalBar.value) {
+      windows.push({ label: 'total', percent: quotaTotalBar.value.utilization })
+    }
+    return windows
+  }
+  if (hasAntigravityQuotaFromAPI.value) {
+    const windows: UsageWindow[] = []
+    if (antigravityClaudeUsageFromAPI.value) {
+      windows.push({ label: 'Claude', percent: antigravityClaudeUsageFromAPI.value.utilization })
+    }
+    if (antigravity3ProUsageFromAPI.value) {
+      windows.push({ label: 'G3Pro', percent: antigravity3ProUsageFromAPI.value.utilization })
+    }
+    if (windows.length < 2 && antigravity3FlashUsageFromAPI.value) {
+      windows.push({ label: 'Flash', percent: antigravity3FlashUsageFromAPI.value.utilization })
+    }
+    if (windows.length < 2 && antigravity3ImageUsageFromAPI.value) {
+      windows.push({ label: 'Img', percent: antigravity3ImageUsageFromAPI.value.utilization })
+    }
+    if (windows.length > 0) return windows.slice(0, 2)
+  }
+  return []
+})
+
 const handleQuotaResetAccountUpdated = (account: Account) => {
   emit('account-updated', account)
 }
@@ -1757,3 +1811,49 @@ onUnmounted(() => {
   desktopViewportMediaQuery = null
 })
 </script>
+
+<style scoped>
+/* Non-compact consumers (e.g. the account monitor view) render exactly as before: a plain
+ * always-visible block with no positioning changes. */
+.acct-usage-cell-detail {
+  min-width: 0;
+}
+
+.acct-usage-cell-empty {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Compact mode (glass-04 accounts table): show only the 2-line summary inline, and reveal the
+ * full detail (every branch above, unchanged) as a floating panel on hover/focus so it never
+ * grows the table row. */
+.acct-usage-cell-wrap.is-compact {
+  position: relative;
+  min-width: 0;
+}
+
+.acct-usage-cell-wrap.is-compact .acct-usage-cell-detail {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 4px;
+  width: max-content;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.acct-usage-cell-wrap.is-compact:hover .acct-usage-cell-detail,
+.acct-usage-cell-wrap.is-compact:focus-within .acct-usage-cell-detail {
+  opacity: 1;
+  pointer-events: auto;
+}
+</style>

@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import QuotaDimensionRow from './QuotaDimensionRow.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import type { QuotaThresholdType, QuotaResetMode } from '@/constants/account'
 
 const { t } = useI18n()
@@ -145,21 +146,7 @@ const dailyFixedHint = computed(() =>
             </p>
           </div>
         </div>
-        <button
-          type="button"
-          @click="localEnabled = !localEnabled"
-          :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- localEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-        >
-          <span
-            :class="[
-              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-              localEnabled ? 'translate-x-5' : 'translate-x-0'
-            ]"
-          />
-        </button>
+        <ToggleSwitch v-model="localEnabled" />
       </div>
 
       <!-- Collapsible content -->

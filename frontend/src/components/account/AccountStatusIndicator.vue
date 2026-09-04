@@ -2,13 +2,13 @@
   <div class="flex items-center gap-2">
     <!-- Rate Limit Display (429) - Two-line layout -->
     <div v-if="isRateLimited" class="flex flex-col items-center gap-1">
-      <span class="badge text-xs badge-warning">{{ t('admin.accounts.status.rateLimited') }}</span>
+      <span class="badge text-xs badge-dot badge-warning">{{ t('admin.accounts.status.rateLimited') }}</span>
       <span class="text-[11px] text-muted">{{ rateLimitResumeText }}</span>
     </div>
 
     <!-- Overload Display (529) - Two-line layout -->
     <div v-else-if="isOverloaded" class="flex flex-col items-center gap-1">
-      <span class="badge text-xs badge-danger">{{ t('admin.accounts.status.overloaded') }}</span>
+      <span class="badge text-xs badge-dot badge-danger">{{ t('admin.accounts.status.overloaded') }}</span>
       <span class="text-[11px] text-muted">{{ overloadCountdown }}</span>
     </div>
 
@@ -17,7 +17,7 @@
       <div v-if="isTempUnschedulable" class="flex flex-col items-center gap-1">
         <button
           type="button"
-          :class="['badge text-xs', statusClass, 'cursor-pointer']"
+          :class="['badge text-xs badge-dot', statusClass, 'cursor-pointer']"
           :title="t('admin.accounts.status.viewTempUnschedDetails')"
           @click="handleTempUnschedClick"
         >
@@ -27,7 +27,7 @@
           {{ tempUnschedRecoveryText }}
         </span>
       </div>
-      <span v-else :class="['badge text-xs', statusClass]">
+      <span v-else :class="['badge text-xs badge-dot', statusClass]">
         {{ statusText }}
       </span>
     </template>

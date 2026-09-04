@@ -101,6 +101,22 @@
  </button>
  </div>
  <div class="acct-filter-row">
+ <AccountBulkActionsBar
+ :selected-ids="selIds"
+ :total-results="pagination.total"
+ :selecting-all="selectingAllResults"
+ :all-results-selected="allResultsSelected"
+ @delete="handleBulkDelete"
+ @reset-status="handleBulkResetStatus"
+ @refresh-token="handleBulkRefreshToken"
+ @probe-upstream-billing="handleBulkProbeUpstreamBilling"
+ @edit-selected="openBulkEditSelected"
+ @edit-filtered="openBulkEditFiltered"
+ @clear="clearSelection"
+ @select-page="selectPage"
+ @select-all-results="handleSelectAllResults"
+ @toggle-schedulable="handleBulkToggleSchedulable"
+ />
  <AccountTableFilters
  v-model:searchQuery="params.search"
  :filters="params"
@@ -184,22 +200,6 @@
  </div>
  </template>
  <template #table>
- <AccountBulkActionsBar
- :selected-ids="selIds"
- :total-results="pagination.total"
- :selecting-all="selectingAllResults"
- :all-results-selected="allResultsSelected"
- @delete="handleBulkDelete"
- @reset-status="handleBulkResetStatus"
- @refresh-token="handleBulkRefreshToken"
- @probe-upstream-billing="handleBulkProbeUpstreamBilling"
- @edit-selected="openBulkEditSelected"
- @edit-filtered="openBulkEditFiltered"
- @clear="clearSelection"
- @select-page="selectPage"
- @select-all-results="handleSelectAllResults"
- @toggle-schedulable="handleBulkToggleSchedulable"
- />
  <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
  <DataTable
  ref="dataTableRef"
@@ -212,7 +212,7 @@
  default-sort-key="name"
  default-sort-order="asc"
  :sort-storage-key="ACCOUNT_SORT_STORAGE_KEY"
- :estimate-row-height="60"
+ :estimate-row-height="61"
  :overscan="5"
  :virtualize-threshold="50"
  >
@@ -232,46 +232,30 @@
  <span class="acct-mono-muted">#{{ value }}</span>
  </template>
  <template #cell-name="{ row, value }">
- <div class="acct-name-cell">
- <HelpTooltip
- v-if="accountHomepageUrl(row)"
- :content="accountHomepageUrl(row)"
- width-class="w-max max-w-sm break-all"
- class="-ml-1 self-start"
- >
- <template #trigger>
- <a
+ <div class="acct-name-wrap">
+ <NameIdCell
+ class="acct-name-id"
+ :name="value"
+ :id="row.id"
+ :meta="accountGroupLabel(row)"
+ :email="accountDisplayEmail(row)"
  :href="accountHomepageUrl(row)"
- target="_blank"
- rel="noopener noreferrer"
- class="acct-name-link"
- :class="{ 'is-alert': hasCyberAlert(row) }"
+ :title="accountHomepageUrl(row) ? `${accountHomepageUrl(row)} · ${accountIdentityTitle(row)}` : accountIdentityTitle(row)"
  >
- {{ value }}
- </a>
+ <template #name>
+ <span :class="{ 'acct-name-alert': hasCyberAlert(row) }">{{ value }}</span>
  </template>
- </HelpTooltip>
- <span v-else class="acct-name-text" :class="{ 'is-alert': hasCyberAlert(row) }">{{ value }}</span>
- <span class="acct-name-sub" :title="accountIdentityTitle(row)">
- #{{ row.id }}<template v-if="accountGroupLabel(row)"> · {{ accountGroupLabel(row) }}</template>
- </span>
- <span
- v-if="accountDisplayEmail(row)"
- class="acct-name-email"
- :title="accountDisplayEmail(row) + (row.parent_chatgpt_account_id ? ' · ' + row.parent_chatgpt_account_id : '')"
- >
- {{ accountDisplayEmail(row) }}
- </span>
+ </NameIdCell>
  <button
  v-if="isOpenAIOAuthAccount(row) && row.cyber_count != null"
  type="button"
- class="acct-cyber-btn"
+ class="acct-cyber-badge"
  :class="{ 'is-alert': hasCyberAlert(row) }"
  :title="row.cyber_latest_at ? t('admin.accounts.cyber.latest', { time: formatDateTime(row.cyber_latest_at) }) : t('admin.accounts.cyber.viewDetail')"
  @click="openCyberEvents(row)"
  >
  <Icon name="shield" size="xs" />
- <span>Cyber: {{ row.cyber_count }}</span>
+ <span>{{ row.cyber_count }}</span>
  </button>
  </div>
  </template>
@@ -343,6 +327,7 @@
  </template>
  <template #cell-usage="{ row }">
  <AccountUsageCell
+ compact
  :account="row"
  :today-stats="todayStatsByAccountId[String(row.id)] ?? null"
  :today-stats-loading="todayStatsLoading"
@@ -459,16 +444,12 @@
  </DataTable>
  </div>
  <div v-if="pagination.total > 0" class="acct-table-footer">
- <span class="acct-table-footer-info">
- {{ t('pagination.showing') }}
- <b>{{ pageFromItem }}</b>–<b>{{ pageToItem }}</b>,
- {{ t('pagination.of') }} <b>{{ pagination.total }}</b> {{ t('pagination.results') }}
- </span>
  <Pagination
  class="acct-pagination"
  :page="pagination.page"
  :total="pagination.total"
  :page-size="pagination.page_size"
+ :show-page-size-selector="false"
  @update:page="handlePageChange"
  @update:pageSize="handlePageSizeChange"
  />
@@ -549,6 +530,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import { useAccountColumnVisibility } from '@/composables/useAccountColumnVisibility'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -572,6 +554,7 @@ import AccountTestModal from '@/components/admin/account/AccountTestModal.vue'
 import AccountStatsModal from '@/components/admin/account/AccountStatsModal.vue'
 import ScheduledTestsPanel from '@/components/admin/account/ScheduledTestsPanel.vue'
 import type { SelectOption } from '@/components/common/Select.vue'
+import NameIdCell from '@/components/common/cells/NameIdCell.vue'
 import AccountStatusIndicator from '@/components/account/AccountStatusIndicator.vue'
 import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
@@ -596,11 +579,26 @@ import { buildGrokUsageRefreshKey, buildOpenAIUsageRefreshKey } from '@/utils/ac
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 import { formatMultiplier } from '@/utils/formatters'
 import { platformTileBackground, platformLabel } from '@/utils/platformTile'
 import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSnapshot } from '@/types'
+import {
+  getAccountPlanType,
+  getOpenAIAuthMode,
+  getAntigravityTierFromRow,
+  getAntigravityTierClass,
+  accountDisplayEmail,
+  isOpenAIOAuthAccount,
+  hasCyberAlert,
+  accountHomepageUrl,
+  getOpenAICompactState,
+  formatSchedulerScore,
+  formatStickySchedulerScore,
+  getSchedulerScoreRows,
+  buildDefaultTodayStats,
+  accountSupportsBatchUsage
+} from './accountRowHelpers'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -722,20 +720,7 @@ const accountToolsDropdownStyle = computed(() => ({
   left: `${accountToolsDropdownPosition.left}px`,
   width: `${accountToolsDropdownPosition.width}px`
 }))
-const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = [
-  'id',
-  'groups',
-  'proxy',
-  'notes',
-  'scheduler_score',
-  'rate_multiplier',
-  'expires_at'
-]
-const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
-// One-time migration: hide scheduler score for existing admins too, because showing it opt-ins to heavy backend scoring.
-const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
-const HIDDEN_COLUMNS_CURRENT_VERSION = 'scheduler-score-hidden-by-default'
+const { hiddenColumns, isColumnVisible, toggleColumnVisibility } = useAccountColumnVisibility()
 
 // Sorting settings
 const ACCOUNT_SORT_STORAGE_KEY = 'account-table-sort'
@@ -811,26 +796,6 @@ const pendingUsageBatchIds = new Set<number>()
 let usageBatchFlushTimer: ReturnType<typeof setTimeout> | null = null
 let queuedUsageBatchForce = false
 let usageBatchRequestToken = 0
-
-const buildDefaultTodayStats = (): WindowStats => ({
-  requests: 0,
-  tokens: 0,
-  cost: 0,
-  standard_cost: 0,
-  user_cost: 0
-})
-
-const accountSupportsBatchUsage = (account: Account) => {
-  if (account.platform === 'anthropic') {
-    return account.type === 'oauth' || account.type === 'setup-token'
-  }
-  if (account.platform === 'gemini') return true
-  if (account.platform === 'antigravity') return account.type === 'oauth'
-  if (account.platform === 'openai') return account.type === 'oauth'
-  if (account.platform === 'grok') return account.type === 'oauth'
-  if (account.platform === 'kiro') return account.type === 'oauth'
-  return false
-}
 
 const setUsageBatchLoading = (accountID: number, loadingState: boolean) => {
   usageBatchLoadingByAccountId.value = {
@@ -1005,71 +970,10 @@ const autoRefreshIntervalLabel = (sec: number) => {
   return `${sec}s`
 }
 
-const formatSchedulerScore = (value: unknown): string => {
-  const num = Number(value)
-  if (!Number.isFinite(num)) return '-'
-  return num.toFixed(6).replace(/\.?0+$/, '')
-}
-
-const formatStickySchedulerScore = (score: AccountSchedulerGroupScore): string => {
-  if (!score) return '-'
-  if (score.sticky_score_infinity) return '+∞'
-  return formatSchedulerScore(score.sticky_score)
-}
-
-const getSchedulerScoreRows = (account: Account): AccountSchedulerGroupScore[] => {
-  const groupRows = Array.isArray(account.scheduler_scores)
-    ? account.scheduler_scores.filter(score => score.group_id != null)
-    : []
-  if (groupRows.length) return groupRows
-  // 未分组账号没有分组维度分数，回退展示后端返回的基础分
-  if (account.scheduler_score) {
-    return [{ group_id: null, ...account.scheduler_score }]
-  }
-  return []
-}
-
 const formatSchedulerScoreGroup = (score: AccountSchedulerGroupScore): string => {
   if ('group_name' in score && score.group_name) return score.group_name
   if ('group_id' in score && score.group_id != null) return `#${score.group_id}`
   return t('admin.accounts.schedulerScore.ungrouped')
-}
-
-const loadSavedColumns = () => {
-  try {
-    const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved) as string[]
-      parsed.forEach(key => {
-        hiddenColumns.add(key)
-      })
-      // Older saved column layouts may have scheduler_score visible; migrate them to the new safe default once.
-      if (localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) !== HIDDEN_COLUMNS_CURRENT_VERSION) {
-        hiddenColumns.add('scheduler_score')
-        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
-        localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
-      }
-    } else {
-      DEFAULT_HIDDEN_COLUMNS.forEach(key => {
-        hiddenColumns.add(key)
-      })
-      localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
-    }
-  } catch (e) {
-    console.error('Failed to load saved columns:', e)
-    DEFAULT_HIDDEN_COLUMNS.forEach(key => {
-      hiddenColumns.add(key)
-    })
-  }
-}
-
-const saveColumnsToStorage = () => {
-  try {
-    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
-    localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
-  } catch (e) {
-    console.error('Failed to save columns:', e)
-  }
 }
 
 const loadSavedAutoRefresh = () => {
@@ -1102,7 +1006,6 @@ const saveAutoRefreshToStorage = () => {
 }
 
 if (typeof window !== 'undefined') {
-  loadSavedColumns()
   loadSavedAutoRefresh()
 }
 
@@ -1128,12 +1031,7 @@ const setAutoRefreshInterval = (seconds: (typeof autoRefreshIntervals)[number]) 
 
 const toggleColumn = (key: string) => {
   const wasHidden = hiddenColumns.has(key)
-  if (hiddenColumns.has(key)) {
-    hiddenColumns.delete(key)
-  } else {
-    hiddenColumns.add(key)
-  }
-  saveColumnsToStorage()
+  toggleColumnVisibility(key)
   if ((key === 'today_stats' || key === 'usage') && wasHidden) {
     refreshTodayStatsBatch().catch((error) => {
       console.error('Failed to load account today stats after showing column:', error)
@@ -1148,7 +1046,6 @@ const toggleColumn = (key: string) => {
   }
 }
 
-const isColumnVisible = (key: string) => !hiddenColumns.has(key)
 const shouldIncludeSchedulerScore = () => isColumnVisible('scheduler_score')
 const syncAccountListDerivedParams = () => {
   // Keep every load path, including auto-refresh and sorting, aligned with the current column visibility.
@@ -1728,131 +1625,6 @@ const { pause: pauseAutoRefresh, resume: resumeAutoRefresh } = useIntervalFn(
   { immediate: false }
 )
 
-const GROK_QUOTA_SIGNAL_MAX_AGE_MS = 24 * 60 * 60 * 1000
-const GROK_QUOTA_SIGNAL_MAX_FUTURE_SKEW_MS = 5 * 60 * 1000
-
-function firstNonBlankString(...values: unknown[]): string | undefined {
-  return values.find((value): value is string => (
-    typeof value === 'string' && value.trim().length > 0
-  ))
-}
-
-function normalizeGrokPlanKey(value: unknown): string {
-  if (typeof value !== 'string') return ''
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s_-]+/g, '')
-}
-
-function grokPersistedQuotaSnapshot(extra: Record<string, any>): Record<string, any> | undefined {
-  const usage = extra.grok_usage_snapshot
-  if (usage && typeof usage === 'object' && !Array.isArray(usage)) {
-    return usage as Record<string, any>
-  }
-  const legacy = extra.grok_quota_snapshot
-  if (legacy && typeof legacy === 'object' && !Array.isArray(legacy)) {
-    return legacy as Record<string, any>
-  }
-  return undefined
-}
-
-function isGrokQuotaTimestampFresh(raw: unknown): boolean {
-  const value = String(raw || '').trim()
-  if (!value) return false
-  const observedAt = Date.parse(value)
-  if (!Number.isFinite(observedAt)) return false
-  const age = Date.now() - observedAt
-  return age <= GROK_QUOTA_SIGNAL_MAX_AGE_MS && age >= -GROK_QUOTA_SIGNAL_MAX_FUTURE_SKEW_MS
-}
-
-function isGrok45ResponsesQuotaModel(model: unknown): boolean {
-  const value = String(model || '')
-    .trim()
-    .toLowerCase()
-    .replace(/^(x-ai|xai)\//, '')
-  return value === 'grok-4.5' || value.startsWith('grok-4.5-')
-}
-
-function grokQuotaLooksHeavy(snapshot: Record<string, any> | undefined): boolean {
-  const req = Number(snapshot?.requests?.limit ?? 0)
-  const tok = Number(snapshot?.tokens?.limit ?? 0)
-  return req >= 8300 || tok >= 53_000_000
-}
-
-function grok45ResponsesPlanIsHeavy(snapshot: Record<string, any> | undefined): boolean {
-  if (!snapshot) return false
-  const hint = normalizeGrokPlanKey(snapshot.plan_from_45_responses)
-  if (hint === 'supergrokheavy' && isGrokQuotaTimestampFresh(snapshot.plan_from_45_responses_at)) {
-    return true
-  }
-  const observedAt = snapshot.last_headers_seen_at || snapshot.updated_at
-  return (
-    isGrok45ResponsesQuotaModel(snapshot.model) &&
-    isGrokQuotaTimestampFresh(observedAt) &&
-    grokQuotaLooksHeavy(snapshot)
-  )
-}
-
-// JWT / unambiguous credentials outrank snapshots. SuperGrokPro is ambiguous
-// (covers SuperGrok and Heavy). 8300/53M only upgrades when the window came
-// from grok-4.5 Responses (or a carried 4.5 hint).
-function getAccountPlanType(row: any): string | undefined {
-  if (!row) return undefined
-  if (row.platform === 'grok') {
-    const extra = (row.extra || {}) as Record<string, any>
-    const billing = extra.grok_billing_snapshot as Record<string, any> | undefined
-    const usage = extra.grok_usage_snapshot as Record<string, any> | undefined
-    const legacyQuota = extra.grok_quota_snapshot as Record<string, any> | undefined
-    const quota = grokPersistedQuotaSnapshot(extra)
-    const cred = firstNonBlankString(row.credentials?.subscription_tier)
-    const credKey = normalizeGrokPlanKey(cred)
-    if (credKey && credKey !== 'supergrokpro') {
-      return cred
-    }
-    if (
-      grok45ResponsesPlanIsHeavy(quota) &&
-      (credKey === 'supergrokpro' ||
-        normalizeGrokPlanKey(billing?.plan) === 'supergrok' ||
-        normalizeGrokPlanKey(billing?.plan) === 'supergrokpro')
-    ) {
-      return 'SuperGrok Heavy'
-    }
-    if (credKey === 'supergrokpro') {
-      return firstNonBlankString(billing?.plan) || 'SuperGrok'
-    }
-    return firstNonBlankString(
-      billing?.plan,
-      usage?.subscription_tier,
-      legacyQuota?.subscription_tier,
-      extra.subscription_tier,
-      row.credentials?.plan_type,
-      row.parent_plan_type
-    )
-  }
-  return firstNonBlankString(row.credentials?.plan_type, row.parent_plan_type)
-}
-
-function getOpenAIAuthMode(row: any): string | undefined {
-  if (!row || row.platform !== 'openai' || row.type !== 'oauth') return undefined
-  const authMode = row.credentials?.auth_mode
-  return typeof authMode === 'string' && authMode.trim() ? authMode : undefined
-}
-
-// Antigravity 订阅等级辅助函数
-function getAntigravityTierFromRow(row: any): string | null {
-  if (row.platform !== 'antigravity') return null
-  const extra = row.extra as Record<string, unknown> | undefined
-  if (!extra) return null
-  const lca = extra.load_code_assist as Record<string, unknown> | undefined
-  if (!lca) return null
-  const paid = lca.paidTier as Record<string, unknown> | undefined
-  if (paid && typeof paid.id === 'string') return paid.id
-  const current = lca.currentTier as Record<string, unknown> | undefined
-  if (current && typeof current.id === 'string') return current.id
-  return null
-}
-
 function getAntigravityTierLabel(row: any): string | null {
   const tier = getAntigravityTierFromRow(row)
   switch (tier) {
@@ -1863,14 +1635,6 @@ function getAntigravityTierLabel(row: any): string | null {
   }
 }
 
-// 账号显示邮箱:优先账号自身(extra/credentials),影子账号回退母账号 parent_email。
-// 供名称单元格 v-if/标题/文本三处共用,避免同一回退链在模板里重复三次。
-function accountDisplayEmail(row: any): string {
-  return row.extra?.email_address || row.extra?.email || row.credentials?.email || row.parent_email || ''
-}
-
-const isOpenAIOAuthAccount = (account: Account) => account.platform === 'openai' && account.type === 'oauth'
-const hasCyberAlert = (account: Account) => isOpenAIOAuthAccount(account) && (account.cyber_count ?? 0) > 3
 const openCyberEvents = (account: Account) => {
   if (!isOpenAIOAuthAccount(account)) return
   cyberEventsAcc.value = account
@@ -1884,26 +1648,6 @@ const openCyberErrorDetail = (errorID: number) => {
   closeCyberEvents()
   cyberErrorID.value = errorID
   showCyberErrorDetail.value = true
-}
-
-function accountHomepageUrl(row: Account): string {
-  if (row.type !== 'apikey' || typeof row.credentials?.base_url !== 'string') return ''
-  const baseUrl = sanitizeUrl(row.credentials.base_url)
-  return baseUrl ? new URL(baseUrl).origin : ''
-}
-
-type OpenAICompactBadgeState = 'active' | 'blocked' | 'auto'
-
-function getOpenAICompactState(row: any): OpenAICompactBadgeState | null {
-  if (row.platform !== 'openai' || (row.type !== 'oauth' && row.type !== 'apikey')) return null
-  const extra = row.extra as Record<string, unknown> | undefined
-  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
-  if (mode === 'force_on') return 'active'
-  if (mode === 'force_off') return 'blocked'
-  if (typeof extra?.openai_compact_supported === 'boolean') {
-    return extra.openai_compact_supported ? 'active' : 'blocked'
-  }
-  return 'auto'
 }
 
 function getOpenAICompactMeta(row: any): { label: string; className: string; dotClass: string } | null {
@@ -1937,16 +1681,6 @@ function getOpenAICompactTitle(row: any): string {
   const label = getOpenAICompactMeta(row)?.label || ''
   if (!checkedAt) return label
   return `${label} | ${t('admin.accounts.openai.compactLastChecked')}: ${formatDateTime(new Date(checkedAt))}`
-}
-
-function getAntigravityTierClass(row: any): string {
-  const tier = getAntigravityTierFromRow(row)
-  switch (tier) {
-    case 'free-tier': return ''
-    case 'g1-pro-tier': return 'tag-accent'
-    case 'g1-ultra-tier': return 'tag-success'
-    default: return ''
-  }
 }
 
 // All available columns
@@ -1988,9 +1722,9 @@ const toggleableColumns = computed(() =>
 
 // Filtered columns based on visibility
 const cols = computed(() =>
-  allColumns.value.filter(col =>
-    col.key === 'select' || col.key === 'name' || col.key === 'actions' || !hiddenColumns.has(col.key)
-  )
+  allColumns.value
+    .filter(col => col.key === 'select' || col.key === 'name' || col.key === 'actions' || !hiddenColumns.has(col.key))
+    .map(col => ({ ...col, class: `acct-col-${col.key}` }))
 )
 
 // ---------------------------------------------------------------------------
@@ -2096,15 +1830,6 @@ const accountIdentityTitle = (account: Account): string => {
   if (account.parent_chatgpt_account_id) parts.push(String(account.parent_chatgpt_account_id))
   return parts.join(' · ')
 }
-
-const pageFromItem = computed(() => {
-  if (pagination.total === 0) return 0
-  return (pagination.page - 1) * pagination.page_size + 1
-})
-
-const pageToItem = computed(() =>
-  Math.min(pagination.page * pagination.page_size, pagination.total)
-)
 
 const handleEdit = (a: Account) => { edAcc.value = a; showEdit.value = true }
 const openMenu = (a: Account, e: MouseEvent) => {
@@ -2925,10 +2650,44 @@ onUnmounted(() => {
  * ------------------------------------------------------------------------- */
 .acct-header {
   margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.acct-header :deep(.ui-page-header-main) {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.acct-header :deep(.ui-page-header-actions) {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .acct-header {
+    align-items: flex-start;
+  }
+
+  .acct-header :deep(.ui-page-header-main) {
+    flex: 1 1 100%;
+  }
+
+  .acct-header :deep(.ui-page-header-actions) {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
 }
 
 .acct-layout {
   gap: 14px;
+}
+
+/* Layout sits below the 72px compact page header (h1 35 + desc 19 + gap 4 + margin 14),
+   so subtract it from TablePageLayout's viewport rule: card bottom lands at 100vh − 24. */
+@media (min-width: 1024px) {
+  .acct-layout {
+    height: calc(100vh - 170px);
+  }
 }
 
 /* ---------- Summary chips ---------- */
@@ -2946,10 +2705,17 @@ onUnmounted(() => {
 
 /* ---------- Filter row ---------- */
 .acct-filter-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  min-height: 36px;
+}
+
+.acct-filter-row :deep(.search-input) {
+  width: 260px;
+  flex: none;
 }
 
 .acct-selection-count {
@@ -3055,7 +2821,37 @@ onUnmounted(() => {
   box-shadow: var(--shadow);
 }
 
-/* 42px header · 11px/600 uppercase · surface-secondary 45% */
+/* Fixed layout + explicit per-column widths so the 11 default columns fit the 1440 content width
+ * without a horizontal scrollbar (matches prototype 04). */
+.acct-layout :deep(.table-scroll-container table) {
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* Column widths = prototype target + 12px (td/th now use 6px symmetric padding in place of the
+ * prototype grid's 12px column gap). Name/usage columns intentionally have no explicit width so
+ * they absorb the table's remaining space, matching the prototype grid's fr-tracks. */
+.acct-layout :deep(.acct-col-select) { width: 44px; }
+.acct-layout :deep(.acct-col-id) { width: 110px; }
+.acct-layout :deep(.acct-col-platform) { width: 112px; }
+.acct-layout :deep(.acct-col-platform_type) { width: 92px; }
+.acct-layout :deep(.acct-col-capacity) { width: 76px; }
+.acct-layout :deep(.acct-col-status) { width: 96px; }
+.acct-layout :deep(.acct-col-schedulable) { width: 72px; }
+.acct-layout :deep(.acct-col-today_stats) { width: 132px; }
+.acct-layout :deep(.acct-col-groups) { width: 130px; }
+.acct-layout :deep(.acct-col-priority) { width: 64px; }
+.acct-layout :deep(.acct-col-last_used_at) { width: 100px; }
+.acct-layout :deep(.acct-col-proxy) { width: 120px; }
+.acct-layout :deep(.acct-col-scheduler_score) { width: 130px; }
+.acct-layout :deep(.acct-col-rate_multiplier) { width: 90px; }
+.acct-layout :deep(.acct-col-upstream_billing_rate) { width: 100px; }
+.acct-layout :deep(.acct-col-created_at) { width: 120px; }
+.acct-layout :deep(.acct-col-expires_at) { width: 120px; }
+.acct-layout :deep(.acct-col-notes) { width: 140px; }
+.acct-layout :deep(.acct-col-actions) { width: 76px; }
+
+/* 43px header (42 content + 1px bottom border) · 11px/600 uppercase · surface-secondary 45% */
 .acct-layout :deep(.table-scroll-container th) {
   height: 42px;
   padding: 0 6px;
@@ -3064,6 +2860,11 @@ onUnmounted(() => {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
+  background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
+  border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .acct-layout :deep(.table-scroll-container th:first-child) {
@@ -3074,12 +2875,16 @@ onUnmounted(() => {
   padding-right: 16px;
 }
 
-/* 60px rows · 12px inter-column gap via 6px symmetric padding */
+/* 61px rows · 12px inter-column gap via 6px symmetric padding · vertically centered content */
 .acct-layout :deep(.table-scroll-container td) {
-  height: 60px;
-  padding: 6px;
+  height: 61px;
+  padding: 0 6px;
+  vertical-align: middle;
   font-size: 13px;
+  line-height: 1.2;
   border-bottom: 1px solid var(--border);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .acct-layout :deep(.table-scroll-container td:first-child) {
@@ -3092,6 +2897,11 @@ onUnmounted(() => {
 
 .acct-layout :deep(.table-scroll-container tbody tr:last-child td) {
   border-bottom: 0;
+}
+
+/* Let the compact usage cell's hover popover escape the row's clipping box. */
+.acct-layout :deep(.table-scroll-container td.acct-col-usage) {
+  overflow: visible;
 }
 
 /* Sort indicator · 10px accent triangle */
@@ -3113,17 +2923,14 @@ onUnmounted(() => {
   border-top: 1px solid var(--border);
 }
 
-.acct-table-footer-info b {
-  color: var(--foreground);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
 /* Pagination · 28×28 radius 8, current page solid accent */
-.acct-pagination :deep(> div) {
-  border: 0;
-  background: transparent;
+.acct-pagination {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
   padding: 0;
+  border-top: 0;
+  background: transparent;
 }
 
 .acct-pagination :deep(nav) {
@@ -3171,11 +2978,6 @@ onUnmounted(() => {
   border-color: transparent;
 }
 
-/* left info block of the shared Pagination is replaced by our own footer text */
-.acct-table-footer :deep(.sm\:flex > .flex.items-center.space-x-4) {
-  display: none;
-}
-
 /* ---------- Cells ---------- */
 .acct-checkbox {
   width: 16px;
@@ -3186,71 +2988,47 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.acct-name-cell {
+/* Compact 2-line name/id cell (glass-04): NameIdCell renders name (600/13px) + `#id · group`
+ * (11.5px mono) at line-height 1.2 to fit the 61px row; email + homepage link surface via the
+ * cell's native title tooltip instead of a permanent 3rd line, and the cyber-alert badge sits
+ * beside the name so it doesn't add height. */
+.acct-name-wrap {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.acct-name-id {
+  flex: 1;
   min-width: 0;
 }
 
-.acct-name-link,
-.acct-name-text {
-  font-weight: 600;
-  color: var(--foreground);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  text-decoration: none;
-}
-
-.acct-name-link {
-  border-bottom: 1px dotted var(--border);
-  align-self: flex-start;
-}
-
-.acct-name-link.is-alert,
-.acct-name-text.is-alert {
+.acct-name-alert {
   color: var(--danger-text);
-  border-bottom-color: color-mix(in oklch, var(--danger) 45%, transparent);
 }
 
-.acct-name-sub {
-  font-size: 11.5px;
-  font-family: var(--font-mono);
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.acct-name-email {
-  font-size: 11.5px;
-  color: var(--muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 200px;
-}
-
-.acct-cyber-btn {
+.acct-cyber-badge {
   display: inline-flex;
-  align-self: flex-start;
+  flex: none;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
+  margin-top: 1px;
   border: 0;
   background: transparent;
   padding: 0;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   color: var(--muted);
   cursor: pointer;
 }
 
-.acct-cyber-btn:hover {
+.acct-cyber-badge:hover {
   color: var(--accent);
 }
 
-.acct-cyber-btn.is-alert {
+.acct-cyber-badge.is-alert {
   color: var(--danger-text);
 }
 
@@ -3481,12 +3259,11 @@ onUnmounted(() => {
     font-weight: 400;
   }
 
-  .acct-name-cell .acct-name-link,
-  .acct-name-cell .acct-name-text {
+  .acct-name-wrap :deep(.cell-name-id-name) {
     font-size: 15px;
   }
 
-  .acct-name-sub {
+  .acct-name-wrap :deep(.cell-name-id-meta) {
     font-size: 12px;
   }
 

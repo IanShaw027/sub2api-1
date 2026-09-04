@@ -22,6 +22,16 @@ export default {
       toolActions: '工具',
       viewColumns: '列显示',
       selectedCount: '已选 {count}',
+      bulkEditHeader: '批量编辑',
+      importExport: '导入 / 导出',
+      selectedOfTotal: '已选',
+      summary: {
+        all: '全部',
+        normal: '正常',
+        limited: '限流',
+        abnormal: '异常',
+        paused: '已暂停'
+      },
       dataExportConfirmMessage: '导出的数据包含账号与代理的敏感信息，请妥善保存。',
       dataExportConfirm: '确认导出',
       dataExported: '数据导出成功',
@@ -175,6 +185,7 @@ export default {
         probeCancel: '取消'
       },
       columns: {
+        nameId: '名称 / ID',
         name: '名称',
         id: '账号ID',
         platformType: '平台/类型',
@@ -299,7 +310,7 @@ export default {
         batchCompleted: '已完成 {count} 个账号的倍率探测',
         batchPartial: '倍率探测部分完成：成功 {success} 个，失败 {failed} 个'
       },
-      allPrivacyModes: '全部Privacy状态',
+      allPrivacyModes: '全部隐私状态',
       privacyUnset: '未设置',
       privacyTrainingOff: '已关闭训练数据共享',
       privacyCfBlocked: '被 Cloudflare 拦截，训练可能仍开启',
@@ -1810,6 +1821,8 @@ export default {
         todayOverview: '今日概览',
         cost: '费用',
         requests: '请求',
+        requestsUnit: '次',
+        userBilledShort: '用户费用',
         tokens: 'Token',
         highestCostDay: '最高费用日',
         highestRequestDay: '最高请求日',

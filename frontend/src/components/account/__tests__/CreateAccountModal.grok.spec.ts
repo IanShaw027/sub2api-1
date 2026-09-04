@@ -7,10 +7,18 @@ const source = readFileSync(
   'utf8'
 )
 
+const grokPanelSource = readFileSync(
+  resolve(process.cwd(), 'src/components/account/platform/GrokPanel.vue'),
+  'utf8'
+)
+
 describe('CreateAccountModal Grok account types', () => {
   it('offers API-key setup alongside OAuth with the official xAI default', () => {
-    expect(source).toContain('data-testid="grok-account-type-api-key"')
-    expect(source).toContain("@click=\"accountCategory = 'apikey'\"")
+    // Account-type selector markup was extracted into GrokPanel.vue during the
+    // Glass UI platform-panel split; the rest of the Grok-specific logic stays
+    // in CreateAccountModal.vue.
+    expect(grokPanelSource).toContain('data-testid="grok-account-type-api-key"')
+    expect(grokPanelSource).toContain("@click=\"accountCategory = 'apikey'\"")
     expect(source).toContain("newPlatform === 'grok'")
     expect(source).toContain("? 'https://api.x.ai/v1'")
     expect(source).toContain("form.platform === 'grok'")

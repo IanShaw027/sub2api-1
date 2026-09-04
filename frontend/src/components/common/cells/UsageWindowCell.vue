@@ -15,6 +15,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 export interface UsageWindow {
   /** Short window label, e.g. "5h" or "7d". */
   label: string
@@ -36,7 +37,7 @@ const props = withDefaults(
   }
 )
 
-const visibleWindows = props.windows
+const visibleWindows = computed(() => props.windows)
 
 const clamp = (value: number | null | undefined) => {
   if (value === null || value === undefined || Number.isNaN(value)) return 0

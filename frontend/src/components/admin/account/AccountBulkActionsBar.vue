@@ -1,30 +1,18 @@
 <template>
-  <div class="mb-4 flex items-center justify-between rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-    <div class="flex flex-wrap items-center gap-2">
-      <span v-if="allResultsSelected" class="text-sm font-medium text-accent">
+  <div v-if="selectedIds.length > 0" class="notice notice-info acct-bulk-overlay">
+    <div class="acct-bulk-info">
+      <span v-if="allResultsSelected" class="acct-bulk-label">
         {{ t('admin.accounts.bulkActions.selectedAll', { count: selectedIds.length }) }}
       </span>
-      <span v-else-if="selectedIds.length > 0" class="text-sm font-medium text-accent">
+      <span v-else class="acct-bulk-label">
         {{ t('admin.accounts.bulkActions.selected', { count: selectedIds.length }) }}
       </span>
-      <span v-else class="text-sm font-medium text-accent">
-        {{ t('admin.accounts.bulkEdit.title') }}
-      </span>
-      <template v-if="selectedIds.length > 0">
-        <button
-          @click="$emit('select-page')"
-          class="text-xs font-medium text-accent hover:text-accent"
-        >
-          {{ t('admin.accounts.bulkActions.selectCurrentPage') }}
-        </button>
-      </template>
+      <button type="button" class="acct-bulk-link" @click="$emit('select-page')">
+        {{ t('admin.accounts.bulkActions.selectCurrentPage') }}
+      </button>
       <template v-if="!allResultsSelected && totalResults > selectedIds.length">
-        <span v-if="selectedIds.length > 0" class="text-muted">•</span>
-        <button
-          :disabled="selectingAll"
-          @click="$emit('select-all-results')"
-          class="text-xs font-medium text-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
-        >
+        <span class="acct-bulk-sep">·</span>
+        <button type="button" class="acct-bulk-link" :disabled="selectingAll" @click="$emit('select-all-results')">
           {{
             selectingAll
               ? t('admin.accounts.bulkActions.selectingAll')
@@ -32,35 +20,26 @@
           }}
         </button>
       </template>
-      <template v-if="selectedIds.length > 0">
-        <span class="text-muted">•</span>
-        <button
-          @click="$emit('clear')"
-          class="text-xs font-medium text-accent hover:text-accent"
-        >
-          {{ t('admin.accounts.bulkActions.clear') }}
-        </button>
-      </template>
-    </div>
-    <div class="flex gap-2">
-      <template v-if="selectedIds.length > 0">
-        <button @click="$emit('delete')" class="btn btn-danger btn-sm">{{ t('admin.accounts.bulkActions.delete') }}</button>
-        <button @click="$emit('reset-status')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.resetStatus') }}</button>
-        <button @click="$emit('refresh-token')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.refreshToken') }}</button>
-        <button @click="$emit('probe-upstream-billing')" class="btn btn-secondary btn-sm">{{ t('admin.accounts.bulkActions.probeUpstreamBilling') }}</button>
-        <button @click="$emit('toggle-schedulable', true)" class="btn btn-success btn-sm">{{ t('admin.accounts.bulkActions.enableScheduling') }}</button>
-        <button @click="$emit('toggle-schedulable', false)" class="btn btn-warning btn-sm">{{ t('admin.accounts.bulkActions.disableScheduling') }}</button>
-        <button @click="$emit('edit-selected')" class="btn btn-primary btn-sm">{{ t('admin.accounts.bulkActions.edit') }}</button>
-      </template>
-      <button @click="$emit('edit-filtered')" class="btn btn-primary btn-sm">
-        {{ t('admin.accounts.bulkEdit.submit') }}
+      <span class="acct-bulk-sep">·</span>
+      <button type="button" class="acct-bulk-link" @click="$emit('clear')">
+        {{ t('admin.accounts.bulkActions.clear') }}
       </button>
+    </div>
+    <div class="acct-bulk-actions">
+      <Button variant="danger" size="sm" @click="$emit('delete')">{{ t('admin.accounts.bulkActions.delete') }}</Button>
+      <Button variant="secondary" size="sm" @click="$emit('reset-status')">{{ t('admin.accounts.bulkActions.resetStatus') }}</Button>
+      <Button variant="secondary" size="sm" @click="$emit('refresh-token')">{{ t('admin.accounts.bulkActions.refreshToken') }}</Button>
+      <Button variant="secondary" size="sm" @click="$emit('probe-upstream-billing')">{{ t('admin.accounts.bulkActions.probeUpstreamBilling') }}</Button>
+      <Button variant="success" size="sm" @click="$emit('toggle-schedulable', true)">{{ t('admin.accounts.bulkActions.enableScheduling') }}</Button>
+      <Button variant="warning" size="sm" @click="$emit('toggle-schedulable', false)">{{ t('admin.accounts.bulkActions.disableScheduling') }}</Button>
+      <Button variant="primary" size="sm" @click="$emit('edit-selected')">{{ t('admin.accounts.bulkActions.edit') }}</Button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import Button from '@/components/ui/Button.vue'
 
 defineProps<{
   selectedIds: number[]
@@ -84,3 +63,58 @@ defineEmits([
 
 const { t } = useI18n()
 </script>
+
+<style scoped>
+.acct-bulk-overlay {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--surface);
+}
+
+.acct-bulk-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.acct-bulk-label {
+  font-weight: 600;
+}
+
+.acct-bulk-sep {
+  color: var(--muted);
+}
+
+.acct-bulk-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-weight: 500;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.acct-bulk-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.acct-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+</style>

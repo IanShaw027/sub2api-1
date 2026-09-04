@@ -22,6 +22,16 @@ export default {
       toolActions: 'Tools',
       viewColumns: 'Columns',
       selectedCount: '{count} selected',
+      bulkEditHeader: 'Bulk Edit',
+      importExport: 'Import / Export',
+      selectedOfTotal: 'Selected',
+      summary: {
+        all: 'All',
+        normal: 'Normal',
+        limited: 'Limited',
+        abnormal: 'Abnormal',
+        paused: 'Paused'
+      },
       dataExportConfirmMessage: 'The exported data contains sensitive account and proxy information. Store it securely.',
       dataExportConfirm: 'Confirm Export',
       dataExported: 'Data exported successfully',
@@ -280,6 +290,7 @@ export default {
         probeCancel: 'Cancel'
       },
       columns: {
+        nameId: 'Name / ID',
         name: 'Name',
         id: 'Account ID',
         platformType: 'Platform/Type',
@@ -1749,6 +1760,8 @@ export default {
         todayOverview: 'Today Overview',
         cost: 'Cost',
         requests: 'Requests',
+        requestsUnit: 'reqs',
+        userBilledShort: 'user cost',
         tokens: 'Tokens',
         highestCostDay: 'Highest Cost Day',
         highestRequestDay: 'Highest Request Day',

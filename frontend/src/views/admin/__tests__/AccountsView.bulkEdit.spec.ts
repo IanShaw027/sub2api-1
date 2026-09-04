@@ -211,7 +211,11 @@ describe('admin AccountsView bulk edit scope', () => {
     expect(wrapper.get('[data-test="bulk-edit-modal"]').attributes('data-target-mode')).toBe('filtered')
   })
 
-  it('renders the created_at column by default', async () => {
+  it('renders the created_at column when made visible', async () => {
+    // created_at is hidden by default under the prototype-04 default column set (glass-04-default-columns),
+    // but the column definition must still exist and stay togglable/sortable once shown.
+    localStorage.setItem('account-hidden-columns', JSON.stringify([]))
+    localStorage.setItem('account-hidden-columns-version', 'glass-04-default-columns')
     listAccounts.mockResolvedValue({
       items: [
         {
@@ -367,7 +371,7 @@ describe('admin AccountsView bulk edit scope', () => {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: { template: '<div><slot name="table" /><slot name="pagination" /></div>' },
+          TablePageLayout: { template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>' },
           DataTable: DataTableStub,
           Pagination: PaginationStub,
           ConfirmDialog: true,
@@ -442,7 +446,9 @@ describe('admin AccountsView bulk edit scope', () => {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: { template: '<div><slot name="table" /><slot name="pagination" /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          },
           DataTable: DataTableStub,
           AccountBulkActionsBar: AccountBulkActionsBarStub,
           AccountTableActions: true,
@@ -516,7 +522,9 @@ describe('admin AccountsView bulk edit scope', () => {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
-          TablePageLayout: { template: '<div><slot name="table" /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /></div>'
+          },
           DataTable: DataTableStub,
           AccountBulkActionsBar: AccountBulkActionsBarStub,
           AccountTableActions: true,

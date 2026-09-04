@@ -91,14 +91,14 @@
 
 ## 8. 账号管理 · 原型 04（2 个代理：A 页面与表格；B 弹层）
 
-- [ ] 8.1 补齐 `admin.accounts.*` 新文案键（summary.* / bulkEditHeader / importExport / selectedOfTotal / columns.nameId 等）；验证截图无键名泄漏
-- [ ] 8.2 页头操作折叠：刷新 34 图标、批量编辑、导入 / 导出、`更多` `.dropdown`（自动刷新、容量预测、工具）、右侧 `添加账号` primary；验证截图与参考图 04 头部一致
-- [ ] 8.3 汇总条 5 个 `.summary-chip` 联动状态筛选；筛选行 260 搜索 + 平台 / 分组 / 类型 pill + 可调度激活 pill + 右侧已选 / 列设置 36×36；删除旧的独立"自动刷新"行与蓝色批量操作条（批量条改为表格内 `.notice-info` 行或页头计数）；验证截图
-- [ ] 8.4 表格列按 spec 顺序用统一单元格组件重做（名称/ID、平台底板、`.tag` 类型、mono 容量、圆点状态、32×18 开关、今日统计、5h/7d 两条 `.progress-thin`、优先级、最近使用、28px 编辑 + `…`）；保留列设置、sticky、影子行、安全 base_url 链接、用量提示等既有行为；验证 `AccountsView*.spec`（含 bulkEdit / sparkShadow / usageWindowsHint）全绿、1440 截图 diff < 1%
-- [ ] 8.5 行高 60、页脚"显示 1–8，共 86 条 · 每页 20 条" + 28px 分页；390 卡片模式按 08 密钥卡片配方；验证截图
-- [ ] 8.6 弹层批次一（`components/account/`）：`CreateAccountModal`、`EditAccountModal`、`BulkEditAccountModal`、`AccountTestModal`、`QuotaLimitCard`、`QuotaNotifyToggle`、`ModelWhitelistSelector`、`AccountGroupsCell` → `UiModal` 720/960 + `SettingRow` / 双列表单 + 36 字段 + `ToggleSwitch` + `UiSelect`；验证各 spec 全绿、打开态截图
-- [ ] 8.7 弹层批次二：其余 `components/account/*`（OAuth 流程、导入 / 导出、容量预测、Kiro / Antigravity / Grok 特有面板、代理选择、模型映射、限额编辑等）；验证 `vitest run src/components/account` 全绿、`lint:ui` 0 命中
-- [ ] 8.8 提交 `feat(glass): accounts page and dialogs (tasks 8.1–8.7)`
+- [x] 8.1 补齐 `admin.accounts.*` 新文案键（summary.* / bulkEditHeader / importExport / selectedOfTotal / columns.nameId 等）；验证截图无键名泄漏
+- [x] 8.2 页头操作折叠：刷新 34 图标、批量编辑、导入 / 导出、`更多` `.dropdown`（自动刷新、容量预测、工具）、右侧 `添加账号` primary；验证截图与参考图 04 头部一致
+- [x] 8.3 汇总条 5 个 `.summary-chip` 联动状态筛选；筛选行 260 搜索 + 平台 / 分组 / 类型 pill + 可调度激活 pill + 右侧已选 / 列设置 36×36；删除旧的独立"自动刷新"行与蓝色批量操作条（批量条改为表格内 `.notice-info` 行或页头计数）；验证截图
+- [x] 8.4 表格列按 spec 顺序用统一单元格组件重做（名称/ID、平台底板、`.tag` 类型、mono 容量、圆点状态、32×18 开关、今日统计、5h/7d 两条 `.progress-thin`、优先级、最近使用、28px 编辑 + `…`）；保留列设置、sticky、影子行、安全 base_url 链接、用量提示等既有行为；验证 `AccountsView*.spec`（含 bulkEdit / sparkShadow / usageWindowsHint）全绿、1440 截图 diff < 1%
+- [x] 8.5 行高 60、页脚"显示 1–8，共 86 条 · 每页 20 条" + 28px 分页；390 卡片模式按 08 密钥卡片配方；验证截图
+- [~] 8.6 弹层批次一（`components/account/`）：`CreateAccountModal`、`EditAccountModal`、`BulkEditAccountModal`、`AccountTestModal`、`QuotaLimitCard`、`QuotaNotifyToggle`、`ModelWhitelistSelector`、`AccountGroupsCell` → `UiModal` 720/960 + `SettingRow` / 双列表单 + 36 字段 + `ToggleSwitch` + `UiSelect`；验证各 spec 全绿、打开态截图
+- [~] 8.7 弹层批次二：其余 `components/account/*`（OAuth 流程、导入 / 导出、容量预测、Kiro / Antigravity / Grok 特有面板、代理选择、模型映射、限额编辑等）；验证 `vitest run src/components/account` 全绿、`lint:ui` 0 命中
+- [x] 8.8 提交 `feat(glass): accounts page and dialogs (tasks 8.1–8.7)`
 
 ## 9. API 密钥 · 原型 05（1 个代理）
 

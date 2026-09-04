@@ -1,62 +1,36 @@
 <template>
-  <div>
+  <div class="acct-today-stats-cell">
     <!-- Loading state -->
-    <div v-if="props.loading && !props.stats" class="space-y-0.5">
-      <div class="h-3 w-12 animate-pulse rounded bg-surface-3"></div>
-      <div class="h-3 w-16 animate-pulse rounded bg-surface-3"></div>
-      <div class="h-3 w-10 animate-pulse rounded bg-surface-3"></div>
+    <div v-if="props.loading && !props.stats" class="acct-today-stats-skeleton">
+      <span class="acct-today-stats-skeleton-line acct-today-stats-skeleton-line--primary"></span>
+      <span class="acct-today-stats-skeleton-line acct-today-stats-skeleton-line--secondary"></span>
     </div>
 
     <!-- Error state -->
-    <div v-else-if="props.error && !props.stats" class="text-xs text-red-500">
+    <div v-else-if="props.error && !props.stats" class="acct-today-stats-error" :title="props.error">
       {{ props.error }}
     </div>
 
     <!-- Stats data -->
-    <div v-else-if="props.stats" class="space-y-0.5 text-xs">
-      <!-- Requests -->
-      <div class="flex items-center gap-1">
-        <span class="text-muted"
-          >{{ t('admin.accounts.stats.requests') }}:</span
-        >
-        <span class="font-medium text-foreground">{{
-          formatNumber(props.stats.requests)
-        }}</span>
-      </div>
-      <!-- Tokens -->
-      <div class="flex items-center gap-1">
-        <span class="text-muted"
-          >{{ t('admin.accounts.stats.tokens') }}:</span
-        >
-        <span class="font-medium text-foreground">{{
-          formatTokens(props.stats.tokens)
-        }}</span>
-      </div>
-      <!-- Cost (Account) -->
-      <div class="flex items-center gap-1">
-        <span class="text-muted">{{ t('usage.accountBilled') }}:</span>
-        <span class="font-medium text-success-text">{{
-          formatCurrency(props.stats.cost)
-        }}</span>
-      </div>
-      <!-- Cost (User/API Key) -->
-      <div v-if="props.stats.user_cost != null" class="flex items-center gap-1">
-        <span class="text-muted">{{ t('usage.userBilled') }}:</span>
-        <span class="font-medium text-foreground">{{
-          formatCurrency(props.stats.user_cost)
-        }}</span>
-      </div>
-    </div>
+    <TodayStatsCell
+      v-else-if="props.stats"
+      :count="props.stats.requests"
+      :unit="t('admin.accounts.stats.requestsUnit')"
+      :tokens="props.stats.tokens"
+      :cost="props.stats.cost"
+      :title="props.stats.user_cost != null ? `${t('admin.accounts.stats.userBilledShort')}: ${formatCurrency(props.stats.user_cost)}` : undefined"
+    />
 
     <!-- No data -->
-    <div v-else class="text-xs text-muted">-</div>
+    <div v-else class="acct-today-stats-empty">-</div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import type { WindowStats } from '@/types'
-import { formatNumber, formatCurrency } from '@/utils/format'
+import { formatCurrency } from '@/utils/format'
+import TodayStatsCell from '@/components/common/cells/TodayStatsCell.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -72,14 +46,54 @@ const props = withDefaults(
 )
 
 const { t } = useI18n()
-
-// Format large token numbers (e.g., 1234567 -> 1.23M)
-const formatTokens = (tokens: number): string => {
-  if (tokens >= 1000000) {
-    return `${(tokens / 1000000).toFixed(2)}M`
-  } else if (tokens >= 1000) {
-    return `${(tokens / 1000).toFixed(1)}K`
-  }
-  return tokens.toString()
-}
 </script>
+
+<style scoped>
+.acct-today-stats-cell {
+  min-width: 0;
+}
+
+.acct-today-stats-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.acct-today-stats-skeleton-line {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: color-mix(in oklch, var(--muted) 22%, transparent);
+  animation: acct-today-stats-pulse 1.4s ease-in-out infinite;
+}
+
+.acct-today-stats-skeleton-line--primary {
+  width: 48px;
+}
+
+.acct-today-stats-skeleton-line--secondary {
+  width: 64px;
+}
+
+@keyframes acct-today-stats-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.acct-today-stats-error {
+  font-size: 11.5px;
+  color: var(--danger-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.acct-today-stats-empty {
+  font-size: 13px;
+  color: var(--muted);
+}
+</style>
