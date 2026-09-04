@@ -465,6 +465,51 @@ function trendSeries(days, scale = 1) {
   return out
 }
 
+// Hourly series for the "today / last 24h" window (dashboard uses granularity=hour when the range is ≤1 day).
+function trendSeriesHourly(hours, scale = 1) {
+  const rnd = seeded(11)
+  const out = []
+  const now = new Date(Date.now())
+  now.setUTCMinutes(0, 0, 0)
+  for (let i = hours - 1; i >= 0; i--) {
+    const at = new Date(now.getTime() - i * 3_600_000)
+    const h = at.getUTCHours()
+    const daytime = h >= 1 && h <= 14 ? 1 : 0.45 // UTC 01–14 ≈ 09–22 CST
+    const requests = Math.round((4_200 + rnd() * 2_400) * daytime * scale)
+    const input = requests * Math.round(4_200 + rnd() * 1_500)
+    const output = requests * Math.round(560 + rnd() * 200)
+    const cacheC = Math.round(input * 0.22)
+    const cacheR = Math.round(input * 1.4)
+    const total = input + output + cacheC + cacheR
+    const cost = round2(total / 1_000_000 * 0.62)
+    out.push({ date: at.toISOString().slice(0, 13) + ':00', requests, input_tokens: input, output_tokens: output, cache_creation_tokens: cacheC, cache_read_tokens: cacheR, total_tokens: total, cost, actual_cost: round2(cost * 1.04) })
+  }
+  return out
+}
+const trendFor = (query, scale = 1) => (query.get('granularity') === 'hour' ? trendSeriesHourly(24, scale) : trendSeries(rangeDays(query), scale))
+
+// Ops: per-platform account availability (dashboard "platform health") and latest error events.
+const ACCOUNT_AVAILABILITY = {
+  enabled: true,
+  platform: {
+    anthropic: { platform: 'anthropic', total_accounts: 34, available_count: 32, rate_limit_count: 2, error_count: 0 },
+    openai: { platform: 'openai', total_accounts: 22, available_count: 21, rate_limit_count: 0, error_count: 1 },
+    gemini: { platform: 'gemini', total_accounts: 17, available_count: 17, rate_limit_count: 0, error_count: 0 },
+    antigravity: { platform: 'antigravity', total_accounts: 8, available_count: 7, rate_limit_count: 1, error_count: 0 },
+    grok: { platform: 'grok', total_accounts: 5, available_count: 5, rate_limit_count: 0, error_count: 0 }
+  },
+  group: {},
+  account: {}
+}
+const OPS_ERROR_LOGS = [
+  { id: 9001, created_at: minutesAgo(18), phase: 'upstream', type: 'rate_limited', error_owner: 'provider', error_source: 'upstream_http', severity: 'P2', status_code: 429, platform: 'anthropic', model: 'claude-sonnet-4-5', resolved: false, client_request_id: 'req_9001', request_id: 'up_9001', account_id: 102, account_name: 'claude-pro-team', message: '触发 429，默认分组自动回避 5 分钟' },
+  { id: 9002, created_at: minutesAgo(41), phase: 'upstream', type: 'auth_failed', error_owner: 'provider', error_source: 'upstream_http', severity: 'P1', status_code: 401, platform: 'openai', model: 'gpt-5-codex', resolved: false, client_request_id: 'req_9002', request_id: 'up_9002', account_id: 105, account_name: 'codex-team-01', message: 'OAuth 刷新失败，账号已标记异常' },
+  { id: 9003, created_at: minutesAgo(73), phase: 'upstream', type: 'timeout', error_owner: 'provider', error_source: 'upstream_http', severity: 'P3', status_code: 504, platform: 'gemini', model: 'gemini-2.5-pro', resolved: true, client_request_id: 'req_9003', request_id: 'up_9003', account_id: 106, account_name: 'gemini-workspace-01', message: '上游响应超时 30s，已自动重试成功' },
+  { id: 9004, created_at: minutesAgo(126), phase: 'gateway', type: 'quota_exceeded', error_owner: 'platform', error_source: 'gateway', severity: 'P3', status_code: 402, platform: 'anthropic', model: 'claude-opus-4-1', resolved: true, client_request_id: 'req_9004', request_id: '', account_id: null, account_name: '', message: '用户 林小雨 触发日配额上限' },
+  { id: 9005, created_at: minutesAgo(203), phase: 'upstream', type: 'rate_limited', error_owner: 'provider', error_source: 'upstream_http', severity: 'P3', status_code: 429, platform: 'antigravity', model: 'antigravity-pro', resolved: true, client_request_id: 'req_9005', request_id: 'up_9005', account_id: 107, account_name: 'antigravity-lab', message: '限流窗口 5h 用尽，已切换备用账号' },
+  { id: 9006, created_at: minutesAgo(318), phase: 'client', type: 'invalid_request', error_owner: 'client', error_source: 'client_request', severity: 'P4', status_code: 400, platform: 'openai', model: 'gpt-5', resolved: true, client_request_id: 'req_9006', request_id: '', account_id: null, account_name: '', message: '请求体缺少 messages 字段' }
+]
+
 const RANKED_USERS = [
   { user_id: 7, email: 'dev-team@quantleap.io', username: '量跃科技' },
   { user_id: 42, email: 'xiaoyu.lin@example.com', username: '林小雨' },
@@ -844,7 +889,7 @@ const routes = {
     models: { 'claude-sonnet-4-5': 36_900, 'gpt-5-codex': 9_100, 'gemini-2.5-pro': 2_210 }, endpoints: ENDPOINT_STATS
   }),
   'GET /api/v1/usage/dashboard/stats': () => USER_DASHBOARD_STATS,
-  'GET /api/v1/usage/dashboard/trend': (ctx) => { const d = rangeDays(ctx.query); return { trend: trendSeries(d, 0.011), start_date: dateStr(-(d - 1)), end_date: dateStr(0), granularity: ctx.query.get('granularity') || 'day' } },
+  'GET /api/v1/usage/dashboard/trend': (ctx) => { const d = rangeDays(ctx.query); return { trend: trendFor(ctx.query, 0.011), start_date: dateStr(-(d - 1)), end_date: dateStr(0), granularity: ctx.query.get('granularity') || 'day' } },
   'GET /api/v1/usage/dashboard/models': (ctx) => { const d = rangeDays(ctx.query); return { models: MODEL_STATS.map((m) => ({ ...m, requests: Math.round(m.requests * 0.011), input_tokens: Math.round(m.input_tokens * 0.011), output_tokens: Math.round(m.output_tokens * 0.011), cache_creation_tokens: Math.round(m.cache_creation_tokens * 0.011), cache_read_tokens: Math.round(m.cache_read_tokens * 0.011), total_tokens: Math.round(m.total_tokens * 0.011), cost: round2(m.cost * 0.011), actual_cost: round2(m.actual_cost * 0.011), account_cost: undefined })), start_date: dateStr(-(d - 1)), end_date: dateStr(0) } },
   'GET /api/v1/usage/dashboard/snapshot-v2': (ctx) => { const d = rangeDays(ctx.query); return { generated_at: iso(NOW()), start_date: dateStr(-(d - 1)), end_date: dateStr(0), granularity: 'day', trend: trendSeries(d, 0.011), models: MODEL_STATS.slice(0, 4), groups: GROUP_STATS } },
   'POST /api/v1/usage/dashboard/api-keys-usage': (ctx) => {
@@ -889,7 +934,7 @@ const routes = {
   // ---- admin: dashboard ----
   'GET /api/v1/admin/dashboard/stats': () => ({ ...ADMIN_DASHBOARD_STATS, stats_updated_at: minutesAgo(1) }),
   'GET /api/v1/admin/dashboard/realtime': () => ({ active_requests: 37, requests_per_minute: 842, average_response_time: 1_800, error_rate: 0.6 }),
-  'GET /api/v1/admin/dashboard/trend': (ctx) => { const d = rangeDays(ctx.query); return { trend: trendSeries(d), start_date: dateStr(-(d - 1)), end_date: dateStr(0), granularity: ctx.query.get('granularity') || 'day' } },
+  'GET /api/v1/admin/dashboard/trend': (ctx) => { const d = rangeDays(ctx.query); return { trend: trendFor(ctx.query), start_date: dateStr(-(d - 1)), end_date: dateStr(0), granularity: ctx.query.get('granularity') || 'day' } },
   'GET /api/v1/admin/dashboard/models': (ctx) => { const d = rangeDays(ctx.query); return { models: MODEL_STATS, start_date: dateStr(-(d - 1)), end_date: dateStr(0) } },
   'GET /api/v1/admin/dashboard/groups': (ctx) => { const d = rangeDays(ctx.query); return { groups: GROUP_STATS, start_date: dateStr(-(d - 1)), end_date: dateStr(0) } },
   'GET /api/v1/admin/dashboard/user-breakdown': (ctx) => {
@@ -908,7 +953,7 @@ const routes = {
     return {
       generated_at: iso(NOW()), start_date: dateStr(-(d - 1)), end_date: dateStr(0), granularity: ctx.query.get('granularity') || 'day',
       ...(inc('include_stats') ? { stats: { ...ADMIN_DASHBOARD_STATS, stats_updated_at: minutesAgo(1) } } : {}),
-      ...(inc('include_trend') ? { trend: trendSeries(d) } : {}),
+      ...(inc('include_trend') ? { trend: trendFor(ctx.query) } : {}),
       ...(inc('include_model_stats') ? { models: MODEL_STATS } : {}),
       ...(inc('include_group_stats') ? { groups: GROUP_STATS } : {}),
       ...(inc('include_users_trend') ? { users_trend: usersTrend(d, Number(ctx.query.get('users_trend_limit') || 5)) } : {})
@@ -999,6 +1044,8 @@ const routes = {
   'GET /api/v1/admin/system/version': () => ({ version: '1.8.2' }),
   'GET /api/v1/admin/system/check-updates': () => ({ current_version: '1.8.2', latest_version: '1.8.2', has_update: false, cached: true, build_type: 'release' }),
   'GET /api/v1/admin/ops/dashboard/overview': () => ({}),
+  'GET /api/v1/admin/ops/account-availability': () => ({ ...ACCOUNT_AVAILABILITY, timestamp: iso(NOW()) }),
+  'GET /api/v1/admin/ops/errors': (ctx) => { const size = Number(ctx.query.get('page_size') || 20); return { items: OPS_ERROR_LOGS.slice(0, size), total: OPS_ERROR_LOGS.length, page: 1, page_size: size, pages: 1 } },
   'GET /api/v1/admin/affiliates/users': (ctx) => emptyPage(ctx.query)
 }
 
@@ -1083,7 +1130,7 @@ const server = http.createServer(async (req, res) => {
   if (path === '/setup/seed') {
     const role = url.searchParams.get('role') || 'admin'
     const to = url.searchParams.get('to') || (role === 'admin' ? '/admin/dashboard' : '/dashboard')
-    const theme = url.searchParams.get('theme') || 'light'
+    const theme = (url.searchParams.get('theme') || 'light').replace(/^glass-/, '')
     const admin = role === 'admin'
     const user = admin
       ? { id: 1, username: 'Admin', email: 'admin@sub2api.dev', role: 'admin', balance: 142.6, frozen_balance: 0, concurrency: 20, rpm_limit: 0, status: 'active', allowed_groups: null, balance_notify_enabled: true, balance_notify_threshold: 10, balance_notify_extra_emails: [], subscriptions: [], avatar_url: null, email_bound: true, linuxdo_bound: false, oidc_bound: false, wechat_bound: false, created_at: '2025-03-12T08:30:00Z', updated_at: '2026-09-03T00:00:00Z' }

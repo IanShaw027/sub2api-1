@@ -133,7 +133,7 @@
  <span>{{ column.label }}</span>
  </slot>
  <span
- v-if="column.sortable"
+ v-if="column.sortable && sortKey === column.key"
  class="inline-flex h-5 w-4 flex-col items-center justify-center"
  aria-hidden="true"
  >

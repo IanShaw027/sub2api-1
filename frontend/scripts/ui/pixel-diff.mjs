@@ -9,7 +9,8 @@ import path from 'node:path'
 import { PNG } from 'pngjs'
 
 const args = process.argv.slice(2)
-const files = args.filter((a) => !a.startsWith('--') && !/^\d+,\d+,\d+,\d+$/.test(a))
+const flagWithValue = new Set(['--ignore', '--tol', '--ref-offset'])
+const files = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && flagWithValue.has(args[i - 1])))
 const [refPath, actPath, outPath = 'pixel-diff.png'] = files
 if (!refPath || !actPath) {
   console.error('usage: pixel-diff.mjs <reference.png> <actual.png> [out.png] [--ignore x,y,w,h]... [--tol N]')

@@ -294,13 +294,13 @@ describe('user KeysView column settings', () => {
       'group',
       'current_concurrency',
       'usage',
+      'rate_limit',
       'expires_at',
+      'last_used_at',
       'status',
-      'created_at',
       'actions',
     ])
-    expect(visibleColumnKeys(wrapper)).not.toContain('rate_limit')
-    expect(visibleColumnKeys(wrapper)).not.toContain('last_used_at')
+    expect(visibleColumnKeys(wrapper)).not.toContain('created_at')
     expect(visibleColumnKeys(wrapper)).not.toContain('last_used_ip')
     expect(visibleColumnKeys(wrapper)).not.toContain('id')
   })
@@ -309,14 +309,14 @@ describe('user KeysView column settings', () => {
     const wrapper = await mountView()
 
     await wrapper.get('button[title="Column Settings"]').trigger('click')
-    await getButtonByText(wrapper, 'Rate Limit').trigger('click')
+    await getButtonByText(wrapper, 'Created').trigger('click')
     await nextTick()
 
-    expect(visibleColumnKeys(wrapper)).toContain('rate_limit')
+    expect(visibleColumnKeys(wrapper)).toContain('created_at')
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
-      JSON.stringify(['id', 'last_used_at', 'last_used_ip'])
+      JSON.stringify(['id', 'last_used_ip'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('3')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
   })
 
   it('shows the API key ID column when toggled', async () => {
@@ -362,14 +362,14 @@ describe('user KeysView column settings', () => {
       'usage',
       'rate_limit',
       'expires_at',
-      'status',
       'last_used_at',
+      'status',
       'actions',
     ])
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
       JSON.stringify(['group', 'created_at', 'last_used_ip', 'id'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('3')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
   })
 
   it('does not include always-visible columns in the toggleable menu', async () => {

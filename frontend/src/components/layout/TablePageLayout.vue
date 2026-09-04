@@ -49,8 +49,8 @@ onUnmounted(() => {
  display: flex;
  flex-direction: column;
  gap: 14px;
- /* viewport − topbar 60px − content padding (8px top + 24px bottom) */
- height: calc(100vh - 92px);
+ /* viewport − topbar 66px − content padding (8px top + 24px bottom) */
+ height: calc(100vh - 98px);
 }
 
 .layout-section-fixed {

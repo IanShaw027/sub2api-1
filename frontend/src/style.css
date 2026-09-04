@@ -1013,7 +1013,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    height: 64px;
+    height: 53px; /* prototype 04: padding 12 14, label 12.5px, value 20px display */
     padding: 12px 14px;
     border-radius: 12px;
     background: color-mix(in oklch, var(--surface) 72%, transparent);
@@ -1037,7 +1037,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 12px;
+    font-size: 12.5px;
+    line-height: 19px;
     font-weight: 600;
     color: var(--muted);
   }
@@ -1054,6 +1055,7 @@
     font-size: 20px;
     font-weight: 800;
     letter-spacing: -0.03em;
+    line-height: 27px;
     font-variant-numeric: tabular-nums;
     color: var(--foreground);
   }
@@ -1671,13 +1673,14 @@
     font-size: 24px;
     font-weight: 800;
     letter-spacing: -0.03em;
-    line-height: 1.2;
+    line-height: 35px; /* prototype: line-height normal → 35px box */
     color: var(--foreground);
   }
 
   .page-description {
     margin: 4px 0 0;
     font-size: 13px;
+    line-height: 19px;
     color: var(--muted);
   }
 

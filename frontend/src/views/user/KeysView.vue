@@ -3,15 +3,6 @@
  <div class="keys-page">
  <PageHeader class="keys-header" :title="t('keys.title')" :description="t('keys.description')">
  <template #actions>
- <Button
- variant="icon"
- :disabled="loading"
- :title="t('common.refresh')"
- :aria-label="t('common.refresh')"
- @click="loadApiKeys"
- >
- <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
- </Button>
  <Button variant="secondary" to="/key-usage" class="keys-header-link">
  {{ t('keys.usageQuery') }}
  </Button>
@@ -77,8 +68,18 @@
  </template>
  <template #trailing>
  <span class="keys-sort-note">
- {{ t('keys.sortedByPrefix') }} <b>{{ activeSortLabel }}</b> {{ t('keys.sortedBySuffix') }}
+ {{ t('keys.sortedByPrefix') }}<b>{{ activeSortLabel }}</b>{{ t('keys.sortedBySuffix') }}
  </span>
+ <button
+ type="button"
+ class="filter-pill keys-refresh-btn"
+ :disabled="loading"
+ :title="t('common.refresh')"
+ :aria-label="t('common.refresh')"
+ @click="loadApiKeys"
+ >
+ <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
+ </button>
  <div ref="columnDropdownRef" class="keys-column-settings">
  <button
  type="button"
@@ -193,22 +194,13 @@
  type="button"
  :ref="(el) => setGroupButtonRef(row.id, el)"
  class="keys-group-btn"
- :title="t('keys.clickToChangeGroup')"
+ :title="groupCellTooltip(row)"
  @click="openGroupSelector(row)"
  >
- <GroupBadge
- v-if="row.group"
- class="keys-group-badge"
- :name="row.group.name"
- :platform="row.group.platform"
- :subscription-type="row.group.subscription_type"
- :rate-multiplier="row.group.rate_multiplier"
- :user-rate-multiplier="userGroupRates[row.group.id]"
- :peak-rate-enabled="row.group.peak_rate_enabled"
- :peak-start="row.group.peak_start"
- :peak-end="row.group.peak_end"
- :peak-rate-multiplier="row.group.peak_rate_multiplier"
- />
+ <span v-if="row.group" class="tag tag-accent keys-group-pill">
+ <span class="truncate">{{ row.group.name }}</span>
+ <span v-if="groupCellSuffix(row)" class="keys-group-suffix">{{ groupCellSuffix(row) }}</span>
+ </span>
  <span v-else class="tag">{{ t('keys.noGroup') }}</span>
  <Icon name="chevronDown" size="xs" class="keys-group-caret" />
  </button>
@@ -254,7 +246,7 @@
  </template>
 
  <template #cell-expires_at="{ value }">
- <span class="keys-expiry" :class="expiryToneClass(value)">
+ <span class="keys-expiry" :class="expiryToneClass(value, now)">
  {{ value ? formatDate(value) : t('keys.noExpiration') }}
  </span>
  </template>
@@ -318,67 +310,19 @@
  :action-text="t('keys.createKey')"
  @action="showCreateModal = true"
  />
- <article v-for="row in apiKeys" v-else :key="row.id" class="glass-card keys-card">
- <div class="keys-card-top">
- <div class="keys-card-ident">
- <span class="keys-card-name">{{ row.name }}</span>
- <span class="keys-card-meta">#{{ row.id }} · {{ row.group?.name || t('keys.noGroup') }}</span>
- </div>
- <div class="keys-card-top-right">
- <StatusBadge :tone="statusTone(row.status)" :label="t('keys.status.' + row.status)" />
- <button
- type="button"
- class="icon-btn keys-card-more"
- :title="t('keys.moreActions')"
- :aria-label="t('keys.moreActions')"
- @click.stop="toggleRowMenu(row, $event)"
- >
- <Icon name="more" size="sm" :stroke-width="2.4" />
- </button>
- </div>
- </div>
- <div class="keys-card-key">
- <span class="keys-card-key-text">{{ isKeyRevealed(row.id) ? row.key : maskApiKey(row.key) }}</span>
- <button
- type="button"
- class="keys-card-key-btn"
- :title="isKeyRevealed(row.id) ? t('keys.hideKey') : t('keys.showKey')"
- :aria-label="isKeyRevealed(row.id) ? t('keys.hideKey') : t('keys.showKey')"
- @click.stop="toggleKeyReveal(row.id)"
- >
- <Icon :name="isKeyRevealed(row.id) ? 'eyeOff' : 'eye'" size="sm" />
- </button>
- <button
- type="button"
- class="keys-card-key-btn"
- :title="copiedKeyId === row.id ? t('keys.copied') : t('keys.copyToClipboard')"
- :aria-label="t('keys.copyToClipboard')"
- @click.stop="copyToClipboard(row.key, row.id)"
- >
- <Icon :name="copiedKeyId === row.id ? 'check' : 'clipboard'" size="sm" />
- </button>
- </div>
- <div class="keys-card-stats">
- <div class="keys-card-stat">
- <span>{{ t('keys.today') }}</span>
- <b>{{ formatCost(usageStats[row.id]?.today_actual_cost) }}</b>
- </div>
- <div class="keys-card-stat">
- <span>{{ t('keys.currentConcurrency') }}</span>
- <b>{{ row.current_concurrency ?? 0 }}</b>
- </div>
- <div class="keys-card-stat">
- <span>{{ t('keys.expiresAt') }}</span>
- <b :class="expiryToneClass(row.expires_at)">
- {{ row.expires_at ? formatDate(row.expires_at) : t('keys.noExpiration') }}
- </b>
- </div>
- <div class="keys-card-stat is-end">
- <span>{{ t('keys.lastUsedAt') }}</span>
- <b>{{ row.last_used_at ? formatDate(row.last_used_at) : '—' }}</b>
- </div>
- </div>
- </article>
+ <KeyMobileCard
+ v-for="row in apiKeys"
+ v-else
+ :key="row.id"
+ :row="row"
+ :revealed="isKeyRevealed(row.id)"
+ :copied="copiedKeyId === row.id"
+ :today-cost="usageStats[row.id]?.today_actual_cost"
+ :now="now"
+ @more="toggleRowMenu(row, $event)"
+ @toggle-reveal="toggleKeyReveal(row.id)"
+ @copy="copyToClipboard(row.key, row.id)"
+ />
  </div>
  <ListFade class="keys-list-fade" />
  </div>
@@ -402,228 +346,16 @@
  </Fab>
 
  <!-- Create / Edit key -->
- <UiModal
+ <KeyFormModal
  :open="showCreateModal || showEditModal"
- :title="showEditModal ? t('keys.editKey') : t('keys.createKey')"
- width="lg"
- :close-label="t('common.close')"
+ :editing-key="showEditModal ? selectedKey : null"
+ :groups="groups"
+ :user-group-rates="userGroupRates"
  @close="closeModals"
- >
- <form id="key-form" class="keys-form" @submit.prevent="handleSubmit">
- <TextInput
- v-model="formData.name"
- :label="t('keys.nameLabel')"
- :placeholder="t('keys.namePlaceholder')"
- required
- data-tour="key-form-name"
+ @saved="loadApiKeys"
  />
 
- <div class="keys-field">
- <FieldLabel>{{ t('keys.groupLabel') }}</FieldLabel>
- <UiSelect
- v-model="formData.group_id"
- :options="groupOptions"
- :placeholder="t('keys.selectGroup')"
- :searchable="true"
- :search-placeholder="t('keys.searchGroup')"
- data-tour="key-form-group"
- >
- <template #selected="{ option }">
- <GroupBadge
- v-if="option"
- :name="(option as unknown as GroupOption).label"
- :platform="(option as unknown as GroupOption).platform"
- :subscription-type="(option as unknown as GroupOption).subscriptionType"
- :rate-multiplier="(option as unknown as GroupOption).rate"
- :user-rate-multiplier="(option as unknown as GroupOption).userRate"
- :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
- :peak-start="(option as unknown as GroupOption).peakStart"
- :peak-end="(option as unknown as GroupOption).peakEnd"
- :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
- />
- <span v-else class="text-muted">{{ t('keys.selectGroup') }}</span>
- </template>
- <template #option="{ option, selected }">
- <GroupOptionItem
- :name="(option as unknown as GroupOption).label"
- :platform="(option as unknown as GroupOption).platform"
- :subscription-type="(option as unknown as GroupOption).subscriptionType"
- :rate-multiplier="(option as unknown as GroupOption).rate"
- :user-rate-multiplier="(option as unknown as GroupOption).userRate"
- :peak-rate-enabled="(option as unknown as GroupOption).peakRateEnabled"
- :peak-start="(option as unknown as GroupOption).peakStart"
- :peak-end="(option as unknown as GroupOption).peakEnd"
- :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
- :description="(option as unknown as GroupOption).description"
- :selected="selected"
- />
- </template>
- </UiSelect>
- </div>
-
- <div v-if="!showEditModal" class="keys-field">
- <div class="keys-toggle-row">
- <span class="keys-toggle-label">{{ t('keys.customKeyLabel') }}</span>
- <ToggleSwitch v-model="formData.use_custom_key" />
- </div>
- <TextInput
- v-if="formData.use_custom_key"
- v-model="formData.custom_key"
- class="keys-mono-input"
- :placeholder="t('keys.customKeyPlaceholder')"
- :error="customKeyError"
- :hint="customKeyError ? undefined : t('keys.customKeyHint')"
- />
- </div>
-
- <div v-if="showEditModal" class="keys-field">
- <FieldLabel>{{ t('keys.statusLabel') }}</FieldLabel>
- <UiSelect
- v-model="formData.status"
- :options="statusOptions"
- :placeholder="t('keys.selectStatus')"
- />
- </div>
-
- <div class="keys-field">
- <div class="keys-toggle-row">
- <span class="keys-toggle-label">{{ t('keys.ipRestriction') }}</span>
- <ToggleSwitch v-model="formData.enable_ip_restriction" />
- </div>
- <div v-if="formData.enable_ip_restriction" class="keys-field-stack">
- <div>
- <FieldLabel :hint="t('keys.ipWhitelistHint')">{{ t('keys.ipWhitelist') }}</FieldLabel>
- <textarea
- v-model="formData.ip_whitelist"
- rows="3"
- class="field keys-textarea"
- :placeholder="t('keys.ipWhitelistPlaceholder')"
- />
- </div>
- <div>
- <FieldLabel :hint="t('keys.ipBlacklistHint')">{{ t('keys.ipBlacklist') }}</FieldLabel>
- <textarea
- v-model="formData.ip_blacklist"
- rows="3"
- class="field keys-textarea"
- :placeholder="t('keys.ipBlacklistPlaceholder')"
- />
- </div>
- </div>
- </div>
-
- <div class="keys-field">
- <TextInput
- :model-value="formData.quota ?? ''"
- type="number"
- step="0.01"
- min="0"
- :label="t('keys.quotaLimit')"
- :hint="t('keys.quotaAmountHint')"
- :placeholder="t('keys.quotaAmountPlaceholder')"
- @update:model-value="(v) => (formData.quota = v === '' ? null : Number(v))"
- />
- <div v-if="showEditModal && selectedKey && selectedKey.quota > 0" class="keys-usage-row">
- <div class="glass-inset keys-usage-readout">
- <b>{{ formatCost(selectedKey.quota_used, 4) }}</b>
- <span class="keys-usage-sep">/</span>
- <span class="text-muted">{{ formatCost(selectedKey.quota) }}</span>
- </div>
- <Button variant="secondary" :title="t('keys.resetQuotaUsed')" @click="confirmResetQuota">
- {{ t('keys.reset') }}
- </Button>
- </div>
- </div>
-
- <div class="keys-field">
- <div class="keys-toggle-row">
- <span class="keys-toggle-label">{{ t('keys.rateLimitSection') }}</span>
- <ToggleSwitch v-model="formData.enable_rate_limit" />
- </div>
- <div v-if="formData.enable_rate_limit" class="keys-field-stack">
- <p class="input-hint">{{ t('keys.rateLimitHint') }}</p>
- <div v-for="window in rateLimitWindows" :key="window.key">
- <TextInput
- :model-value="formData[window.key] ?? ''"
- type="number"
- step="0.01"
- min="0"
- :label="window.label"
- placeholder="0"
- @update:model-value="(v) => (formData[window.key] = v === '' ? null : Number(v))"
- />
- <div v-if="showEditModal && selectedKey && (selectedKey[window.limitField] ?? 0) > 0" class="keys-window-usage">
- <div class="keys-window-readout">
- <b :class="windowToneClass(selectedKey, window)">
- {{ formatCost(selectedKey[window.usageField], 4) }}
- </b>
- <span class="keys-usage-sep">/</span>
- <span class="text-muted">{{ formatCost(selectedKey[window.limitField]) }}</span>
- </div>
- <ProgressBar :value="windowPercent(selectedKey, window)" />
- </div>
- </div>
- <div v-if="showEditModal && selectedKey && hasRateLimit(selectedKey)">
- <Button variant="secondary" @click="confirmResetRateLimit">
- {{ t('keys.resetRateLimitUsage') }}
- </Button>
- </div>
- </div>
- </div>
-
- <div class="keys-field">
- <div class="keys-toggle-row">
- <span class="keys-toggle-label">{{ t('keys.expiration') }}</span>
- <ToggleSwitch v-model="formData.enable_expiration" />
- </div>
- <div v-if="formData.enable_expiration" class="keys-field-stack">
- <div class="keys-expiry-presets">
- <button
- v-for="days in ['7', '30', '90']"
- :key="days"
- type="button"
- class="chip chip-filter"
- :class="{ 'is-active': formData.expiration_preset === days }"
- @click="setExpirationDays(parseInt(days))"
- >
- {{ showEditModal ? t('keys.extendDays', { days }) : t('keys.expiresInDays', { days }) }}
- </button>
- <button
- type="button"
- class="chip chip-filter"
- :class="{ 'is-active': formData.expiration_preset === 'custom' }"
- @click="formData.expiration_preset = 'custom'"
- >
- {{ t('keys.customDate') }}
- </button>
- </div>
- <TextInput
- v-model="formData.expiration_date"
- type="datetime-local"
- :label="t('keys.expirationDate')"
- :hint="t('keys.expirationDateHint')"
- />
- <p v-if="showEditModal && selectedKey?.expires_at" class="keys-current-expiry">
- <span class="text-muted">{{ t('keys.currentExpiration') }}: </span>
- <b>{{ formatDateTime(selectedKey.expires_at) }}</b>
- </p>
- </div>
- </div>
- </form>
- <template #footer>
- <Button variant="secondary" @click="closeModals">{{ t('common.cancel') }}</Button>
- <Button
- native-type="submit"
- form="key-form"
- :loading="submitting"
- data-tour="key-form-submit"
- >
- {{ submitting ? t('keys.saving') : showEditModal ? t('common.update') : t('common.create') }}
- </Button>
- </template>
- </UiModal>
-
- <!-- Confirmations -->
+ <!-- Delete confirmation -->
  <UiModal
  :open="confirmDialog !== null"
  :title="confirmDialog?.title || ''"
@@ -648,171 +380,47 @@
  @close="closeUseKeyModal"
  />
 
- <!-- CC Switch: pick a key to import -->
- <UiModal
- :open="showCcsImportModal"
- :title="t('keys.ccsImport.title')"
- width="md"
- :close-label="t('common.close')"
- @close="showCcsImportModal = false"
- >
- <p class="keys-confirm-text">{{ t('keys.ccsImport.description') }}</p>
- <ul class="keys-ccs-list">
- <li v-for="row in apiKeys" :key="row.id" class="keys-ccs-item">
- <span class="keys-ccs-name">{{ row.name }}</span>
- <code class="code keys-ccs-key">{{ maskApiKey(row.key) }}</code>
- <Button variant="secondary" @click="importFromPicker(row)">
- {{ t('keys.importToCcSwitch') }}
- </Button>
- </li>
- </ul>
- </UiModal>
-
- <!-- CC Switch client selection (Antigravity) -->
- <UiModal
- :open="showCcsClientSelect"
- :title="t('keys.ccsClientSelect.title')"
- width="sm"
- :close-label="t('common.close')"
- @close="closeCcsClientSelect"
- >
- <p class="keys-confirm-text">{{ t('keys.ccsClientSelect.description') }}</p>
- <div class="keys-client-grid">
- <button type="button" class="keys-client-card" @click="handleCcsClientSelect('claude')">
- <Icon name="terminal" size="lg" />
- <span class="keys-client-title">{{ t('keys.ccsClientSelect.claudeCode') }}</span>
- <span class="keys-client-desc">{{ t('keys.ccsClientSelect.claudeCodeDesc') }}</span>
- </button>
- <button type="button" class="keys-client-card" @click="handleCcsClientSelect('gemini')">
- <Icon name="sparkles" size="lg" />
- <span class="keys-client-title">{{ t('keys.ccsClientSelect.geminiCli') }}</span>
- <span class="keys-client-desc">{{ t('keys.ccsClientSelect.geminiCliDesc') }}</span>
- </button>
- </div>
- <template #footer>
- <Button variant="secondary" @click="closeCcsClientSelect">{{ t('common.cancel') }}</Button>
- </template>
- </UiModal>
+ <!-- CC Switch import + client select -->
+ <CcSwitchModals
+ :show-import-picker="showCcsImportModal"
+ :show-client-select="showCcsClientSelect"
+ :api-keys="apiKeys"
+ @close-import="showCcsImportModal = false"
+ @pick="importFromPicker"
+ @close-client-select="closeCcsClientSelect"
+ @select-client="handleCcsClientSelect"
+ />
 
  <!-- Row actions menu -->
- <Teleport to="body">
- <div
- v-if="rowMenuKeyId !== null && rowMenuPosition && rowMenuKey"
- ref="rowMenuRef"
- class="dropdown keys-row-menu"
- :style="{ top: rowMenuPosition.top + 'px', left: rowMenuPosition.left + 'px' }"
- >
- <button type="button" class="dropdown-item" @click="runRowAction(() => openUseKeyModal(rowMenuKey!))">
- <Icon name="terminal" size="sm" />
- {{ t('keys.useKey') }}
- </button>
- <button
- v-if="!publicSettings?.hide_ccs_import_button"
- type="button"
- class="dropdown-item"
- @click="runRowAction(() => importToCcswitch(rowMenuKey!))"
- >
- <Icon name="upload" size="sm" />
- {{ t('keys.importToCcSwitch') }}
- </button>
- <button type="button" class="dropdown-item" @click="runRowAction(() => copyToClipboard(rowMenuKey!.key, rowMenuKey!.id))">
- <Icon name="clipboard" size="sm" />
- {{ t('keys.copyToClipboard') }}
- </button>
- <div class="dropdown-divider" />
- <button type="button" class="dropdown-item" @click="runRowAction(() => editKey(rowMenuKey!))">
- <Icon name="edit" size="sm" />
- {{ t('common.edit') }}
- </button>
- <button type="button" class="dropdown-item" @click="runRowAction(() => toggleKeyStatus(rowMenuKey!))">
- <Icon :name="rowMenuKey.status === 'active' ? 'ban' : 'checkCircle'" size="sm" />
- {{ rowMenuKey.status === 'active' ? t('keys.disable') : t('keys.enable') }}
- </button>
- <button
- v-if="hasRateLimitUsage(rowMenuKey)"
- type="button"
- class="dropdown-item"
- @click="runRowAction(() => confirmResetRateLimitFromTable(rowMenuKey!))"
- >
- <Icon name="refresh" size="sm" />
- {{ t('keys.resetRateLimitUsage') }}
- </button>
- <div class="dropdown-divider" />
- <button type="button" class="dropdown-item dropdown-item-danger" @click="runRowAction(() => confirmDelete(rowMenuKey!))">
- <Icon name="trash" size="sm" />
- {{ t('common.delete') }}
- </button>
- </div>
- </Teleport>
+ <KeyRowActionsMenu
+ :api-key="rowMenuKey"
+ :position="rowMenuPosition"
+ :hide-ccs-import="!!publicSettings?.hide_ccs_import_button"
+ :show-reset-rate-limit="hasRateLimitUsage(rowMenuKey)"
+ @use="runRowAction(() => openUseKeyModal(rowMenuKey!))"
+ @import-ccs="runRowAction(() => importToCcswitch(rowMenuKey!))"
+ @copy="runRowAction(() => copyToClipboard(rowMenuKey!.key, rowMenuKey!.id))"
+ @edit="runRowAction(() => editKey(rowMenuKey!))"
+ @toggle-status="runRowAction(() => toggleKeyStatus(rowMenuKey!))"
+ @reset-rate-limit="runRowAction(() => confirmResetRateLimitFromTable(rowMenuKey!))"
+ @delete="runRowAction(() => confirmDelete(rowMenuKey!))"
+ />
 
- <!-- Group Selector Dropdown (Teleported to body to avoid overflow clipping) -->
- <Teleport to="body">
- <div
- v-if="groupSelectorKeyId !== null && dropdownPosition"
- ref="dropdownRef"
- class="dropdown keys-group-dropdown"
- :style="{
- top: dropdownPosition.top !== undefined ? dropdownPosition.top + 'px' : undefined,
- bottom: dropdownPosition.bottom !== undefined ? dropdownPosition.bottom + 'px' : undefined,
- left: dropdownPosition.left + 'px'
- }"
- >
- <div class="keys-group-search">
- <Icon name="search" size="sm" class="text-muted" />
- <input
- v-model="groupSearchQuery"
- type="text"
- class="keys-group-search-input"
- :placeholder="t('keys.searchGroup')"
- @click.stop
+ <!-- Group Selector Dropdown -->
+ <KeyGroupPicker
+ :options="groupOptions"
+ :selected-value="selectedKeyForGroup?.group_id ?? null"
+ :position="dropdownPosition"
+ @select="(value) => changeGroup(selectedKeyForGroup!, value)"
  />
- </div>
- <div class="keys-group-options">
- <button
- v-for="option in filteredGroupOptions"
- :key="option.value ?? 'null'"
- type="button"
- class="dropdown-item keys-group-option"
- :class="{
- 'is-active':
- selectedKeyForGroup?.group_id === option.value ||
- (!selectedKeyForGroup?.group_id && option.value === null)
- }"
- :title="option.description || undefined"
- @click="changeGroup(selectedKeyForGroup!, option.value)"
- >
- <GroupOptionItem
- :name="option.label"
- :platform="option.platform"
- :subscription-type="option.subscriptionType"
- :rate-multiplier="option.rate"
- :user-rate-multiplier="option.userRate"
- :peak-rate-enabled="option.peakRateEnabled"
- :peak-start="option.peakStart"
- :peak-end="option.peakEnd"
- :peak-rate-multiplier="option.peakRateMultiplier"
- :description="option.description"
- :selected="
- selectedKeyForGroup?.group_id === option.value ||
- (!selectedKeyForGroup?.group_id && option.value === null)
- "
- />
- </button>
- <p v-if="filteredGroupOptions.length === 0" class="keys-group-empty">
- {{ t('keys.noGroupFound') }}
- </p>
- </div>
- </div>
- </Teleport>
  </div>
  </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
-import { useOnboardingStore } from '@/stores/onboarding'
 import { useClipboard } from '@/composables/useClipboard'
 import { useIsMobile } from '@/composables/useIsMobile'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -827,11 +435,6 @@ import SearchInput from '@/components/common/SearchInput.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
-import FieldLabel from '@/components/ui/FieldLabel.vue'
-import TextInput from '@/components/ui/TextInput.vue'
-import UiSelect from '@/components/ui/UiSelect.vue'
-import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
-import ProgressBar from '@/components/ui/ProgressBar.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import UiModal from '@/components/ui/UiModal.vue'
 import FilterBar from '@/components/ui/FilterBar.vue'
@@ -842,29 +445,37 @@ import ListFade from '@/components/ui/ListFade.vue'
 import Fab from '@/components/ui/Fab.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
 import UseKeyModal from '@/components/keys/UseKeyModal.vue'
-import GroupBadge from '@/components/common/GroupBadge.vue'
-import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+import KeyFormModal from '@/components/keys/KeyFormModal.vue'
+import KeyRowActionsMenu from '@/components/keys/KeyRowActionsMenu.vue'
+import KeyGroupPicker from '@/components/keys/KeyGroupPicker.vue'
+import KeyMobileCard from '@/components/keys/KeyMobileCard.vue'
+import CcSwitchModals from '@/components/keys/CcSwitchModals.vue'
+import { useKeyColumns } from '@/components/keys/useKeyColumns'
+import { useEndpointCards } from '@/components/keys/useEndpointCards'
+import { useGroupCellDisplay } from '@/components/keys/useGroupCellDisplay'
+import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
 import type { Column } from '@/components/common/types'
-import type { StatusBadgeTone } from '@/components/ui/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
-import { formatDateTime, formatDate } from '@/utils/format'
+import { formatDate } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
+import {
+  formatCost,
+  quotaPercent,
+  quotaBarClass,
+  hasRateLimit,
+  statusTone,
+  expiryToneClass,
+  hasIpRestriction,
+  rateLimitSummary,
+  rateLimitToneClass,
+  rateLimitDetail as rateLimitDetailUtil
+} from '@/components/keys/keyUtils'
 
 const { t } = useI18n()
 const { isTabletUp } = useIsMobile()
 
-import {
-  buildCcSwitchImportDeeplink,
-  type CcSwitchClientType
-} from '@/utils/ccswitchImport'
-
-// Helper to format date for datetime-local input
-const formatDateTimeLocal = (isoDate: string): string => {
-  const date = new Date(isoDate)
-  const pad = (n: number) => n.toString().padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
+import type { CcSwitchClientType } from '@/utils/ccswitchImport'
+import { openCcSwitchDeeplink, formatResetCountdown } from '@/components/keys/ccSwitchHelpers'
 
 interface GroupOption {
   value: number
@@ -881,107 +492,35 @@ interface GroupOption {
 }
 
 const appStore = useAppStore()
-const onboardingStore = useOnboardingStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
 
 const allColumns = computed<Column[]>(() => [
-  { key: 'name', label: t('common.name'), sortable: true },
+  { key: 'name', label: t('keys.nameIdColumn'), sortable: true },
   { key: 'id', label: t('keys.id'), sortable: true },
   { key: 'key', label: t('keys.apiKey'), sortable: false },
   { key: 'group', label: t('keys.group'), sortable: false },
   { key: 'current_concurrency', label: t('keys.currentConcurrency'), sortable: true },
-  { key: 'usage', label: t('keys.usage'), sortable: false },
+  { key: 'usage', label: t('keys.usageColumnHeader'), sortable: false },
   { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
   { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
-  { key: 'status', label: t('common.status'), sortable: true },
   { key: 'last_used_at', label: t('keys.lastUsedAt'), sortable: true },
   { key: 'last_used_ip', label: t('keys.lastUsedIP'), sortable: false },
+  { key: 'status', label: t('common.status'), sortable: true },
   { key: 'created_at', label: t('keys.created'), sortable: true },
   { key: 'actions', label: t('common.actions'), sortable: false }
 ])
 
-const ALWAYS_VISIBLE_COLUMNS = new Set(['name', 'actions'])
-const DEFAULT_HIDDEN_COLUMNS = ['id', 'rate_limit', 'last_used_at', 'last_used_ip']
-const HIDDEN_COLUMNS_KEY = 'api-key-hidden-columns'
-const COLUMN_SETTINGS_VERSION_KEY = 'api-key-column-settings-version'
-const COLUMN_SETTINGS_VERSION = 3
-const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
-  2: ['last_used_ip'],
-  3: ['id']
-}
-
-const toggleableColumns = computed(() =>
-  allColumns.value.filter((col) => !ALWAYS_VISIBLE_COLUMNS.has(col.key))
-)
-
-const hiddenColumns = reactive<Set<string>>(new Set())
-
-const saveColumnsToStorage = () => {
-  try {
-    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
-    localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
-  } catch (error) {
-    console.error('Failed to save API key table columns:', error)
-  }
-}
-
-const loadSavedColumns = () => {
-  hiddenColumns.clear()
-  try {
-    const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved) as string[]
-      const validColumnKeys = new Set(allColumns.value.map((col) => col.key))
-      parsed
-        .filter((key) =>
-          typeof key === 'string' &&
-          validColumnKeys.has(key) &&
-          !ALWAYS_VISIBLE_COLUMNS.has(key)
-        )
-        .forEach((key) => hiddenColumns.add(key))
-      const storedVersion = Number(localStorage.getItem(COLUMN_SETTINGS_VERSION_KEY) ?? '1')
-      if (storedVersion < COLUMN_SETTINGS_VERSION) {
-        for (let v = storedVersion + 1; v <= COLUMN_SETTINGS_VERSION; v++) {
-          for (const key of VERSION_NEW_HIDDEN_COLUMNS[v] ?? []) {
-            if (validColumnKeys.has(key) && !ALWAYS_VISIBLE_COLUMNS.has(key)) {
-              hiddenColumns.add(key)
-            }
-          }
-        }
-        saveColumnsToStorage()
-      } else {
-        localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
-      }
-    } else {
-      DEFAULT_HIDDEN_COLUMNS.forEach((key) => hiddenColumns.add(key))
-      localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
-    }
-  } catch (error) {
-    console.error('Failed to load API key table columns:', error)
-    DEFAULT_HIDDEN_COLUMNS.forEach((key) => hiddenColumns.add(key))
-  }
-}
-
-const toggleColumn = (key: string) => {
-  if (ALWAYS_VISIBLE_COLUMNS.has(key)) return
-  if (hiddenColumns.has(key)) {
-    hiddenColumns.delete(key)
-  } else {
-    hiddenColumns.add(key)
-  }
-  saveColumnsToStorage()
-}
-
-const isColumnVisible = (key: string) => !hiddenColumns.has(key)
-
-const columns = computed<Column[]>(() =>
-  allColumns.value.filter((col) => ALWAYS_VISIBLE_COLUMNS.has(col.key) || !hiddenColumns.has(col.key))
-)
+const {
+  toggleableColumns,
+  columns,
+  loadSavedColumns,
+  toggleColumn,
+  isColumnVisible
+} = useKeyColumns(allColumns)
 
 const apiKeys = ref<ApiKey[]>([])
 const groups = ref<Group[]>([])
 const loading = ref(false)
-const submitting = ref(false)
 const now = ref(new Date())
 let resetTimer: ReturnType<typeof setInterval> | null = null
 const usageStats = ref<Record<string, BatchApiKeyUsageStats>>({})
@@ -1015,14 +554,11 @@ const selectedKey = ref<ApiKey | null>(null)
 const copiedKeyId = ref<number | null>(null)
 const groupSelectorKeyId = ref<number | null>(null)
 const publicSettings = ref<PublicSettings | null>(null)
-const dropdownRef = ref<HTMLElement | null>(null)
 const columnDropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
-const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
 const revealedKeyIds = reactive<Set<number>>(new Set())
 const rowMenuKeyId = ref<number | null>(null)
 const rowMenuPosition = ref<{ top: number; left: number } | null>(null)
-const rowMenuRef = ref<HTMLElement | null>(null)
 const confirmDialog = ref<{
   title: string
   message: string
@@ -1050,63 +586,11 @@ const rowMenuKey = computed<ApiKey | null>(() => {
   return apiKeys.value.find((k) => k.id === rowMenuKeyId.value) || null
 })
 
-const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance | null) => {
-  if (el instanceof HTMLElement) {
-    groupButtonRefs.value.set(keyId, el)
-  } else {
-    groupButtonRefs.value.delete(keyId)
-  }
-}
-
-const formData = ref({
-  name: '',
-  group_id: null as number | null,
-  status: 'active' as 'active' | 'inactive',
-  use_custom_key: false,
-  custom_key: '',
-  enable_ip_restriction: false,
-  ip_whitelist: '',
-  ip_blacklist: '',
-  // Quota settings (empty = unlimited)
-  enable_quota: false,
-  quota: null as number | null,
-  // Rate limit settings
-  enable_rate_limit: false,
-  rate_limit_5h: null as number | null,
-  rate_limit_1d: null as number | null,
-  rate_limit_7d: null as number | null,
-  enable_expiration: false,
-  expiration_preset: '30' as '7' | '30' | '90' | 'custom',
-  expiration_date: ''
-})
-
-// 自定义Key验证
-const customKeyError = computed(() => {
-  if (!formData.value.use_custom_key || !formData.value.custom_key) {
-    return ''
-  }
-  const key = formData.value.custom_key
-  if (key.length < 16) {
-    return t('keys.customKeyTooShort')
-  }
-  // 检查字符：只允许字母、数字、下划线、连字符
-  if (!/^[a-zA-Z0-9_-]+$/.test(key)) {
-    return t('keys.customKeyInvalidChars')
-  }
-  return ''
-})
-
-const statusOptions = computed(() => [
-  { value: 'active', label: t('common.active') },
-  { value: 'inactive', label: t('common.inactive') }
-])
-
-const shouldSubmitEditStatus = (key: ApiKey, status: 'active' | 'inactive') => {
-  if (key.status === 'quota_exhausted' || key.status === 'expired') {
-    return status === 'active'
-  }
-  return true
-}
+const { groupButtonRefs, setGroupButtonRef, groupCellSuffix, groupCellTooltip } = useGroupCellDisplay(
+  userGroupRates,
+  () => appStore.cachedPublicSettings?.server_utc_offset,
+  t
+)
 
 // Filter dropdown options
 const groupFilterOptions = computed(() => [
@@ -1148,44 +632,16 @@ const todayKeySpend = computed(() =>
   apiKeys.value.reduce((sum, key) => sum + (usageStats.value[key.id]?.today_actual_cost ?? 0), 0)
 )
 const keyMiniStats = computed(() => [
-  { label: t('common.total'), value: pagination.value.total },
-  { label: t('common.active'), value: activeKeyCount.value },
-  { label: t('keys.today'), value: `$${todayKeySpend.value.toFixed(2)}` }
+  { label: t('keys.miniStats.total'), value: pagination.value.total },
+  { label: t('keys.miniStats.active'), value: activeKeyCount.value },
+  { label: t('keys.miniStats.todaySpend'), value: `$${todayKeySpend.value.toFixed(2)}` }
 ])
 
 const copyEndpoint = async (url: string) => {
   await clipboardCopy(url, t('keys.endpoints.copied'))
 }
 
-interface EndpointCardEntry {
-  url: string
-  label: string
-  description?: string
-  badge?: string
-  badgeTone?: StatusBadgeTone
-}
-
-const endpointCards = computed<EndpointCardEntry[]>(() => {
-  const cards: EndpointCardEntry[] = []
-  if (publicSettings.value?.api_base_url) {
-    cards.push({
-      url: publicSettings.value.api_base_url,
-      label: t('keys.endpoints.title'),
-      badge: t('keys.endpoints.default'),
-      badgeTone: 'accent'
-    })
-  }
-  for (const endpoint of publicSettings.value?.custom_endpoints || []) {
-    cards.push({
-      url: endpoint.endpoint,
-      label: endpoint.name,
-      description: endpoint.description || undefined,
-      badge: t('keys.endpoints.custom'),
-      badgeTone: 'muted'
-    })
-  }
-  return cards
-})
+const { endpointCards } = useEndpointCards(publicSettings, t)
 
 const openCcsImportPicker = () => {
   showCcsImportModal.value = true
@@ -1211,8 +667,8 @@ const onStatusFilterChange = (value: string | number | boolean | null) => {
   onFilterChange()
 }
 
-// Convert groups to Select options format with rate multiplier and subscription type
-const groupOptions = computed(() =>
+// Convert groups to options for the row group-change picker (rate multiplier + subscription type)
+const groupOptions = computed<GroupOption[]>(() =>
   groups.value.map((group) => ({
     value: group.id,
     label: group.name,
@@ -1228,17 +684,6 @@ const groupOptions = computed(() =>
   }))
 )
 
-// Group dropdown search
-const groupSearchQuery = ref('')
-const filteredGroupOptions = computed(() => {
-  const query = groupSearchQuery.value.trim().toLowerCase()
-  if (!query) return groupOptions.value
-  return groupOptions.value.filter((opt) => {
-    return opt.label.toLowerCase().includes(query) ||
-      (opt.description && opt.description.toLowerCase().includes(query))
-  })
-})
-
 const copyToClipboard = async (text: string, keyId: number) => {
   const success = await clipboardCopy(text, t('keys.copied'))
   if (success) {
@@ -1248,8 +693,6 @@ const copyToClipboard = async (text: string, keyId: number) => {
     }, 800)
   }
 }
-
-const hasIpRestriction = (key: ApiKey) => (key.ip_whitelist?.length > 0) || (key.ip_blacklist?.length > 0)
 
 const isKeyRevealed = (id: number) => revealedKeyIds.has(id)
 
@@ -1261,116 +704,9 @@ const toggleKeyReveal = (id: number) => {
   }
 }
 
-const formatCost = (value: number | null | undefined, decimals = 2) => `$${(value ?? 0).toFixed(decimals)}`
-
-const quotaPercent = (key: ApiKey) => {
-  if (!key.quota || key.quota <= 0) return 0
-  return Math.min(100, (key.quota_used / key.quota) * 100)
-}
-
-const quotaBarClass = (key: ApiKey) => {
-  const pct = quotaPercent(key)
-  if (pct >= 90) return 'progress-bar-danger'
-  if (pct >= 70) return 'progress-bar-warning'
-  return ''
-}
-
-const statusTone = (status: ApiKey['status']): StatusBadgeTone => {
-  if (status === 'active') return 'success'
-  if (status === 'quota_exhausted') return 'warning'
-  if (status === 'expired' || status === 'disabled' || status === 'inactive') return 'danger'
-  return 'muted'
-}
-
-const expiryToneClass = (value: string | null) => (value && new Date(value) < now.value ? 'keys-tone-danger' : '')
-
-interface RateLimitWindow {
-  key: 'rate_limit_5h' | 'rate_limit_1d' | 'rate_limit_7d'
-  label: string
-  shortLabel: string
-  limitField: 'rate_limit_5h' | 'rate_limit_1d' | 'rate_limit_7d'
-  usageField: 'usage_5h' | 'usage_1d' | 'usage_7d'
-  resetField: 'reset_5h_at' | 'reset_1d_at' | 'reset_7d_at'
-}
-
-const rateLimitWindows = computed<RateLimitWindow[]>(() => [
-  {
-    key: 'rate_limit_5h',
-    label: t('keys.rateLimit5h'),
-    shortLabel: '5h',
-    limitField: 'rate_limit_5h',
-    usageField: 'usage_5h',
-    resetField: 'reset_5h_at'
-  },
-  {
-    key: 'rate_limit_1d',
-    label: t('keys.rateLimit1d'),
-    shortLabel: '1d',
-    limitField: 'rate_limit_1d',
-    usageField: 'usage_1d',
-    resetField: 'reset_1d_at'
-  },
-  {
-    key: 'rate_limit_7d',
-    label: t('keys.rateLimit7d'),
-    shortLabel: '7d',
-    limitField: 'rate_limit_7d',
-    usageField: 'usage_7d',
-    resetField: 'reset_7d_at'
-  }
-])
-
-const windowPercent = (key: ApiKey, window: RateLimitWindow) => {
-  const limit = key[window.limitField]
-  if (!limit || limit <= 0) return 0
-  return Math.min(100, (key[window.usageField] / limit) * 100)
-}
-
-const windowToneClass = (key: ApiKey, window: RateLimitWindow) => {
-  const pct = windowPercent(key, window)
-  if (pct >= 90) return 'keys-tone-danger'
-  if (pct >= 70) return 'keys-tone-warning'
-  return ''
-}
-
-const hasRateLimit = (key: ApiKey) => key.usage_5h > 0 || key.usage_1d > 0 || key.usage_7d > 0
-
 const hasRateLimitUsage = (key: ApiKey | null) => !!key && hasRateLimit(key)
 
-const activeRateLimitWindows = (key: ApiKey) =>
-  rateLimitWindows.value.filter((window) => (key[window.limitField] ?? 0) > 0)
-
-const mostConstrainedRateLimitWindow = (key: ApiKey): RateLimitWindow | null => {
-  const windows = activeRateLimitWindows(key)
-  if (windows.length === 0) return null
-  return windows.reduce((worst, window) =>
-    windowPercent(key, window) > windowPercent(key, worst) ? window : worst
-  , windows[0])
-}
-
-const rateLimitSummary = (key: ApiKey) => {
-  const window = mostConstrainedRateLimitWindow(key)
-  if (!window) return ''
-  return `${window.shortLabel} ${Math.round(windowPercent(key, window))}%`
-}
-
-const rateLimitToneClass = (key: ApiKey) => {
-  const window = mostConstrainedRateLimitWindow(key)
-  return window ? windowToneClass(key, window) : ''
-}
-
-const rateLimitDetail = (key: ApiKey) => {
-  const windows = activeRateLimitWindows(key)
-  if (windows.length === 0) return ''
-  return windows
-    .map((window) => {
-      const base = `${window.shortLabel}: ${formatCost(key[window.usageField])} / ${formatCost(key[window.limitField])}`
-      const resetAt = key[window.resetField]
-      const resetText = resetAt ? formatResetTime(resetAt) : ''
-      return resetText ? `${base} · ${resetText}` : base
-    })
-    .join('\n')
-}
+const rateLimitDetail = (key: ApiKey) => rateLimitDetailUtil(key, formatResetTime)
 
 const isAbortError = (error: unknown) => {
   if (!error || typeof error !== 'object') return false
@@ -1486,27 +822,6 @@ const handleSort = (key: string, order: 'asc' | 'desc') => {
 
 const editKey = (key: ApiKey) => {
   selectedKey.value = key
-  const hasIPRestriction = (key.ip_whitelist?.length > 0) || (key.ip_blacklist?.length > 0)
-  const hasExpiration = !!key.expires_at
-  formData.value = {
-    name: key.name,
-    group_id: key.group_id,
-    status: key.status === 'active' ? 'active' : 'inactive',
-    use_custom_key: false,
-    custom_key: '',
-    enable_ip_restriction: hasIPRestriction,
-    ip_whitelist: (key.ip_whitelist || []).join('\n'),
-    ip_blacklist: (key.ip_blacklist || []).join('\n'),
-    enable_quota: key.quota > 0,
-    quota: key.quota > 0 ? key.quota : null,
-    enable_rate_limit: (key.rate_limit_5h > 0) || (key.rate_limit_1d > 0) || (key.rate_limit_7d > 0),
-    rate_limit_5h: key.rate_limit_5h || null,
-    rate_limit_1d: key.rate_limit_1d || null,
-    rate_limit_7d: key.rate_limit_7d || null,
-    enable_expiration: hasExpiration,
-    expiration_preset: 'custom',
-    expiration_date: key.expires_at ? formatDateTimeLocal(key.expires_at) : ''
-  }
   showEditModal.value = true
 }
 
@@ -1553,7 +868,6 @@ const openGroupSelector = (key: ApiKey) => {
       }
     }
     groupSelectorKeyId.value = key.id
-    groupSearchQuery.value = ''
   }
 }
 
@@ -1574,14 +888,14 @@ const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
 const closeGroupSelector = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   // Check if click is inside the dropdown or the trigger button
-  if (!target.closest('.group\\/dropdown') && !dropdownRef.value?.contains(target)) {
+  if (!target.closest('.group\\/dropdown') && !target.closest('.keys-group-dropdown')) {
     groupSelectorKeyId.value = null
     dropdownPosition.value = null
   }
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false
   }
-  if (rowMenuKeyId.value !== null && !rowMenuRef.value?.contains(target)) {
+  if (rowMenuKeyId.value !== null && !target.closest('.keys-row-menu') && !target.closest('.keys-more-btn') && !target.closest('.keys-card-more')) {
     closeRowMenu()
   }
 }
@@ -1625,113 +939,7 @@ const confirmDelete = (key: ApiKey) => {
   }
 }
 
-const handleSubmit = async () => {
-  // Validate group_id is required
-  if (formData.value.group_id === null) {
-    appStore.showError(t('keys.groupRequired'))
-    return
-  }
-
-  // Validate custom key if enabled
-  if (!showEditModal.value && formData.value.use_custom_key) {
-    if (!formData.value.custom_key) {
-      appStore.showError(t('keys.customKeyRequired'))
-      return
-    }
-    if (customKeyError.value) {
-      appStore.showError(customKeyError.value)
-      return
-    }
-  }
-
-  // Parse IP lists only if IP restriction is enabled
-  const parseIPList = (text: string): string[] =>
-    text.split('\n').map(ip => ip.trim()).filter(ip => ip.length > 0)
-  const ipWhitelist = formData.value.enable_ip_restriction ? parseIPList(formData.value.ip_whitelist) : []
-  const ipBlacklist = formData.value.enable_ip_restriction ? parseIPList(formData.value.ip_blacklist) : []
-
-  // Calculate quota value (null/empty/0 = unlimited, stored as 0)
-  const quota = formData.value.quota && formData.value.quota > 0 ? formData.value.quota : 0
-
-  // Calculate expiration
-  let expiresInDays: number | undefined
-  let expiresAt: string | null | undefined
-  if (formData.value.enable_expiration && formData.value.expiration_date) {
-    if (!showEditModal.value) {
-      // Create mode: calculate days from date
-      const expDate = new Date(formData.value.expiration_date)
-      const now = new Date()
-      const diffDays = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-      expiresInDays = diffDays > 0 ? diffDays : 1
-    } else {
-      // Edit mode: use custom date directly
-      expiresAt = new Date(formData.value.expiration_date).toISOString()
-    }
-  } else if (showEditModal.value) {
-    // Edit mode: if expiration disabled or date cleared, send empty string to clear
-    expiresAt = ''
-  }
-
-  // Calculate rate limit values (send 0 when toggle is off)
-  const rateLimitData = formData.value.enable_rate_limit ? {
-    rate_limit_5h: formData.value.rate_limit_5h && formData.value.rate_limit_5h > 0 ? formData.value.rate_limit_5h : 0,
-    rate_limit_1d: formData.value.rate_limit_1d && formData.value.rate_limit_1d > 0 ? formData.value.rate_limit_1d : 0,
-    rate_limit_7d: formData.value.rate_limit_7d && formData.value.rate_limit_7d > 0 ? formData.value.rate_limit_7d : 0,
-  } : { rate_limit_5h: 0, rate_limit_1d: 0, rate_limit_7d: 0 }
-
-  submitting.value = true
-  try {
-    if (showEditModal.value && selectedKey.value) {
-      const updates: UpdateApiKeyRequest = {
-        name: formData.value.name,
-        group_id: formData.value.group_id,
-        ip_whitelist: ipWhitelist,
-        ip_blacklist: ipBlacklist,
-        quota: quota,
-        expires_at: expiresAt,
-        rate_limit_5h: rateLimitData.rate_limit_5h,
-        rate_limit_1d: rateLimitData.rate_limit_1d,
-        rate_limit_7d: rateLimitData.rate_limit_7d,
-      }
-      if (shouldSubmitEditStatus(selectedKey.value, formData.value.status)) {
-        updates.status = formData.value.status
-      }
-      await keysAPI.update(selectedKey.value.id, updates)
-      appStore.showSuccess(t('keys.keyUpdatedSuccess'))
-    } else {
-      const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
-      await keysAPI.create(
-        formData.value.name,
-        formData.value.group_id,
-        customKey,
-        ipWhitelist,
-        ipBlacklist,
-        quota,
-        expiresInDays,
-        rateLimitData
-      )
-      appStore.showSuccess(t('keys.keyCreatedSuccess'))
-      // Only advance tour if active, on submit step, and creation succeeded
-      if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
-        onboardingStore.nextStep(500)
-      }
-    }
-    closeModals()
-    loadApiKeys()
-  } catch (error: any) {
-    const errorMsg = error.response?.data?.detail || t('keys.failedToSave')
-    appStore.showError(errorMsg)
-    // Don't advance tour on error
-  } finally {
-    submitting.value = false
-  }
-}
-
-/**
- * 处理删除 API Key 的操作
- * 优化：错误处理改进，优先显示后端返回的具体错误消息（如权限不足等），
- * 若后端未返回消息则显示默认的国际化文本
- */
+// 处理删除 API Key：优先显示后端返回的具体错误消息（如权限不足等）
 const handleDelete = async () => {
   if (!selectedKey.value) return
 
@@ -1750,98 +958,24 @@ const closeModals = () => {
   showCreateModal.value = false
   showEditModal.value = false
   selectedKey.value = null
-  formData.value = {
-    name: '',
-    group_id: null,
-    status: 'active',
-    use_custom_key: false,
-    custom_key: '',
-    enable_ip_restriction: false,
-    ip_whitelist: '',
-    ip_blacklist: '',
-    enable_quota: false,
-    quota: null,
-    enable_rate_limit: false,
-    rate_limit_5h: null,
-    rate_limit_1d: null,
-    rate_limit_7d: null,
-    enable_expiration: false,
-    expiration_preset: '30',
-    expiration_date: ''
-  }
-}
-
-// Show reset quota confirmation dialog
-const confirmResetQuota = () => {
-  if (!selectedKey.value) return
-  confirmDialog.value = {
-    title: t('keys.resetQuotaTitle'),
-    message: t('keys.resetQuotaConfirmMessage', {
-      name: selectedKey.value.name,
-      used: selectedKey.value.quota_used?.toFixed(4)
-    }),
-    confirmText: t('keys.reset'),
-    onConfirm: resetQuotaUsed
-  }
-}
-
-// Set expiration date based on quick select days
-const setExpirationDays = (days: number) => {
-  formData.value.expiration_preset = days.toString() as '7' | '30' | '90'
-  const expDate = new Date()
-  expDate.setDate(expDate.getDate() + days)
-  formData.value.expiration_date = formatDateTimeLocal(expDate.toISOString())
-}
-
-// Reset quota used for an API key
-const resetQuotaUsed = async () => {
-  if (!selectedKey.value) return
-  try {
-    await keysAPI.update(selectedKey.value.id, { reset_quota: true })
-    appStore.showSuccess(t('keys.quotaResetSuccess'))
-    // Update local state
-    if (selectedKey.value) {
-      selectedKey.value.quota_used = 0
-    }
-  } catch (error: any) {
-    const errorMsg = error.response?.data?.detail || t('keys.failedToResetQuota')
-    appStore.showError(errorMsg)
-  }
-}
-
-// Show reset rate limit confirmation dialog (from edit modal)
-const confirmResetRateLimit = () => {
-  if (!selectedKey.value) return
-  confirmDialog.value = {
-    title: t('keys.resetRateLimitTitle'),
-    message: t('keys.resetRateLimitConfirmMessage', { name: selectedKey.value.name }),
-    confirmText: t('keys.reset'),
-    onConfirm: resetRateLimitUsage
-  }
 }
 
 // Show reset rate limit confirmation dialog (from table row)
 const confirmResetRateLimitFromTable = (row: ApiKey) => {
-  selectedKey.value = row
-  confirmResetRateLimit()
-}
-
-// Reset rate limit usage for an API key
-const resetRateLimitUsage = async () => {
-  if (!selectedKey.value) return
-  try {
-    await keysAPI.update(selectedKey.value.id, { reset_rate_limit_usage: true })
-    appStore.showSuccess(t('keys.rateLimitResetSuccess'))
-    // Refresh key data
-    await loadApiKeys()
-    // Update the editing key with fresh data
-    const refreshedKey = apiKeys.value.find(k => k.id === selectedKey.value!.id)
-    if (refreshedKey) {
-      selectedKey.value = refreshedKey
+  confirmDialog.value = {
+    title: t('keys.resetRateLimitTitle'),
+    message: t('keys.resetRateLimitConfirmMessage', { name: row.name }),
+    confirmText: t('keys.reset'),
+    onConfirm: async () => {
+      try {
+        await keysAPI.update(row.id, { reset_rate_limit_usage: true })
+        appStore.showSuccess(t('keys.rateLimitResetSuccess'))
+        loadApiKeys()
+      } catch (error: any) {
+        const errorMsg = error.response?.data?.detail || t('keys.failedToResetRateLimit')
+        appStore.showError(errorMsg)
+      }
     }
-  } catch (error: any) {
-    const errorMsg = error.response?.data?.detail || t('keys.failedToResetRateLimit')
-    appStore.showError(errorMsg)
   }
 }
 
@@ -1860,48 +994,9 @@ const importToCcswitch = (row: ApiKey) => {
 }
 
 const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
-  const baseUrl = publicSettings.value?.api_base_url || window.location.origin
-  const platform = row.group?.platform || 'anthropic'
-
-  const usageScript = `({
-    request: {
-      url: "{{baseUrl}}/v1/usage",
-      method: "GET",
-      headers: { "Authorization": "Bearer {{apiKey}}" }
-    },
-    extractor: function(response) {
-      const remaining = response?.remaining ?? response?.quota?.remaining ?? response?.balance;
-      const unit = response?.unit ?? response?.quota?.unit ?? "USD";
-      return {
-        isValid: response?.is_active ?? response?.isValid ?? true,
-        remaining,
-        unit
-      };
-    }
-  })`
-  const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
-  const deeplink = buildCcSwitchImportDeeplink({
-    baseUrl,
-    platform,
-    clientType,
-    providerName,
-    apiKey: row.key,
-    usageScript
-  })
-
-  try {
-    window.open(deeplink, '_self')
-
-    // Check if the protocol handler worked by detecting if we're still focused
-    setTimeout(() => {
-      if (document.hasFocus()) {
-        // Still focused means the protocol handler likely failed
-        appStore.showError(t('keys.ccSwitchNotInstalled'))
-      }
-    }, 100)
-  } catch (error) {
+  openCcSwitchDeeplink(row, clientType, publicSettings.value, () => {
     appStore.showError(t('keys.ccSwitchNotInstalled'))
-  }
+  })
 }
 
 const handleCcsClientSelect = (clientType: CcSwitchClientType) => {
@@ -1917,17 +1012,8 @@ const closeCcsClientSelect = () => {
   pendingCcsRow.value = null
 }
 
-function formatResetTime(resetAt: string | null): string {
-  if (!resetAt) return ''
-  const diff = new Date(resetAt).getTime() - now.value.getTime()
-  if (diff <= 0) return t('keys.resetNow')
-  const days = Math.floor(diff / 86400000)
-  const hours = Math.floor((diff % 86400000) / 3600000)
-  const mins = Math.floor((diff % 3600000) / 60000)
-  if (days > 0) return `${days}d ${hours}h`
-  if (hours > 0) return `${hours}h ${mins}m`
-  return `${mins}m`
-}
+const formatResetTime = (resetAt: string | null) =>
+  formatResetCountdown(resetAt, now.value, t('keys.resetNow'))
 
 onMounted(() => {
   loadSavedColumns()
@@ -1962,7 +1048,7 @@ onUnmounted(() => {
 
 @media (min-width: 1024px) {
   .keys-page {
-    height: calc(100vh - 93px);
+    height: calc(100vh - 98px);
   }
 
   .keys-page .keys-layout {
@@ -1990,7 +1076,7 @@ onUnmounted(() => {
 }
 
 .keys-page .keys-endpoint {
-  padding: 14px 16px;
+  padding: 12px 16px;
 }
 
 .keys-page .keys-toolbar .keys-stats :deep(.ui-mini-stat:nth-child(2) .ui-mini-stat-value) {
@@ -2085,8 +1171,12 @@ onUnmounted(() => {
   background: transparent;
 }
 
+.keys-page .keys-layout :deep(table) {
+  table-layout: fixed;
+}
+
 .keys-page .keys-layout :deep(th) {
-  height: 42px;
+  height: 43px;
   padding: 0 8px;
   font-size: 11px;
   font-weight: 600;
@@ -2097,11 +1187,12 @@ onUnmounted(() => {
 }
 
 .keys-page .keys-layout :deep(td) {
-  height: 58px;
-  padding: 8px;
+  height: 59px;
+  padding: 0 8px;
   font-size: 13px;
   color: var(--foreground);
   border-bottom: 1px solid var(--border);
+  vertical-align: middle;
 }
 
 .keys-page .keys-layout :deep(th:first-child),
@@ -2114,12 +1205,67 @@ onUnmounted(() => {
   padding-right: 16px;
 }
 
+/* Fixed column widths (ratios match the 05 reference: name/key flex a bit
+   wider, the rest are content-driven fixed widths). table-layout:fixed with
+   table {width:100%} scales these proportionally to the card's inner width. */
+.keys-page .keys-layout :deep(th:nth-child(1)),
+.keys-page .keys-layout :deep(td:nth-child(1)) {
+  width: 150px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(2)),
+.keys-page .keys-layout :deep(td:nth-child(2)) {
+  width: 250px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(3)),
+.keys-page .keys-layout :deep(td:nth-child(3)) {
+  width: 96px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(4)),
+.keys-page .keys-layout :deep(td:nth-child(4)) {
+  width: 56px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(5)),
+.keys-page .keys-layout :deep(td:nth-child(5)) {
+  width: 100px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(6)),
+.keys-page .keys-layout :deep(td:nth-child(6)) {
+  width: 72px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(7)),
+.keys-page .keys-layout :deep(td:nth-child(7)) {
+  width: 88px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(8)),
+.keys-page .keys-layout :deep(td:nth-child(8)) {
+  width: 80px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(9)),
+.keys-page .keys-layout :deep(td:nth-child(9)) {
+  width: 76px;
+}
+
+.keys-page .keys-layout :deep(th:nth-child(10)),
+.keys-page .keys-layout :deep(td:nth-child(10)) {
+  width: 80px;
+}
+
 /* ---------- Cells ---------- */
 .keys-cell-name {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
   min-width: 0;
+  line-height: 1.2;
 }
 
 .keys-name-line {
@@ -2189,8 +1335,14 @@ onUnmounted(() => {
   background: color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
-.keys-group-badge {
-  height: 22px;
+.keys-group-pill {
+  max-width: 160px;
+}
+
+.keys-group-suffix {
+  flex: none;
+  opacity: 0.65;
+  font-weight: 500;
 }
 
 .keys-group-caret {
@@ -2212,8 +1364,10 @@ onUnmounted(() => {
 .keys-usage {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
   font-variant-numeric: tabular-nums;
+  line-height: 1.2;
 }
 
 .keys-usage-today {
@@ -2287,218 +1441,10 @@ onUnmounted(() => {
   height: 28px;
 }
 
-/* ---------- Dropdowns ---------- */
-.keys-row-menu {
-  position: fixed;
-  z-index: 100000030;
-  min-width: 190px;
-}
-
-.keys-group-dropdown {
-  position: fixed;
-  z-index: 100000020;
-  width: max-content;
-  min-width: 320px;
-  max-width: calc(100vw - 16px);
-  padding: 0;
-  overflow: hidden;
-}
-
-.keys-group-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.keys-group-search-input {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--foreground);
-  font-size: 13px;
-}
-
-.keys-group-options {
-  max-height: 320px;
-  overflow-y: auto;
-  padding: 6px;
-}
-
-.keys-group-option {
-  height: auto;
-  padding: 7px 10px;
-}
-
-.keys-group-empty {
-  padding: 16px 10px;
-  text-align: center;
-  font-size: 12.5px;
-  color: var(--muted);
-}
-
-/* ---------- Modals / form ---------- */
-.keys-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.keys-field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.keys-field-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.keys-toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.keys-toggle-label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.keys-mono-input :deep(.field) {
-  font-family: var(--font-mono);
-}
-
-.keys-textarea {
-  height: auto;
-  min-height: 76px;
-  padding: 8px 12px;
-  font-family: var(--font-mono);
-  font-size: 12.5px;
-  line-height: 1.6;
-  resize: vertical;
-}
-
-.keys-usage-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.keys-usage-readout,
-.keys-window-readout {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  padding: 0 12px;
-  height: 36px;
-  border-radius: var(--radius-field);
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.keys-window-usage {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.keys-usage-sep {
-  color: var(--muted);
-}
-
-.keys-expiry-presets {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.keys-current-expiry {
-  font-size: 12.5px;
-}
-
 .keys-confirm-text {
   font-size: 13px;
   color: var(--muted);
   line-height: 1.6;
-}
-
-.keys-ccs-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.keys-ccs-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-field);
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
-}
-
-.keys-ccs-name {
-  flex: 1;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.keys-ccs-key {
-  flex: none;
-}
-
-.keys-client-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.keys-client-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 16px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
-  color: var(--muted);
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.keys-client-card:hover {
-  border-color: var(--accent);
-  background: color-mix(in oklch, var(--accent) 8%, transparent);
-}
-
-.keys-client-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.keys-client-desc {
-  font-size: 11.5px;
-  color: var(--muted);
 }
 
 /* ---------- Mobile card mode (prototype 08, 390px) ---------- */
@@ -2524,117 +1470,6 @@ onUnmounted(() => {
   gap: 12px;
   padding: 14px;
   border-radius: 14px;
-}
-
-.keys-card-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.keys-card-ident {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.keys-card-name {
-  font-size: 15px;
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.keys-card-meta {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.keys-card-top-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex: none;
-}
-
-.keys-card-more {
-  width: 32px;
-  height: 32px;
-}
-
-.keys-card-key {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 40px;
-  padding: 0 6px 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: color-mix(in oklch, var(--foreground) 4%, transparent);
-}
-
-.keys-card-key-text {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  letter-spacing: 0.01em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.keys-card-key-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.keys-card-key-btn:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--foreground);
-}
-
-.keys-card-stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px;
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.keys-card-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.keys-card-stat.is-end {
-  align-items: flex-end;
-  text-align: right;
-}
-
-.keys-card-stat b {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--foreground);
-  font-variant-numeric: tabular-nums;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
 }
 
 .keys-list-fade {

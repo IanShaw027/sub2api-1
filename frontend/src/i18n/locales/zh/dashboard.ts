@@ -70,8 +70,8 @@ export default {
   // API Keys
   keys: {
     title: 'API 密钥',
-    description: '管理您的 API 密钥和访问令牌',
-    searchPlaceholder: '搜索名称或Key...',
+    description: '创建和管理用于调用网关的密钥，按分组选择模型池与限额',
+    searchPlaceholder: '搜索密钥名称',
     endpoints: {
       title: 'API 端点',
       default: '默认',
@@ -81,12 +81,16 @@ export default {
       copiedHint: '已复制到剪贴板',
       clickToCopy: '点击可复制此端点',
       speedTest: '测速',
+      titleAnthropic: 'API 端点 · Anthropic 协议',
+      titleCustomPrefix: 'API 端点 · ',
+      anthropicDesc: 'Claude Code、Cline 等使用 /v1/messages',
+      openaiDesc: 'Codex CLI、Cursor、OpenAI SDK 使用 /chat/completions',
     },
     filters: {
       toggle: '筛选',
     },
-    sortedByPrefix: '排序方式：',
-    sortedBySuffix: '',
+    sortedByPrefix: '按 ',
+    sortedBySuffix: ' 排序',
     usageQuery: '用量查询',
     moreActions: '更多操作',
     use: '使用',
@@ -114,7 +118,7 @@ export default {
     created: '创建时间',
     copyToClipboard: '复制到剪贴板',
     copied: '已复制！',
-    importToCcSwitch: '导入到 CCS',
+    importToCcSwitch: '导入到 CC Switch',
     enable: '启用',
     disable: '禁用',
     nameLabel: '名称',
@@ -303,12 +307,19 @@ export default {
     expiresAt: '过期时间',
     noExpiration: '永久有效',
     status: {
-      active: '活跃',
+      active: '启用',
       inactive: '已停用',
       disabled: '已禁用',
       quota_exhausted: '额度耗尽',
       expired: '已过期'
-    }
+    },
+    miniStats: {
+      total: '密钥总数',
+      active: '启用中',
+      todaySpend: '今日消费',
+    },
+    nameIdColumn: '名称 / ID',
+    usageColumnHeader: '用量 今日 · 累计',
   },
 
   // Usage
@@ -992,7 +1003,7 @@ export default {
     showing: '显示',
     to: '至',
     of: '共',
-    results: '条结果',
+    results: '条',
     page: '页',
     pageOf: '第 {page} / {total} 页',
     previous: '上一页',

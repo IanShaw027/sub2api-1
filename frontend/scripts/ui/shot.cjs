@@ -58,13 +58,19 @@ async function getTarget() {
     const s=document.createElement('style');s.textContent='vite-plugin-checker-error-overlay,vite-error-overlay{display:none!important}';document.head.appendChild(s);
   ` })
   await sleep(600)
+  // Optional probe: UI_SHOTS_PROBE='sel1|sel2' prints top/left/height of the first match of each selector.
+  if (process.env.UI_SHOTS_PROBE) {
+    const sels = JSON.stringify(process.env.UI_SHOTS_PROBE.split('|'))
+    const pr = await send('Runtime.evaluate', { returnByValue: true, expression: `(${sels}).map(s=>{const e=document.querySelector(s);if(!e)return s+': (none)';const r=e.getBoundingClientRect();return s+': top='+Math.round(r.top)+' left='+Math.round(r.left)+' h='+Math.round(r.height)+' w='+Math.round(r.width)}).join(' ; ')` })
+    const v = pr.result && pr.result.result && pr.result.result.value; console.log(v !== undefined ? v : JSON.stringify(pr).slice(0, 600))
+  }
   const params = { format: 'png' }
   if (full === '1') params.captureBeyondViewport = true
   const r = await send('Page.captureScreenshot', params)
   if (!r.result || !r.result.data) { console.error('capture failed', JSON.stringify(r).slice(0, 400)); process.exit(1) }
   fs.writeFileSync(OUT, Buffer.from(r.result.data, 'base64'))
   ws.close(); chrome.kill()
-  fs.rmSync(profile, { recursive: true, force: true })
+  try { fs.rmSync(profile, { recursive: true, force: true }) } catch {}
   console.log(OUT)
   process.exit(0)
 })().catch(e => { console.error(e); chrome.kill(); process.exit(1) })

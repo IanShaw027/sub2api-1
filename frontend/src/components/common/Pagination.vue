@@ -245,6 +245,13 @@ const submitJump = () => {
   border-top: 1px solid var(--border);
 }
 
+/* Prototype footer is 51px (10 + 30 + 10 + 1 border): the page-size pill shrinks to 30px here. */
+.page-size-select :deep(.select-trigger) {
+  height: 30px;
+  min-height: 30px;
+  font-size: 12px;
+}
+
 .pagination-info {
   font-size: 12.5px;
   color: var(--muted);

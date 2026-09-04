@@ -82,12 +82,12 @@
 
 ## 7. 管理员仪表盘 · 原型 03（1 个代理）
 
-- [ ] 7.1 补齐 `admin.dashboard.*` 全部新文案键（zh + en）：heroGreeting* / heroTitle* / heroSummary / heroIssues / viewOpsMonitor / handleAbnormalAccounts / serviceStatus / liveRpm / liveTpm / todayNew / activeRatio / abnormalCount / statusError / cacheHitRate / requestTrend / trendSubtitle / costShort / platformHealth / recentEvents / noPlatformHealth* / noEvents*；验证截图无原始键名、`i18n-diff` 为 0
-- [ ] 7.2 Hero 像素对齐参考图 03：右列三张 `.glass-inset` 不溢出（`grid 1.25fr 1fr`、min-width 0）、点阵纹理 + 双径向光；验证 diff < 1%
-- [ ] 7.3 请求趋势卡：14 根 CSS 柱（高 150、r 6 6 3 3、末柱实心、其余渐变、10.5 刻度），分段 请求 / Token / 费用 切换数据源；验证截图与参考图一致、`DashboardView.spec` 通过
-- [ ] 7.4 8 张 `StatCard`（4 列、增量药丸、sparkline 来自趋势端点，无序列则最近 12 点平线）；验证截图
-- [ ] 7.5 平台健康（`120px 1fr 150px`、22 底板、8px 三段堆叠条）与最近事件（`44px 8px 1fr`）绑定真实字段，无数据用同风格空态；验证截图
-- [ ] 7.6 保留原有功能（日期范围、用户 / 密钥消费明细弹层、刷新、Top 12 用户趋势、快捷操作）并迁到 `.filter-pill / segmented / UiModal`；390 用 08 画板仪表盘变体；验证亮 / 暗 / 390 截图、`anchor-diff` 无丢失；提交 `feat(glass): admin dashboard (tasks 7.1–7.6)`
+- [x] 7.1 补齐 `admin.dashboard.*` 全部新文案键（zh + en）：heroGreeting* / heroTitle* / heroSummary / heroIssues / viewOpsMonitor / handleAbnormalAccounts / serviceStatus / liveRpm / liveTpm / todayNew / activeRatio / abnormalCount / statusError / cacheHitRate / requestTrend / trendSubtitle / costShort / platformHealth / recentEvents / noPlatformHealth* / noEvents*；验证截图无原始键名、`i18n-diff` 为 0
+- [x] 7.2 Hero 像素对齐参考图 03：右列三张 `.glass-inset` 不溢出（`grid 1.25fr 1fr`、min-width 0）、点阵纹理 + 双径向光；验证 diff < 1%
+- [x] 7.3 请求趋势卡：14 根 CSS 柱（高 150、r 6 6 3 3、末柱实心、其余渐变、10.5 刻度），分段 请求 / Token / 费用 切换数据源；验证截图与参考图一致、`DashboardView.spec` 通过
+- [x] 7.4 8 张 `StatCard`（4 列、增量药丸、sparkline 来自趋势端点，无序列则最近 12 点平线）；验证截图
+- [x] 7.5 平台健康（`120px 1fr 150px`、22 底板、8px 三段堆叠条）与最近事件（`44px 8px 1fr`）绑定真实字段，无数据用同风格空态；验证截图
+- [x] 7.6 保留原有功能（日期范围、用户 / 密钥消费明细弹层、刷新、Top 12 用户趋势、快捷操作）并迁到 `.filter-pill / segmented / UiModal`；390 用 08 画板仪表盘变体；验证亮 / 暗 / 390 截图、`anchor-diff` 无丢失；提交 `feat(glass): admin dashboard (tasks 7.1–7.6)`
 
 ## 8. 账号管理 · 原型 04（2 个代理：A 页面与表格；B 弹层）
 
@@ -102,12 +102,12 @@
 
 ## 9. API 密钥 · 原型 05（1 个代理）
 
-- [ ] 9.1 顶部 `1.2fr 1.2fr 1fr`：两张 `EndpointCard`（api_base_url + custom_endpoints，> 2 个时自适应网格）+ `MiniStatCard`；验证截图与参考图 05 一致
-- [ ] 9.2 页头：用量查询 / 导入到 CC Switch（`hide_ccs_import_button`）/ 创建密钥（`data-tour="keys-create-btn"`）；筛选行 260 搜索 + 分组 pill + 状态 `SegmentedControl` + 排序文案；列设置按钮移到筛选行右端；验证截图
-- [ ] 9.3 表格列按 spec：名称/ID、`.code` 密钥 + 眼睛 / 复制 26px、分组 `.tag-accent`、并发 mono、用量今日 / 累计、速率限制、过期时间三色、最近使用、状态、`使用` 文字按钮 + `…` 菜单（编辑 / 启停 / 删除 / 重置配额 / 重置速率 / 查看用量）；行 58；验证 `KeysView.spec` 全绿、`anchor-diff` 无丢失、1440 截图 diff < 1%
-- [ ] 9.4 弹层：创建 / 编辑密钥、使用密钥（`UseKeyModal`）、删除确认、CC Switch 导入 → `UiModal` + `SettingRow`；验证 `UseKeyModal.spec` 全绿、打开态截图
-- [ ] 9.5 390 卡片模式按 08 画板（3 迷你统计 → 44 搜索 + 筛选 → `.chip-filter` → 密钥卡 → 52px FAB + `ListFade`）；验证 390 亮 / 暗截图 diff < 1%
-- [ ] 9.6 提交 `feat(glass): api keys page (tasks 9.1–9.5)`
+- [x] 9.1 顶部 `1.2fr 1.2fr 1fr`：两张 `EndpointCard`（api_base_url + custom_endpoints，> 2 个时自适应网格）+ `MiniStatCard`；验证截图与参考图 05 一致
+- [x] 9.2 页头：用量查询 / 导入到 CC Switch（`hide_ccs_import_button`）/ 创建密钥（`data-tour="keys-create-btn"`）；筛选行 260 搜索 + 分组 pill + 状态 `SegmentedControl` + 排序文案；列设置按钮移到筛选行右端；验证截图
+- [x] 9.3 表格列按 spec：名称/ID、`.code` 密钥 + 眼睛 / 复制 26px、分组 `.tag-accent`、并发 mono、用量今日 / 累计、速率限制、过期时间三色、最近使用、状态、`使用` 文字按钮 + `…` 菜单（编辑 / 启停 / 删除 / 重置配额 / 重置速率 / 查看用量）；行 58；验证 `KeysView.spec` 全绿、`anchor-diff` 无丢失、1440 截图 diff < 1%
+- [x] 9.4 弹层：创建 / 编辑密钥、使用密钥（`UseKeyModal`）、删除确认、CC Switch 导入 → `UiModal` + `SettingRow`；验证 `UseKeyModal.spec` 全绿、打开态截图
+- [x] 9.5 390 卡片模式按 08 画板（3 迷你统计 → 44 搜索 + 筛选 → `.chip-filter` → 密钥卡 → 52px FAB + `ListFade`）；验证 390 亮 / 暗截图 diff < 1%
+- [x] 9.6 提交 `feat(glass): api keys page (tasks 9.1–9.5)`
 
 ## 10. 系统设置 · 原型 06（2 个代理：A 通用/条款/功能/安全/用户默认；B 网关/支付/邮件/备份 + 子弹层）
 

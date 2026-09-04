@@ -70,8 +70,8 @@ export default {
   // API Keys
   keys: {
     title: 'API Keys',
-    description: 'Manage your API keys and access tokens',
-    searchPlaceholder: 'Search name or key...',
+    description: 'Create and manage keys for calling the gateway, choosing model pools and limits by group',
+    searchPlaceholder: 'Search key name',
     endpoints: {
       title: 'API Endpoints',
       default: 'Default',
@@ -81,11 +81,15 @@ export default {
       copiedHint: 'Copied to clipboard',
       clickToCopy: 'Click to copy this endpoint',
       speedTest: 'Speed Test',
+      titleAnthropic: 'API Endpoint · Anthropic Protocol',
+      titleCustomPrefix: 'API Endpoint · ',
+      anthropicDesc: 'Claude Code, Cline, etc. use /v1/messages',
+      openaiDesc: 'Codex CLI, Cursor, OpenAI SDK use /chat/completions',
     },
     filters: {
       toggle: 'Filters',
     },
-    sortedByPrefix: 'Sorted by',
+    sortedByPrefix: 'Sorted by ',
     sortedBySuffix: '',
     usageQuery: 'Usage Query',
     moreActions: 'More actions',
@@ -114,7 +118,7 @@ export default {
     created: 'Created',
     copyToClipboard: 'Copy to clipboard',
     copied: 'Copied!',
-    importToCcSwitch: 'Import to CCS',
+    importToCcSwitch: 'Import to CC Switch',
     enable: 'Enable',
     disable: 'Disable',
     nameLabel: 'Name',
@@ -304,6 +308,13 @@ export default {
       quota_exhausted: 'Quota Exhausted',
       expired: 'Expired',
     },
+    miniStats: {
+      total: 'Total Keys',
+      active: 'Active',
+      todaySpend: 'Today Spend',
+    },
+    nameIdColumn: 'Name / ID',
+    usageColumnHeader: 'Usage Today · Total',
   },
 
   // Usage

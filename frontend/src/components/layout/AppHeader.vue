@@ -442,14 +442,14 @@ onBeforeUnmount(() => {
   border-radius: 12px;
 }
 
-/* ---------- Desktop (≥768) · 60px, transparent ---------- */
+/* ---------- Desktop (≥768) · 66px box (60 + 6 top padding, as in the prototype), transparent ---------- */
 .topbar {
   display: none;
-  height: 56px;
+  height: 66px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 0 24px 0 20px;
+  padding: 6px 24px 0 20px;
 }
 
 .topbar-crumbs {

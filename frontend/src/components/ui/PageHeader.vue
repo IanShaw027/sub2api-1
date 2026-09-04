@@ -56,7 +56,7 @@ const descriptionText = computed(() => props.description || props.subtitle)
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.2;
+  line-height: 35px; /* prototype: line-height normal → 35px box */
   color: var(--foreground);
 }
 
@@ -80,6 +80,7 @@ const descriptionText = computed(() => props.description || props.subtitle)
 .ui-page-header-description {
   margin: 4px 0 0;
   font-size: 13px;
+  line-height: 19px; /* prototype: line-height normal → 19px box */
   color: var(--muted);
 }
 

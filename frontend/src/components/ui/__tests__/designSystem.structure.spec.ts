@@ -59,8 +59,8 @@ describe('surfaces', () => {
     expect(styleCss).toContain('.filter-count {')
   })
 
-  it('summary-chip is a 64px glass chip with a tone dot and tabular value', () => {
-    expect(styleCss).toMatch(/\.summary-chip\s*\{[^}]*height:\s*64px/)
+  it('summary-chip is a 53px glass chip with a tone dot and tabular value', () => {
+    expect(styleCss).toMatch(/\.summary-chip\s*\{[^}]*height:\s*53px/)
     expect(styleCss).toMatch(/\.summary-chip-dot\s*\{[^}]*width:\s*6px/)
     expect(styleCss).toMatch(/\.summary-chip-value\s*\{[^}]*font-weight:\s*800/)
   })
