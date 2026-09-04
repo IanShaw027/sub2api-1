@@ -38,7 +38,7 @@
  <template v-else>
  <!-- Amount -->
  <div class="glass-card overflow-hidden">
-        <div class="bg-gradient-to-br from-[#635bff] to-[#4f46e5] px-6 py-5 text-center">
+        <div class="px-6 py-5 text-center" :style="{ background: STRIPE_BRAND_GRADIENT }">
  <p class="text-sm font-medium text-indigo-200">{{ t('payment.actualPay') }}</p>
  <p class="mt-1 text-3xl font-bold text-white">{{ paymentAmountSymbol }}{{ payAmount.toFixed(2) }}</p>
  </div>
@@ -75,6 +75,7 @@ import { currencySymbol } from '@/components/payment/currency'
 import type { Stripe, StripeElements } from '@stripe/stripe-js'
 import Icon from '@/components/icons/Icon.vue'
 import { useTheme } from '@/composables/useTheme'
+import { STRIPE_BRAND_GRADIENT } from '@/components/payment/paymentBrandColors'
 
 // Stripe payment methods that open a popup (redirect or QR code)
 const POPUP_METHODS = new Set(['alipay', 'wechat_pay'])

@@ -918,6 +918,55 @@ const MOCK_AUDIT_LOGS = Array.from({ length: 16 }, (_, i) => {
   }
 })
 
+const PAY_TYPES = ['alipay', 'wxpay', 'stripe', 'easypay']
+const ORDER_STATUSES = ['COMPLETED', 'PAID', 'PENDING', 'COMPLETED', 'REFUNDED', 'EXPIRED', 'COMPLETED', 'REFUND_REQUESTED', 'CANCELLED', 'FAILED']
+const MOCK_PAY_ORDERS = Array.from({ length: 18 }, (_, i) => {
+  const status = ORDER_STATUSES[i % ORDER_STATUSES.length]
+  const amount = [20, 50, 100, 200, 30, 500][i % 6]
+  const created = +NOW() - (i + 1) * 3600e3 * 4
+  const paid = ['COMPLETED', 'PAID', 'REFUNDED', 'REFUND_REQUESTED'].includes(status)
+  return {
+    id: 7001 + i, user_id: 2 + (i % 5), amount, pay_amount: Number((amount * (i % 4 === 3 ? 7.2 : 1)).toFixed(2)), currency: i % 4 === 3 ? 'CNY' : 'USD', fee_rate: 0.006,
+    payment_type: PAY_TYPES[i % PAY_TYPES.length], out_trade_no: 'OT' + (20260900 + i) + 'X' + (i * 13).toString(36).toUpperCase(),
+    status, order_type: i % 3 === 2 ? 'subscription' : 'balance', created_at: iso(created), expires_at: iso(created + 1800e3),
+    paid_at: paid ? iso(created + 300e3) : undefined, completed_at: status === 'COMPLETED' ? iso(created + 320e3) : undefined,
+    refund_amount: status === 'REFUNDED' ? amount : 0, refund_reason: status === 'REFUNDED' ? '用户申请退款' : undefined,
+    refund_requested_at: status === 'REFUND_REQUESTED' ? iso(created + 7200e3) : undefined, refund_request_reason: status === 'REFUND_REQUESTED' ? '误操作充值' : undefined,
+    plan_id: i % 3 === 2 ? 1 + (i % 2) : undefined, provider_instance_id: undefined,
+  }
+})
+const MOCK_PAY_PLANS = [
+  { id: 1, group_id: 2, group_platform: 'anthropic', group_name: 'Claude Max', rate_multiplier: 1.2, peak_rate_enabled: true, peak_start: '09:00', peak_end: '18:00', peak_rate_multiplier: 1.5, daily_limit_usd: 20, weekly_limit_usd: null, monthly_limit_usd: 300, supported_model_scopes: ['claude'], name: 'Claude Max 月付', description: '高并发订阅池，含长上下文', price: 39, original_price: 49, currency: 'USD', validity_days: 30, validity_unit: 'day', features: ['5 倍并发', '长上下文', '优先路由'], for_sale: true, sort_order: 1 },
+  { id: 2, group_id: 1, group_platform: 'anthropic', group_name: '默认分组', rate_multiplier: 1, peak_rate_enabled: false, daily_limit_usd: 5, weekly_limit_usd: 30, monthly_limit_usd: 100, supported_model_scopes: ['claude', 'openai'], name: '标准包 季付', description: '标准分组 90 天', price: 99, currency: 'USD', validity_days: 90, validity_unit: 'day', features: ['标准并发', '全模型'], for_sale: true, sort_order: 2 },
+  { id: 3, group_id: 1, group_platform: 'anthropic', group_name: '默认分组', rate_multiplier: 1, peak_rate_enabled: false, daily_limit_usd: null, weekly_limit_usd: null, monthly_limit_usd: null, supported_model_scopes: [], name: '体验周卡', description: '7 天体验（已下架）', price: 5, currency: 'USD', validity_days: 7, validity_unit: 'day', features: ['体验'], for_sale: false, sort_order: 3 },
+]
+const MOCK_INVOICES = Array.from({ length: 7 }, (_, i) => {
+  const st = ['APPLIED', 'ISSUED', 'APPLIED', 'CANCELLED', 'ISSUED', 'APPLIED', 'ISSUED'][i]
+  const created = +NOW() - (i + 1) * 864e5 * 2
+  return {
+    id: 401 + i, user_id: 2 + (i % 4), user_email: ['alice', 'bob', 'carol', 'dave'][i % 4] + '@example.com', status: st, unread_by_admin: i < 2,
+    invoice_amount: [120, 300, 50, 200, 1500, 80, 640][i], currency: 'USD', order_count: 1 + (i % 3),
+    title: ['星河科技有限公司', '北极光网络', '青云数据', '个人', '海岸线软件', '个人', '晨光教育'][i], tax_number: i % 3 === 3 ? '' : '9131000' + (10000000 + i * 7919), email: 'finance' + i + '@example.com',
+    contact_name: ['王芳', '李强', '张伟', '刘洋', '陈静', '赵磊', '孙敏'][i], contact_phone: '138' + String(10000000 + i * 12345).padStart(8, '0'), request_note: i % 2 ? '请开增值税专用发票' : '',
+    file_media_id: st === 'ISSUED' ? 900 + i : undefined, file_name: st === 'ISSUED' ? 'invoice-' + (401 + i) + '.pdf' : undefined, file_mime_type: st === 'ISSUED' ? 'application/pdf' : undefined, file_size_bytes: st === 'ISSUED' ? 182_000 + i * 1000 : undefined, has_file: st === 'ISSUED',
+    applied_at: iso(created), cancelled_at: st === 'CANCELLED' ? iso(created + 864e5) : undefined, issued_at: st === 'ISSUED' ? iso(created + 864e5 * 1.5) : undefined, created_at: iso(created), updated_at: iso(created + 3600e3),
+    orders: Array.from({ length: 1 + (i % 3) }, (_, k) => ({ order_id: 7001 + i + k, pay_amount_snapshot: 50 + k * 20, currency: 'USD', out_trade_no: 'OT' + (20260900 + i + k) + 'X', payment_type: PAY_TYPES[k % PAY_TYPES.length], is_active: true, created_at: iso(created - 864e5) })),
+  }
+})
+const paymentDashboard = (days) => {
+  const n = Math.max(1, Math.min(90, Number(days) || 30))
+  const daily_series = Array.from({ length: n }, (_, i) => { const d = new Date(+NOW() - (n - 1 - i) * 864e5); const usd = 180 + Math.round(120 * Math.abs(Math.sin(i / 2.3))) + (i % 7 === 5 ? 260 : 0); return { date: d.toISOString().slice(0, 10), amount: { USD: usd, CNY: Math.round(usd * 1.4) }, count: 4 + (i % 9) } })
+  const sum = (k) => daily_series.reduce((a, d) => a + d.amount[k], 0)
+  const count = daily_series.reduce((a, d) => a + d.count, 0)
+  return {
+    today_amount: { USD: daily_series[n - 1].amount.USD, CNY: daily_series[n - 1].amount.CNY }, total_amount: { USD: sum('USD'), CNY: sum('CNY') },
+    today_count: daily_series[n - 1].count, total_count: count, avg_amount: { USD: Number((sum('USD') / count).toFixed(2)), CNY: Number((sum('CNY') / count).toFixed(2)) },
+    daily_series,
+    payment_methods: [{ type: 'alipay', amount: { USD: Math.round(sum('USD') * 0.42), CNY: Math.round(sum('CNY') * 0.6) }, count: Math.round(count * 0.45) }, { type: 'wxpay', amount: { USD: Math.round(sum('USD') * 0.28), CNY: Math.round(sum('CNY') * 0.4) }, count: Math.round(count * 0.3) }, { type: 'stripe', amount: { USD: Math.round(sum('USD') * 0.3), CNY: 0 }, count: Math.round(count * 0.25) }],
+    top_users: { USD: [{ user_id: 2, email: 'alice@example.com', amount: 1240 }, { user_id: 5, email: 'dave@example.com', amount: 860 }, { user_id: 3, email: 'bob@example.com', amount: 540 }, { user_id: 4, email: 'carol@example.com', amount: 320 }, { user_id: 6, email: 'erin@example.com', amount: 180 }], CNY: [{ user_id: 7, email: 'frank@example.com', amount: 2400 }, { user_id: 2, email: 'alice@example.com', amount: 900 }] },
+  }
+}
+
 const emptyPage = (query) => ({ items: [], total: 0, page: Number(query.get('page') || 1), page_size: Number(query.get('page_size') || 20), pages: 0 })
 
 const rangeDays = (query) => {
@@ -1133,9 +1182,24 @@ const routes = {
   'GET /api/v1/admin/payment/config': () => ADMIN_PAYMENT_CONFIG,
   'GET /api/v1/admin/payment/providers': () => [],
   'GET /api/v1/admin/payment/channels': () => [],
-  'GET /api/v1/admin/payment/plans': () => [],
+  'GET /api/v1/admin/payment/plans': () => MOCK_PAY_PLANS,
   'GET /api/v1/admin/payment/invoices/unread-count': () => ({ count: 2 }),
-  'GET /api/v1/admin/payment/dashboard': () => ({ total_orders: 4_120, paid_orders: 3_871, total_amount: 186_300, today_orders: 31, today_amount: 1_640, pending_orders: 4, refund_amount: 1_120 }),
+  'GET /api/v1/admin/payment/dashboard': (ctx) => paymentDashboard(ctx.query.get('days')),
+  'GET /api/v1/admin/payment/orders': (ctx) => {
+    let items = MOCK_PAY_ORDERS
+    const st = ctx.query.get('status'); const pt = ctx.query.get('payment_type'); const ot = ctx.query.get('order_type'); const q = (ctx.query.get('search') || ctx.query.get('out_trade_no') || '').toLowerCase()
+    if (st) items = items.filter((o) => o.status === st)
+    if (pt) items = items.filter((o) => o.payment_type === pt)
+    if (ot) items = items.filter((o) => o.order_type === ot)
+    if (q) items = items.filter((o) => o.out_trade_no.toLowerCase().includes(q))
+    return paginate(items, ctx.query)
+  },
+  'GET /api/v1/admin/payment/invoices': (ctx) => {
+    let items = MOCK_INVOICES
+    const st = ctx.query.get('status')
+    if (st) items = items.filter((o) => o.status === st)
+    return paginate(items, ctx.query)
+  },
   'GET /api/v1/admin/tickets/unread-count': () => ({ count: 3 }),
   'GET /api/v1/admin/tickets/reply-templates': () => MOCK_TICKET_TEMPLATES,
   'GET /api/v1/admin/tickets': (ctx) => {
@@ -1190,6 +1254,8 @@ const routes = {
 
 // Pattern routes for parameterized paths
 const patternRoutes = [
+  [/^GET \/api\/v1\/admin\/payment\/orders\/(\d+)$/, (ctx, m) => MOCK_PAY_ORDERS.find((o) => o.id === Number(m[1])) || MOCK_PAY_ORDERS[0]],
+  [/^GET \/api\/v1\/admin\/payment\/invoices\/(\d+)$/, (ctx, m) => MOCK_INVOICES.find((o) => o.id === Number(m[1])) || MOCK_INVOICES[0]],
   [/^GET \/api\/v1\/admin\/tickets\/(\d+)$/, (ctx, m) => MOCK_TICKETS.find((t) => t.id === Number(m[1])) || MOCK_TICKETS[0]],
   [/^GET \/api\/v1\/admin\/tickets\/(\d+)\/messages$/, (ctx, m) => ticketMessages(MOCK_TICKETS.find((t) => t.id === Number(m[1])) || MOCK_TICKETS[0])],
   [/^GET \/api\/v1\/admin\/audit-logs\/(\d+)$/, (ctx, m) => MOCK_AUDIT_LOGS.find((l) => l.id === Number(m[1])) || MOCK_AUDIT_LOGS[0]],

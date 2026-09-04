@@ -561,6 +561,7 @@ export default {
       paymentDistribution: 'Payment Distribution',
       colUser: 'User',
       topUsers: 'Top Users',
+      quickActions: 'Quick Actions',
       noData: 'No data',
       days: 'days',
       weeks: 'weeks',

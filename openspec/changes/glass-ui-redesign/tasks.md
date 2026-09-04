@@ -139,11 +139,11 @@
 - [x] 11.9 `/admin/redeem`（在 0.1 基础上完成 ListPage 配方、生成 / 批量更新 / 导出弹层）；验证截图 + `RedeemView*.spec`
 - [x] 11.10 `/admin/promo-codes`（`PromoCodesView.vue`）；验证同上
 - [x] 11.11 `/admin/affiliates/{invites,rebates,transfers}`（3 视图 + `AdminAffiliateRecordsTable.vue`）；验证同上
-- [ ] 11.12 `components/admin/payment/*` 与 `components/payment/*` 中管理员侧组件令牌化；验证 spec
-- [ ] 11.15 `/admin/orders`（有数据态核对：订单号 mono、用户、实付 tabular、支付方式 `.tag`、状态徽章、时间、操作；退款 / 详情弹层）；验证截图
-- [ ] 11.16 `/admin/orders/invoices`（有数据态核对 + 审批弹层）；验证截图
-- [ ] 11.17 `/admin/orders/dashboard`（`AdminPaymentDashboardView.vue`：DashboardPage 配方，chart.js 令牌化 via `chartTheme()`）；验证亮 / 暗截图
-- [ ] 11.18 `/admin/orders/plans`（`AdminPaymentPlansView.vue` + `PlanEditDialog.vue`）；验证截图；提交 `feat(glass): admin lists batch 2 (tasks 11.9–11.18)`
+- [x] 11.12 `components/admin/payment/*` 与 `components/payment/*` 中管理员侧组件令牌化；验证 spec
+- [x] 11.15 `/admin/orders`（有数据态核对：订单号 mono、用户、实付 tabular、支付方式 `.tag`、状态徽章、时间、操作；退款 / 详情弹层）；验证截图
+- [x] 11.16 `/admin/orders/invoices`（有数据态核对 + 审批弹层）；验证截图
+- [x] 11.17 `/admin/orders/dashboard`（`AdminPaymentDashboardView.vue`：DashboardPage 配方，chart.js 令牌化 via `chartTheme()`）；验证亮 / 暗截图
+- [x] 11.18 `/admin/orders/plans`（`AdminPaymentPlansView.vue` + `PlanEditDialog.vue`）；验证截图；提交 `feat(glass): admin lists batch 2 (tasks 11.9–11.18)`
 
 批次 3（工单 / 审计 / 运维）
 - [x] 11.19 `/admin/tickets`（`TicketsView.vue` + `components/admin/tickets/*`：ListPage + 分类 / 模板弹层）；验证截图 + spec

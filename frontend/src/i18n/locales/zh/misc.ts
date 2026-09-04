@@ -585,6 +585,7 @@ export default {
       paymentDistribution: '支付方式分布',
       colUser: '用户',
       topUsers: '消费排行',
+      quickActions: '快捷操作',
       noData: '暂无数据',
       days: '天',
       weeks: '周',

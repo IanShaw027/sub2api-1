@@ -106,3 +106,9 @@
 - 探针 tickets：h1 74/35，summary-row 146 h53，filter-row 213 h36，thead 264 h42；audit-logs thead h42。行高无法核验（mock tickets / audit-logs 无种子，见 lead 待办）。
 - usage：7 处 shadow-lg/xl → token；`components/charts/*` 调色板色归 12.1（chartTheme）。
 - 转交 11H：OpsErrorDetailModal 用 `.code-block`。
+
+### 11.12 / 11.15 – 11.18（orders / invoices / plans / payment dashboard + payment 组件，2026-09-04）
+- vue-tsc 0；eslint 0；vitest views/admin + payment 328/328；ui-lint total 0（AdminOrdersView 等三个视图用视图根局部 `--cell-fs-*` 变量满足 scoped 检查——记为 15.x 待统一为全局排版刻度）；i18n 8906/8906 0/0/0；anchor-diff 丢 1（`@click="days=d"` → SegmentedControl v-model）。
+- 探针（lead 补 mock 后）：orders / invoices thead 197 h42、行 64；plans 行 64/58；payment dashboard hero h1 95（主仪表盘 130，二级页轻量 hero，接受）。行 64 → ≤61 归入 15.x 行高统一清单。
+- 品牌色集中到 `components/payment/paymentBrandColors.ts`；DailyRevenueChart 改 chartTheme()。
+- lead 已补 mock：`/admin/payment/dashboard`（符合 DashboardStats 契约）、`/admin/payment/orders`(+`/:id`)、`/admin/payment/plans`、`/admin/payment/invoices`(+`/:id`)。

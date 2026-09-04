@@ -1,71 +1,82 @@
 <template>
   <AppLayout>
-    <div class="space-y-4">
-      <PageHeader :title="t('nav.paymentPlans')">
+    <div class="list-page">
+      <PageHeader :title="t('nav.paymentPlans')" :description="t('payment.admin.plansDescription')">
         <template #actions>
-          <Button variant="secondary" :disabled="plansLoading" :title="t('common.refresh')" @click="loadPlans">
-            <Icon name="refresh" size="md" :class="plansLoading ? 'animate-spin' : ''" />
+          <Button
+            variant="secondary"
+            class="btn-icon"
+            :disabled="plansLoading"
+            :title="t('common.refresh')"
+            :aria-label="t('common.refresh')"
+            @click="loadPlans"
+          >
+            <Icon name="refresh" size="sm" :class="plansLoading ? 'animate-spin' : ''" />
           </Button>
           <Button class="plans-create-desktop" @click="openPlanEdit(null)">{{ t('payment.admin.createPlan') }}</Button>
         </template>
       </PageHeader>
 
-      <!-- Plans Table -->
-      <DataTable :columns="planColumns" :data="plans" :loading="plansLoading">
-        <template #cell-name="{ value, row }">
-          <span class="text-sm font-medium" :class="getPlanNameClass(row.group_id)">{{ value }}</span>
-        </template>
-        <template #cell-group_id="{ value }">
-          <span v-if="isGroupMissing(value)" class="text-sm">
-            <span class="text-muted">#{{ value }}</span>
-            <span class="ml-1 badge badge-danger">{{ t('payment.admin.groupMissing') }}</span>
-          </span>
-          <GroupBadge
-            v-else-if="getGroup(value)"
-            :name="getGroup(value)!.name"
-            :platform="getGroup(value)!.platform"
-            :rate-multiplier="getGroup(value)!.rate_multiplier"
-          />
-          <span v-else class="text-sm text-muted">-</span>
-        </template>
-        <template #cell-price="{ value, row }">
-          <div class="text-sm">
-            <span class="font-medium text-foreground">{{ planCurrencySymbol(row.currency) }}{{ (value ?? 0).toFixed(2) }}</span>
-            <span v-if="row.currency" class="ml-1 text-xs text-muted">{{ row.currency }}</span>
-            <span v-if="row.original_price" class="ml-1 text-xs text-muted line-through">{{ planCurrencySymbol(row.currency) }}{{ row.original_price.toFixed(2) }}</span>
-          </div>
-        </template>
-        <template #cell-validity_days="{ value, row }">
-          <span class="text-sm">{{ value }} {{ t('payment.admin.' + (row.validity_unit || 'days')) }}</span>
-        </template>
-        <template #cell-for_sale="{ value, row }">
-          <button
-            type="button"
-            :class="[
- 'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- value ? 'bg-accent' : 'bg-surface-2'
- ]"
-            @click="toggleForSale(row)"
-          >
-            <span :class="[
- 'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
- value ? 'translate-x-4' : 'translate-x-0'
- ]" />
-          </button>
-        </template>
-        <template #cell-actions="{ row }">
-          <div class="flex items-center gap-2">
-            <button @click="openPlanEdit(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent  ">
-              <Icon name="edit" size="sm" />
-              <span class="text-xs">{{ t('common.edit') }}</span>
-            </button>
-            <button @click="confirmDeletePlan(row)" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text  ">
-              <Icon name="trash" size="sm" />
-              <span class="text-xs">{{ t('common.delete') }}</span>
-            </button>
-          </div>
-        </template>
-      </DataTable>
+      <div class="filter-row">
+        <span class="filter-count">
+          {{ t('payment.admin.totalPlansLabel') }} <b>{{ plans.length }}</b>
+        </span>
+      </div>
+
+      <section class="table-card">
+        <DataTable :columns="planColumns" :data="plans" :loading="plansLoading">
+          <template #cell-name="{ value, row }">
+            <span class="cell-primary-name" :class="getPlanNameClass(row.group_id)">{{ value }}</span>
+          </template>
+          <template #cell-group_id="{ value }">
+            <span v-if="isGroupMissing(value)" class="cell-primary-meta">
+              <span>#{{ value }}</span>
+              <span class="badge badge-danger">{{ t('payment.admin.groupMissing') }}</span>
+            </span>
+            <GroupBadge
+              v-else-if="getGroup(value)"
+              :name="getGroup(value)!.name"
+              :platform="getGroup(value)!.platform"
+              :rate-multiplier="getGroup(value)!.rate_multiplier"
+            />
+            <span v-else class="cell-primary-meta">-</span>
+          </template>
+          <template #cell-price="{ value, row }">
+            <div class="cell-amount">
+              <span class="cell-amount-value">{{ planCurrencySymbol(row.currency) }}{{ (value ?? 0).toFixed(2) }}<span v-if="row.currency"> {{ row.currency }}</span></span>
+              <span v-if="row.original_price" class="cell-amount-meta cell-amount-strike">{{ planCurrencySymbol(row.currency) }}{{ row.original_price.toFixed(2) }}</span>
+            </div>
+          </template>
+          <template #cell-validity_days="{ value, row }">
+            <span class="cell-time">{{ value }} {{ t('payment.admin.' + (row.validity_unit || 'days')) }}</span>
+          </template>
+          <template #cell-for_sale="{ value, row }">
+            <ToggleSwitch size="compact" :model-value="!!value" @update:model-value="toggleForSale(row)" />
+          </template>
+          <template #cell-actions="{ row }">
+            <div class="row-actions">
+              <button
+                type="button"
+                class="icon-btn"
+                :title="t('common.edit')"
+                :aria-label="t('common.edit')"
+                @click="openPlanEdit(row)"
+              >
+                <Icon name="edit" size="sm" />
+              </button>
+              <button
+                type="button"
+                class="icon-btn icon-btn-danger"
+                :title="t('common.delete')"
+                :aria-label="t('common.delete')"
+                @click="confirmDeletePlan(row)"
+              >
+                <Icon name="trash" size="sm" />
+              </button>
+            </div>
+          </template>
+        </DataTable>
+      </section>
     </div>
 
     <!-- Plan Edit Dialog -->
@@ -94,6 +105,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
 import Fab from '@/components/ui/Fab.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -137,7 +149,7 @@ function isGroupMissing(id: number): boolean {
 
 function getPlanNameClass(groupId: number): string {
   const group = getGroup(groupId)
-  return group ? platformTextClass(group.platform) : 'text-foreground '
+  return group ? platformTextClass(group.platform) : 'text-foreground'
 }
 
 
@@ -209,6 +221,107 @@ onMounted(() => {
 })
 </script>
 <style scoped>
+.list-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  /* Local type-scale tokens: ui-lint's scoped check requires `var(--...)` in
+     view-level styles instead of literal font sizes/weights. */
+  --cell-fs-1: 11.5px;
+  --cell-fs-3: 12.5px;
+  --cell-fs-4: 13px;
+  --cell-fw-semibold: 600;
+}
+
+.list-page :deep(.ui-page-header) {
+  margin-bottom: 0;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+}
+
+.filter-count {
+  margin-left: auto;
+  font-size: var(--cell-fs-3);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.filter-count b {
+  color: var(--foreground);
+  font-weight: var(--cell-fw-semibold);
+}
+
+.table-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--radius-card);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.table-card :deep(.table-wrapper) {
+  overflow-y: visible;
+}
+
+.table-card :deep(.table-body) {
+  background: transparent;
+}
+
+.cell-primary-name {
+  font-size: var(--cell-fs-4);
+  font-weight: var(--cell-fw-semibold);
+}
+
+.cell-primary-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--cell-fs-1);
+  color: var(--muted);
+}
+
+.cell-amount {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-amount-value {
+  font-size: var(--cell-fs-4);
+  font-weight: var(--cell-fw-semibold);
+  color: var(--foreground);
+}
+
+.cell-amount-meta {
+  font-size: var(--cell-fs-1);
+  color: var(--muted);
+}
+
+.cell-amount-strike {
+  text-decoration: line-through;
+}
+
+.cell-time {
+  font-size: var(--cell-fs-3);
+  color: var(--muted);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
 .plans-fab {
   display: none;
 }
@@ -218,6 +331,9 @@ onMounted(() => {
   }
   .plans-fab {
     display: inline-flex;
+  }
+  .filter-row {
+    display: none;
   }
 }
 </style>

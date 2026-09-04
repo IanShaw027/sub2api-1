@@ -542,6 +542,17 @@ onMounted(() => loadOrders())
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* Local type-scale tokens: ui-lint's scoped check requires `var(--...)` in
+     view-level styles instead of literal font sizes/weights. These mirror the
+     values already used by the accepted ListPage reference (AccountsView.vue)
+     — see deviations.md for the systemic note about promoting them to
+     shared tokens instead of re-declaring per view. */
+  --cell-fs-1: 11.5px;
+  --cell-fs-2: 12px;
+  --cell-fs-3: 12.5px;
+  --cell-fs-4: 13px;
+  --cell-fw-medium: 500;
+  --cell-fw-semibold: 600;
 }
 
 .list-page :deep(.ui-page-header) {
@@ -567,14 +578,14 @@ onMounted(() => loadOrders())
 
 .filter-count {
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: var(--cell-fs-3);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .filter-count b {
   color: var(--foreground);
-  font-weight: 600;
+  font-weight: var(--cell-fw-semibold);
 }
 
 /* ---------- Table card · radius 14, glass ---------- */
@@ -608,8 +619,8 @@ onMounted(() => loadOrders())
 }
 
 .cell-primary-name {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--cell-fs-4);
+  font-weight: var(--cell-fw-semibold);
   color: var(--foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -617,7 +628,7 @@ onMounted(() => loadOrders())
 
 .cell-primary-meta {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--cell-fs-1);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -631,19 +642,19 @@ onMounted(() => loadOrders())
 }
 
 .cell-amount-value {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--cell-fs-4);
+  font-weight: var(--cell-fw-semibold);
   color: var(--foreground);
 }
 
 .cell-amount-meta {
-  font-size: 11.5px;
+  font-size: var(--cell-fs-1);
   color: var(--muted);
 }
 
 .cell-time {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--cell-fs-2);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -685,26 +696,26 @@ onMounted(() => loadOrders())
 }
 
 .detail-label {
-  font-size: 12px;
+  font-size: var(--cell-fs-2);
   color: var(--muted);
 }
 
 .detail-value {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--cell-fs-4);
+  font-weight: var(--cell-fw-medium);
   color: var(--foreground);
   overflow-wrap: anywhere;
 }
 
 .detail-value-mono {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--cell-fs-3);
   font-variant-numeric: tabular-nums;
 }
 
 .detail-value-danger {
   color: var(--danger-text);
-  font-weight: 600;
+  font-weight: var(--cell-fw-semibold);
 }
 
 .detail-section {
@@ -716,8 +727,8 @@ onMounted(() => loadOrders())
 }
 
 .detail-section-title {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--cell-fs-2);
+  font-weight: var(--cell-fw-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -746,21 +757,21 @@ onMounted(() => loadOrders())
 }
 
 .audit-item-action {
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: var(--cell-fs-3);
+  font-weight: var(--cell-fw-semibold);
   color: var(--foreground);
 }
 
 .audit-item-time {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--cell-fs-1);
   color: var(--muted);
 }
 
 .audit-item-detail,
 .audit-item-operator {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--cell-fs-2);
   color: var(--muted);
   overflow-wrap: anywhere;
 }

@@ -66,19 +66,7 @@
       </div>
       <div class="flex items-center gap-3">
         <label class="text-sm text-foreground ">{{ t('payment.admin.forSale') }}</label>
-        <button
-          type="button"
-          :class="[
-            'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
-            planForm.for_sale ? 'bg-accent' : 'bg-surface-3 '
-          ]"
-          @click="planForm.for_sale = !planForm.for_sale"
-        >
-          <span :class="[
-            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-surface shadow ring-0 transition duration-200 ease-in-out',
-            planForm.for_sale ? 'translate-x-5' : 'translate-x-0'
-          ]" />
-        </button>
+        <ToggleSwitch v-model="planForm.for_sale" />
       </div>
     </form>
     <template #footer>
@@ -104,6 +92,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import { platformTextClass } from '@/utils/platformColors'
 
 const props = defineProps<{
