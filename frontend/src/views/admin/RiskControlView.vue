@@ -57,7 +57,7 @@
           <GlassCard data-test="pre-block-sync-card" class="glass-card">
             <div class="flex flex-col gap-4 border-b border-line px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 class="text-lg font-semibold text-foreground">{{ t('admin.riskControl.preBlockSyncStatus') }}</h2>
+                <h2 class="text-base font-semibold text-foreground">{{ t('admin.riskControl.preBlockSyncStatus') }}</h2>
                 <p class="mt-1 text-sm text-muted">{{ t('admin.riskControl.preBlockSyncHint') }}</p>
               </div>
               <span class="inline-flex w-fit items-center rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-muted">
@@ -84,7 +84,7 @@
           <GlassCard data-test="pre-block-api-key-load-card" class="glass-card">
             <div class="flex flex-col gap-4 border-b border-line px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 class="text-lg font-semibold text-foreground">{{ t('admin.riskControl.preBlockAPIKeyLoad') }}</h2>
+                <h2 class="text-base font-semibold text-foreground">{{ t('admin.riskControl.preBlockAPIKeyLoad') }}</h2>
                 <p class="mt-1 text-sm text-muted">
                   {{ t('admin.riskControl.preBlockAPIKeyLoadHint') }}
                 </p>
@@ -150,7 +150,7 @@
         <GlassCard v-if="showWorkerRuntimeCard">
           <div class="flex flex-col gap-4 border-b border-line px-6 py-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h2 class="text-lg font-semibold text-foreground">{{ t('admin.riskControl.workerStatus') }}</h2>
+              <h2 class="text-base font-semibold text-foreground">{{ t('admin.riskControl.workerStatus') }}</h2>
               <p class="mt-1 text-sm text-muted">{{ t('admin.riskControl.workerStatusHint') }}</p>
             </div>
             <div class="flex flex-wrap items-center gap-2 text-sm text-muted">
@@ -230,62 +230,50 @@
           <div class="flex flex-col gap-4 border-b border-line px-6 py-4">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h2 class="text-lg font-semibold text-foreground">{{ t('admin.riskControl.records') }}</h2>
+                <h2 class="text-base font-semibold text-foreground">{{ t('admin.riskControl.records') }}</h2>
                 <p class="mt-1 text-sm text-muted">{{ t('admin.riskControl.recordsHint') }}</p>
               </div>
-              <button type="button" class="btn-glass-secondary inline-flex items-center gap-2" :disabled="logsLoading" @click="loadLogs">
-                <Icon name="refresh" size="sm" :class="logsLoading ? 'animate-spin' : ''" />
-                {{ t('admin.riskControl.refresh') }}
-              </button>
-            </div>
-
-            <div class="flex flex-col gap-2 rounded-lg border border-line bg-surface-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
-              <div class="flex min-w-0 items-center gap-2 text-sm text-foreground">
-                <Icon name="filter" size="sm" class="flex-shrink-0 text-muted" />
-                <span class="font-medium">{{ t('admin.riskControl.modelFilter') }}</span>
-                <span class="truncate text-muted">{{ modelFilterSummary }}</span>
-              </div>
-              <div v-if="modelFilterPreviewModels.length > 0" class="flex flex-wrap gap-1.5">
+              <div class="flex flex-wrap items-center gap-2">
                 <span
-                  v-for="model in modelFilterPreviewModels"
-                  :key="model"
-                  class="inline-flex max-w-[180px] items-center truncate rounded-md bg-surface px-2 py-1 font-mono text-xs text-muted shadow-sm"
+                  class="inline-flex h-9 max-w-[260px] flex-shrink-0 items-center gap-1.5 truncate rounded-full border border-line bg-surface-2 px-3 text-xs text-muted"
+                  :title="modelFilterTooltip"
                 >
-                  {{ model }}
+                  <Icon name="filter" size="xs" class="flex-shrink-0" />
+                  <span class="truncate">{{ modelFilterSummary }}</span>
                 </span>
-                <span v-if="hiddenModelFilterModelCount > 0" class="inline-flex rounded-md bg-surface px-2 py-1 text-xs text-muted shadow-sm">
-                  +{{ hiddenModelFilterModelCount }}
-                </span>
+                <button type="button" class="btn-glass-secondary inline-flex items-center gap-2" :disabled="logsLoading" @click="loadLogs">
+                  <Icon name="refresh" size="sm" :class="logsLoading ? 'animate-spin' : ''" />
+                  {{ t('admin.riskControl.refresh') }}
+                </button>
               </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
-              <Select v-model="filters.result" :options="resultOptions" @change="reloadLogsFromFirstPage" />
-              <Select v-model="filters.group_id" :options="groupFilterOptions" @change="reloadLogsFromFirstPage" />
-              <Select v-model="filters.endpoint" :options="endpointOptions" @change="reloadLogsFromFirstPage" />
-              <input v-model.trim="filters.search" type="search" class="input" :placeholder="t('admin.riskControl.filters.search')" @keyup.enter="reloadLogsFromFirstPage" />
-              <input v-model="filters.from" type="datetime-local" class="input" :title="t('admin.riskControl.filters.from')" @change="reloadLogsFromFirstPage" />
-              <input v-model="filters.to" type="datetime-local" class="input" :title="t('admin.riskControl.filters.to')" @change="reloadLogsFromFirstPage" />
+            <div class="flex flex-wrap items-center gap-2">
+              <Select v-model="filters.result" class="w-[128px]" :options="resultOptions" @change="reloadLogsFromFirstPage" />
+              <Select v-model="filters.group_id" class="w-[160px]" :options="groupFilterOptions" @change="reloadLogsFromFirstPage" />
+              <Select v-model="filters.endpoint" class="w-[180px]" :options="endpointOptions" @change="reloadLogsFromFirstPage" />
+              <input v-model.trim="filters.search" type="search" class="input w-[200px]" :placeholder="t('admin.riskControl.filters.search')" @keyup.enter="reloadLogsFromFirstPage" />
+              <DateRangePicker v-model:start-date="filters.from" v-model:end-date="filters.to" @change="reloadLogsFromFirstPage" />
             </div>
           </div>
 
           <div class="overflow-x-auto">
-            <table class="min-w-full divide-y divide-line ">
+            <table class="w-full table-fixed divide-y divide-line">
               <thead class="bg-surface-2">
                 <tr>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.time') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.group') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.user') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.apiKey') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.endpoint') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.result') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.highest') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.actionMeta') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.latency') }}</th>
-                  <th class="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.input') }}</th>
+                  <th class="w-[92px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.time') }}</th>
+                  <th class="w-[84px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.group') }}</th>
+                  <th class="w-[150px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.user') }}</th>
+                  <th class="w-[104px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.apiKey') }}</th>
+                  <th class="w-[152px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.endpoint') }}</th>
+                  <th class="w-[80px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.result') }}</th>
+                  <th class="w-[104px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.highest') }}</th>
+                  <th class="w-[144px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.actionMeta') }}</th>
+                  <th class="w-[92px] px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.latency') }}</th>
+                  <th class="px-3 py-2.5 text-left text-xs font-medium uppercase tracking-wider text-muted">{{ t('admin.riskControl.table.input') }}</th>
                 </tr>
               </thead>
-              <tbody class="divide-y divide-line bg-surface ">
+              <tbody class="divide-y divide-line bg-surface">
                 <tr v-if="logsLoading">
                   <td colspan="10" class="px-5 py-12 text-center text-sm text-muted">{{ t('common.loading') }}</td>
                 </tr>
@@ -294,56 +282,78 @@
                 </tr>
                 <template v-else>
                   <tr v-for="row in logs" :key="row.id" class="hover:bg-surface-2/60">
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">{{ formatDateTime(row.created_at) }}</td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">{{ row.group_name || '-' }}</td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">
-                      <div>{{ row.user_email || '-' }}</div>
-                      <div v-if="row.user_id" class="text-xs text-muted">UID {{ row.user_id }}</div>
+                    <td class="px-3 py-3.5 align-top">
+                      <span class="cell-time" :title="formatDateTime(row.created_at)">{{ formatRelativeTime(row.created_at) }}</span>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">{{ row.api_key_name || '-' }}</td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">
-                      <div>{{ row.endpoint || '-' }}</div>
-                      <div class="text-xs text-muted">{{ row.provider || '-' }} / {{ row.model || '-' }}</div>
+                    <td class="px-3 py-3.5 align-top">
+                      <span class="block truncate text-sm text-foreground" :title="row.group_name || '-'">{{ row.group_name || '-' }}</span>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4">
+                    <td class="px-3 py-3.5 align-top">
+                      <div class="cell-stack" :title="row.user_email || '-'">
+                        <span class="cell-title">{{ row.user_email || '-' }}</span>
+                        <span v-if="row.user_id" class="cell-meta">UID {{ row.user_id }}</span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-3.5 align-top">
+                      <span class="block truncate text-sm text-foreground" :title="row.api_key_name || '-'">{{ row.api_key_name || '-' }}</span>
+                    </td>
+                    <td class="px-3 py-3.5 align-top">
+                      <div class="cell-stack" :title="`${row.provider || '-'} / ${row.model || '-'}`">
+                        <span class="cell-title">{{ row.endpoint || '-' }}</span>
+                        <span class="cell-meta">{{ row.provider || '-' }} / {{ row.model || '-' }}</span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-3.5 align-top">
                       <span class="inline-flex rounded-md px-2 py-1 text-xs font-medium" :class="resultBadgeClass(row)">
                         {{ resultLabel(row) }}
                       </span>
                     </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">
-                      <div>{{ row.highest_category || '-' }}</div>
-                      <div class="text-xs text-muted">{{ percent(row.highest_score) }}</div>
-                      <div v-if="row.matched_keyword" class="mt-0.5 text-xs font-medium text-danger-text " :title="t('admin.riskControl.matchedKeyword') + ': ' + row.matched_keyword">
-                        {{ t('admin.riskControl.matchedKeyword') }}: {{ row.matched_keyword }}
-                      </div>
-                    </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">
-                      <div>{{ violationCountText(row) }}</div>
-                      <div class="text-xs text-muted">
-                        {{ row.email_sent ? t('admin.riskControl.emailSent') : t('admin.riskControl.emailNotSent') }}
-                        <span v-if="row.auto_banned"> / {{ t('admin.riskControl.autoBanned') }}</span>
-                      </div>
-                      <button
-                        v-if="canUnbanRow(row)"
-                        type="button"
-                        class="mt-2 inline-flex items-center gap-1 rounded-md border border-[color-mix(in_oklch,var(--success)_35%,transparent)] bg-[color-mix(in_oklch,var(--success)_16%,transparent)] px-2 py-1 text-xs font-medium text-success-text transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-60    "
-                        :disabled="unbanningUserID === row.user_id"
-                        @click="unbanUser(row)"
+                    <td class="px-3 py-3.5 align-top">
+                      <div
+                        class="cell-stack"
+                        :title="row.matched_keyword ? `${t('admin.riskControl.matchedKeyword')}: ${row.matched_keyword}` : undefined"
                       >
-                        <Icon name="checkCircle" size="xs" :class="unbanningUserID === row.user_id ? 'animate-spin' : ''" />
-                        {{ unbanningUserID === row.user_id ? t('common.processing') : t('admin.riskControl.unbanUser') }}
-                      </button>
-                    </td>
-                    <td class="whitespace-nowrap px-5 py-4 text-sm text-foreground">
-                      <div>{{ latencyText(row.upstream_latency_ms) }}</div>
-                      <div v-if="row.queue_delay_ms !== null && row.queue_delay_ms !== undefined" class="text-xs text-muted">
-                        {{ t('admin.riskControl.queueDelay', { ms: row.queue_delay_ms }) }}
+                        <span class="cell-title">{{ row.highest_category || '-' }}</span>
+                        <span class="cell-meta">
+                          {{ percent(row.highest_score) }}
+                          <template v-if="row.matched_keyword"> · {{ t('admin.riskControl.matchedKeyword') }}</template>
+                        </span>
                       </div>
                     </td>
-                    <td class="w-[320px] max-w-sm px-5 py-4 text-sm text-foreground">
+                    <td class="px-3 py-3.5 align-top">
+                      <div class="flex items-start justify-between gap-1.5">
+                        <div class="cell-stack min-w-0">
+                          <span class="cell-title">{{ violationCountText(row) }}</span>
+                          <span class="cell-meta">
+                            {{ row.email_sent ? t('admin.riskControl.emailSent') : t('admin.riskControl.emailNotSent') }}
+                            <template v-if="row.auto_banned"> · {{ t('admin.riskControl.autoBanned') }}</template>
+                          </span>
+                        </div>
+                        <button
+                          v-if="canUnbanRow(row)"
+                          type="button"
+                          class="icon-btn flex-shrink-0"
+                          :disabled="unbanningUserID === row.user_id"
+                          :title="t('admin.riskControl.unbanUser')"
+                          :aria-label="t('admin.riskControl.unbanUser')"
+                          @click="unbanUser(row)"
+                        >
+                          <Icon name="checkCircle" size="xs" :class="unbanningUserID === row.user_id ? 'animate-spin' : ''" />
+                        </button>
+                      </div>
+                    </td>
+                    <td class="px-3 py-3.5 align-top">
+                      <div class="cell-stack">
+                        <span class="cell-title">{{ latencyText(row.upstream_latency_ms) }}</span>
+                        <span v-if="row.queue_delay_ms !== null && row.queue_delay_ms !== undefined" class="cell-meta">
+                          {{ t('admin.riskControl.queueDelay', { ms: row.queue_delay_ms }) }}
+                        </span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-3.5 align-top text-sm text-foreground">
                       <button
                         type="button"
-                        class="group flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-2"
+                        class="group flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1 text-left transition-colors hover:bg-surface-2"
                         :title="inputSummaryText(row)"
                         @click="openInputDetail(row)"
                       >
@@ -368,7 +378,7 @@
         </GlassCard>
       </template>
 
-      <BaseDialog :show="settingsOpen" :title="t('admin.riskControl.settingsTitle')" width="extra-wide" @close="settingsOpen = false">
+      <UiModal :open="settingsOpen" :title="t('admin.riskControl.settingsTitle')" width="xl" @close="settingsOpen = false">
         <div class="space-y-6">
           <div class="flex gap-2 overflow-x-auto border-b border-line pb-3">
             <button
@@ -1052,12 +1062,12 @@
             </button>
           </div>
         </template>
-      </BaseDialog>
+      </UiModal>
 
-      <BaseDialog
-        :show="inputDetailRow !== null"
+      <UiModal
+        :open="inputDetailRow !== null"
         :title="t('admin.riskControl.inputDetailTitle')"
-        width="wide"
+        width="lg"
         @close="closeInputDetail"
       >
         <div v-if="inputDetailRow" class="space-y-5">
@@ -1100,7 +1110,7 @@
                 {{ inputDetailRow.group_name }}
               </span>
             </div>
-            <pre class="mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-[var(--code-bg)] p-4 text-sm leading-6 text-white shadow-inner ">{{ inputDetailText }}</pre>
+            <pre class="code-block mt-4 max-h-[420px] overflow-auto whitespace-pre-wrap break-words">{{ inputDetailText }}</pre>
           </div>
         </div>
 
@@ -1109,7 +1119,7 @@
             <button type="button" class="btn-glass-secondary" @click="closeInputDetail">{{ t('common.close') }}</button>
           </div>
         </template>
-      </BaseDialog>
+      </UiModal>
     </div>
   </AppLayout>
 </template>
@@ -1121,11 +1131,12 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import { adminAPI } from '@/api/admin'
@@ -1145,7 +1156,7 @@ import type {
 import type { AdminGroup, Proxy, SelectOption } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import { formatDateTime as formatDateTimeValue } from '@/utils/format'
+import { formatDateTime as formatDateTimeValue, formatRelativeTime } from '@/utils/format'
 
 type SettingsTab = 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
@@ -1426,6 +1437,13 @@ const modelFilterSummary = computed(() => {
 const modelFilterPreviewModels = computed(() => configForm.model_filter_models.slice(0, 6))
 
 const hiddenModelFilterModelCount = computed(() => Math.max(0, configForm.model_filter_models.length - modelFilterPreviewModels.value.length))
+
+const modelFilterTooltip = computed(() => {
+  if (modelFilterPreviewModels.value.length === 0) return modelFilterSummary.value
+  const preview = modelFilterPreviewModels.value.join(', ')
+  const suffix = hiddenModelFilterModelCount.value > 0 ? ` +${hiddenModelFilterModelCount.value}` : ''
+  return `${modelFilterSummary.value}: ${preview}${suffix}`
+})
 
 const filteredGroups = computed(() => {
   const keyword = groupSearch.value.trim().toLowerCase()
@@ -1859,8 +1877,8 @@ async function loadLogs() {
       group_id: filters.group_id || undefined,
       endpoint: filters.endpoint || undefined,
       search: filters.search || undefined,
-      from: normalizeDateTimeLocal(filters.from),
-      to: normalizeDateTimeLocal(filters.to),
+      from: normalizeFromDate(filters.from),
+      to: normalizeToDate(filters.to),
     }
     const result = await adminAPI.riskControl.listLogs(params)
     logs.value = result.items
@@ -2341,9 +2359,16 @@ function violationCountText(row: ContentModerationLog): string {
   return t('admin.riskControl.violationCount', { count: row.violation_count || 1 })
 }
 
-function normalizeDateTimeLocal(value: string): string | undefined {
+function normalizeFromDate(value: string): string | undefined {
   if (!value) return undefined
-  const date = new Date(value)
+  const date = new Date(`${value}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return undefined
+  return date.toISOString()
+}
+
+function normalizeToDate(value: string): string | undefined {
+  if (!value) return undefined
+  const date = new Date(`${value}T23:59:59.999`)
   if (Number.isNaN(date.getTime())) return undefined
   return date.toISOString()
 }
@@ -2370,3 +2395,37 @@ onUnmounted(() => {
   }
 })
 </script>
+
+<style scoped>
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cell-title {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-meta {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-time {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+</style>

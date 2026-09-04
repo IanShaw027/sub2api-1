@@ -15,6 +15,8 @@ vi.mock('vue-i18n', async () => {
 })
 
 const DialogStub = defineComponent({ props: ['show', 'title'], emits: ['close'], template: '<div v-if="show" data-test="dialog"><slot /><slot name="footer" /></div>' })
+// EventDetailDialog renders through UiModal (open/title, no footer slot used by this dialog).
+const ModalStub = defineComponent({ props: ['open', 'title'], emits: ['close'], template: '<div v-if="open" data-test="dialog"><slot /></div>' })
 const PaginationStub = defineComponent({ props: ['total', 'page', 'pageSize'], emits: ['update:page', 'update:pageSize'], template: '<div data-test="pagination" />' })
 
 const endpoint = (): PromptAuditEndpointDraft => ({
@@ -227,7 +229,7 @@ describe('Prompt Audit components', () => {
     }
     const wrapper = mount(EventDetailDialog, {
       props: { show: true, event, loading: false },
-      global: { stubs: { BaseDialog: DialogStub } },
+      global: { stubs: { UiModal: ModalStub } },
     })
     const panel = wrapper.get('[data-test="event-detail-tab-panel"]')
     expect(panel.classes()).toContain('h-[min(62vh,36rem)]')
@@ -262,7 +264,7 @@ describe('Prompt Audit components', () => {
     }
     const wrapper = mount(EventDetailDialog, {
       props: { show: true, event, loading: false },
-      global: { stubs: { BaseDialog: DialogStub } },
+      global: { stubs: { UiModal: ModalStub } },
     })
     const riskTab = wrapper.findAll('[role="tab"]').find((tab) => tab.text().includes('admin.promptAudit.events.tabs.risks'))
     await riskTab!.trigger('click')

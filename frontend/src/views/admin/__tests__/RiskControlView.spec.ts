@@ -145,14 +145,14 @@ const runtimeStatus = () => ({
 })
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
-const BaseDialogStub = defineComponent({
+const UiModalStub = defineComponent({
   props: {
-    show: {
+    open: {
       type: Boolean,
       default: false,
     },
   },
-  template: '<div v-if="show"><slot /><slot name="footer" /></div>',
+  template: '<div v-if="open"><slot /><slot name="footer" /></div>',
 })
 const ModelWhitelistSelectorStub = defineComponent({
   props: {
@@ -222,7 +222,7 @@ describe('admin RiskControlView', () => {
       global: {
         stubs: {
           AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
+          UiModal: UiModalStub,
           Icon: true,
           Select: true,
           Toggle: true,
@@ -256,7 +256,7 @@ describe('admin RiskControlView', () => {
       global: {
         stubs: {
           AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
+          UiModal: UiModalStub,
           Icon: true,
           Select: true,
           Toggle: true,
@@ -297,7 +297,7 @@ describe('admin RiskControlView', () => {
       global: {
         stubs: {
           AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
+          UiModal: UiModalStub,
           Icon: true,
           Select: true,
           Toggle: true,
@@ -365,7 +365,7 @@ describe('admin RiskControlView', () => {
       global: {
         stubs: {
           AppLayout: AppLayoutStub,
-          BaseDialog: BaseDialogStub,
+          UiModal: UiModalStub,
           Icon: true,
           Select: true,
           Toggle: true,

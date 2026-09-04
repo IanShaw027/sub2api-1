@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import Select from '@/components/common/Select.vue'
 import OpsErrorLogTable from './OpsErrorLogTable.vue'
 import { opsAPI, type OpsErrorLog } from '@/api/admin/ops'
@@ -216,8 +216,8 @@ watch(
 </script>
 
 <template>
-  <BaseDialog :show="show" :title="modalTitle" width="full" @close="close">
-    <div class="flex h-full min-h-0 flex-col">
+  <UiModal :open="show" :title="modalTitle" width="xl" @close="close">
+    <div class="flex flex-col">
       <!-- Filters -->
       <div class="mb-4 flex-shrink-0 border-b border-line pb-4 ">
         <div class="grid grid-cols-2 gap-2 md:grid-cols-8">
@@ -269,13 +269,12 @@ watch(
       </div>
 
       <!-- Body -->
-      <div class="flex min-h-0 flex-1 flex-col">
+      <div class="flex flex-col">
         <div class="mb-2 flex-shrink-0 text-xs text-muted ">
           {{ t('admin.ops.errorDetails.total') }} {{ total }}
         </div>
 
           <OpsErrorLogTable
-            class="min-h-0 flex-1"
             :rows="rows"
             :total="total"
             :loading="loading"
@@ -290,7 +289,7 @@ watch(
 
       </div>
     </div>
-  </BaseDialog>
+  </UiModal>
 </template>
 
 <style>

@@ -28,15 +28,16 @@
         </template>
 
         <template #cell-endpoint="{ row }">
-          <div class="max-w-[320px] space-y-1 text-xs">
-            <div class="break-all text-foreground ">
-              <span class="font-medium text-muted ">{{ t('usage.inbound') }}:</span>
-              <span class="ml-1">{{ row.inbound_endpoint?.trim() || '-' }}</span>
-            </div>
-            <div v-if="row.upstream_endpoint" class="break-all text-foreground ">
-              <span class="font-medium text-muted ">{{ t('usage.upstream') }}:</span>
-              <span class="ml-1">{{ row.upstream_endpoint?.trim() || '-' }}</span>
-            </div>
+          <div
+            class="max-w-[260px] truncate text-xs text-foreground "
+            :title="`${t('usage.inbound')}: ${row.inbound_endpoint?.trim() || '-'}` + (row.upstream_endpoint ? `  |  ${t('usage.upstream')}: ${row.upstream_endpoint.trim()}` : '')"
+          >
+            <span class="font-medium text-muted ">{{ t('usage.inbound') }}:</span>
+            <span class="ml-1">{{ row.inbound_endpoint?.trim() || '-' }}</span>
+            <template v-if="row.upstream_endpoint">
+              <span class="mx-1 text-muted">↳</span>
+              <span>{{ row.upstream_endpoint.trim() }}</span>
+            </template>
           </div>
         </template>
 

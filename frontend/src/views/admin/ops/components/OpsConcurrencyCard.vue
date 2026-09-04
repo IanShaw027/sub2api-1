@@ -341,7 +341,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="flex h-full flex-col rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <!-- 头部 -->
     <div class="mb-4 flex shrink-0 items-center justify-between gap-3">
       <h3 class="flex items-center gap-2 text-sm font-bold text-foreground ">
@@ -602,7 +602,7 @@ watch(
 <style scoped>
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+  scrollbar-color: color-mix(in oklch, var(--muted) 30%, transparent) transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -614,11 +614,11 @@ watch(
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.3);
-  border-radius: 3px;
+  background-color: color-mix(in oklch, var(--muted) 30%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(156, 163, 175, 0.5);
+  background-color: color-mix(in oklch, var(--muted) 50%, transparent);
 }
 </style>

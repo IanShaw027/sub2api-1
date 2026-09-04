@@ -58,6 +58,12 @@ function mountView() {
   })
 }
 
+function mountViewWithRealPanels() {
+  return mount(PromptAuditView, {
+    global: { stubs: { AppLayout: AppLayoutStub, EventDetailDialog: DetailStub, FilterDeleteDialog: FilterDeleteStub, ConfirmDialog: ConfirmStub } },
+  })
+}
+
 describe('PromptAuditView', () => {
   beforeEach(() => {
     Object.values(mocks).forEach((mock) => mock.mockReset())
@@ -116,6 +122,34 @@ describe('PromptAuditView', () => {
     expect(wrapper.get('[data-test="tab-config"]').attributes('aria-selected')).toBe('true')
     expect(wrapper.find('[data-test="save-config"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="tab-panel-config"]').attributes('style') || '').not.toContain('display: none')
+  })
+
+  it('toggles config/events panel visibility correctly with real (unstubbed) child components', async () => {
+    const wrapper = mountViewWithRealPanels()
+    await flushPromises()
+
+    const configPanel = wrapper.get('[data-test="tab-panel-config"]')
+    const eventsPanel = wrapper.get('[data-test="tab-panel-events"]')
+    expect(configPanel.attributes('style') || '').toContain('display: none')
+    expect(eventsPanel.attributes('style') || '').not.toContain('display: none')
+    // exactly one instance of each panel must exist — guards against duplicate data-test nodes
+    expect(wrapper.findAll('[data-test="tab-panel-config"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-test="tab-panel-events"]')).toHaveLength(1)
+
+    await wrapper.get('[data-test="tab-config"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="tab-panel-config"]').attributes('style') || '').not.toContain('display: none')
+    expect(wrapper.get('[data-test="tab-panel-events"]').attributes('style') || '').toContain('display: none')
+    // real child components must actually render their content while visible, not just toggle an empty shell
+    expect(wrapper.findComponent({ name: 'RuntimeOverview' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'EndpointPool' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'PolicyPanel' }).exists()).toBe(true)
+    expect(wrapper.get('[data-test="tab-panel-config"]').text().length).toBeGreaterThan(0)
+
+    await wrapper.get('[data-test="tab-events"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="tab-panel-config"]').attributes('style') || '').toContain('display: none')
+    expect(wrapper.get('[data-test="tab-panel-events"]').attributes('style') || '').not.toContain('display: none')
   })
 
   it('requires confirmation for blocking and disables it when audit is turned off', async () => {

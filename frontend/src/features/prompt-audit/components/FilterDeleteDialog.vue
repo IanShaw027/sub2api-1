@@ -12,7 +12,7 @@
  class="cursor-pointer"
  >
  <input v-model="preset" type="radio" name="prompt-delete-range" :value="option.id" class="peer sr-only" :data-test="`range-preset-${option.id}`" @change="criteriaChanged" />
- <span class="inline-flex items-center rounded-full border border-line px-3 py-1.5 text-xs font-medium text-muted transition-colors peer-checked:border-red-500 peer-checked:bg-red-50 peer-checked:text-red-700 peer-focus-visible:ring-2 peer-focus-visible:ring-red-500/30">
+ <span class="inline-flex items-center rounded-full border border-line px-3 py-1.5 text-xs font-medium text-muted transition-colors peer-checked:border-[color-mix(in_oklch,var(--danger)_45%,transparent)] peer-checked:bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] peer-checked:text-danger-text peer-focus-visible:ring-2 peer-focus-visible:ring-[color-mix(in_oklch,var(--danger)_30%,transparent)]">
  {{ t(`admin.promptAudit.events.timePresets.${option.id}`) }}
  </span>
  </label>
@@ -27,7 +27,7 @@
  <span>{{ t('admin.promptAudit.events.endAt') }}</span>
  <input v-model="local.end_at" type="datetime-local" class="input mt-1 w-full" :aria-label="t('admin.promptAudit.events.endAt')" @change="criteriaChanged" />
  </label>
- <p v-if="!canPreview" class="text-xs text-red-600 sm:col-span-2">{{ t('admin.promptAudit.events.customRangeInvalid') }}</p>
+ <p v-if="!canPreview" class="text-xs text-danger-text sm:col-span-2">{{ t('admin.promptAudit.events.customRangeInvalid') }}</p>
  </div>
  </fieldset>
 
@@ -75,8 +75,8 @@
  </div>
  </details>
 
- <div v-if="preview" class="rounded-xl border border-red-200 bg-red-50/60 px-4 py-3" data-test="delete-preview-result">
- <p class="text-sm font-semibold text-red-700">{{ t('admin.promptAudit.events.filterDeleteCount', { count: preview.matched_count }) }}</p>
+ <div v-if="preview" class="rounded-xl border border-[color-mix(in_oklch,var(--danger)_28%,transparent)] bg-[color-mix(in_oklch,var(--danger)_8%,transparent)] px-4 py-3" data-test="delete-preview-result">
+ <p class="text-sm font-semibold text-danger-text">{{ t('admin.promptAudit.events.filterDeleteCount', { count: preview.matched_count }) }}</p>
  <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs text-muted">
  <dt>{{ t('admin.promptAudit.events.snapshotMax') }}</dt>
  <dd>{{ preview.snapshot_max_id }}</dd>
@@ -85,7 +85,7 @@
  <dt>{{ t('admin.promptAudit.events.expiresAt') }}</dt>
  <dd>{{ formatDate(preview.expires_at) }}</dd>
  </dl>
- <p class="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ t('admin.promptAudit.events.filterDeleteWarning') }}</p>
+ <p class="mt-2 rounded-lg bg-[color-mix(in_oklch,var(--warning)_14%,transparent)] px-3 py-2 text-xs text-warning-text">{{ t('admin.promptAudit.events.filterDeleteWarning') }}</p>
  </div>
  <p v-else class="rounded-xl border border-dashed border-line px-4 py-3 text-xs text-muted" data-test="delete-preview-empty">
  {{ t('admin.promptAudit.events.filterDeleteNeedPreview') }}

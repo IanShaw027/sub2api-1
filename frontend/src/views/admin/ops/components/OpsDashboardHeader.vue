@@ -7,6 +7,7 @@ import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
+import PageHeader from '@/components/ui/PageHeader.vue'
 import { adminAPI } from '@/api'
 import { opsAPI, type OpsDashboardOverview, type OpsMetricThresholds, type OpsRealtimeTrafficSummary } from '@/api/admin/ops'
 import type { OpsRequestDetailsPreset } from './OpsRequestDetailsModal.vue'
@@ -438,12 +439,12 @@ const healthScoreValue = computed<number | null>(() => {
 })
 
 const healthScoreColor = computed(() => {
-  if (isSystemIdle.value) return '#9ca3af' // gray-400
+  if (isSystemIdle.value) return 'var(--muted)'
   const score = healthScoreValue.value
-  if (score == null) return '#9ca3af'
-  if (score >= 90) return '#10b981' // green
-  if (score >= 60) return '#f59e0b' // yellow
-  return '#ef4444' // red
+  if (score == null) return 'var(--muted)'
+  if (score >= 90) return 'var(--success)'
+  if (score >= 60) return 'var(--warning)'
+  return 'var(--danger)'
 })
 
 const healthScoreClass = computed(() => {
@@ -860,42 +861,41 @@ function handleToolbarRefresh() {
 </script>
 
 <template>
-  <GlassCard :class="['flex flex-col gap-4 !rounded-3xl', props.fullscreen ? '!p-8' : '!p-6']" padding="sm">
-    <!-- Top Toolbar -->
-    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
-      <div>
-        <h1 class="page-title flex items-center gap-2 text-xl font-black text-foreground">
-          <svg class="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-            />
-          </svg>
-          {{ t('admin.ops.title') }}
-        </h1>
-
-        <div v-if="!props.fullscreen" class="mt-1 flex items-center gap-3 text-xs text-muted">
-          <span class="flex items-center gap-1.5" :title="props.loading ? t('admin.ops.loadingText') : t('admin.ops.ready')">
-            <span class="relative flex h-2 w-2">
-              <span class="relative inline-flex h-2 w-2 rounded-full" :class="props.loading ? 'bg-muted' : 'bg-success'"></span>
-            </span>
-            {{ props.loading ? t('admin.ops.loadingText') : t('admin.ops.ready') }}
+  <div class="ops-header-shell">
+  <PageHeader>
+    <template #title>
+      <span class="inline-flex items-center gap-2">
+        <svg class="h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            stroke-width="2"
+            d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+          />
+        </svg>
+        {{ t('admin.ops.title') }}
+      </span>
+    </template>
+    <template v-if="!props.fullscreen" #description>
+      <span class="flex flex-wrap items-center gap-3">
+        <span class="flex items-center gap-1.5" :title="props.loading ? t('admin.ops.loadingText') : t('admin.ops.ready')">
+          <span class="relative flex h-2 w-2">
+            <span class="relative inline-flex h-2 w-2 rounded-full" :class="props.loading ? 'bg-muted' : 'bg-success'"></span>
           </span>
+          {{ props.loading ? t('admin.ops.loadingText') : t('admin.ops.ready') }}
+        </span>
 
+        <span>·</span>
+        <span>{{ t('common.refresh') }}: {{ props.lastUpdated ? props.lastUpdated.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\//g, '-') : t('common.unknown') }}</span>
+
+        <template v-if="props.autoRefreshEnabled && props.autoRefreshCountdown !== undefined">
           <span>·</span>
-          <span>{{ t('common.refresh') }}: {{ props.lastUpdated ? props.lastUpdated.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(/\//g, '-') : t('common.unknown') }}</span>
-
-          <template v-if="props.autoRefreshEnabled && props.autoRefreshCountdown !== undefined">
-            <span>·</span>
-            <span>{{ t('admin.ops.autoRefreshRemaining', { seconds: props.autoRefreshCountdown }) }}</span>
-          </template>
-        </div>
-      </div>
-
+          <span>{{ t('admin.ops.autoRefreshRemaining', { seconds: props.autoRefreshCountdown }) }}</span>
+        </template>
+      </span>
+    </template>
+    <template v-if="!props.fullscreen" #actions>
       <div class="flex flex-wrap items-center gap-3">
-        <template v-if="!props.fullscreen">
           <Select
             :model-value="platform"
             :options="platformOptions"
@@ -918,7 +918,6 @@ function handleToolbarRefresh() {
             class="relative w-full sm:w-[150px]"
             @update:model-value="handleTimeRangeChange"
           />
-        </template>
 
         <Select
           v-if="false"
@@ -990,11 +989,14 @@ function handleToolbarRefresh() {
           </svg>
         </button>
       </div>
-    </div>
+    </template>
+  </PageHeader>
+  </div>
 
+  <GlassCard :class="['flex flex-col gap-4 !rounded-xl', props.fullscreen ? '!p-8' : '!p-6']" padding="sm">
     <div v-if="overview" class="grid grid-cols-1 gap-6 lg:grid-cols-12">
       <!-- Left: Health + Realtime -->
-      <div :class="['rounded-2xl bg-surface-2  lg:col-span-5', props.fullscreen ? 'p-6' : 'p-4']">
+      <div :class="['rounded-xl bg-surface-2  lg:col-span-5', props.fullscreen ? 'p-6' : 'p-4']">
         <div class="grid h-full grid-cols-1 gap-6 md:grid-cols-[200px_1fr] md:items-center">
           <!-- 1) Health Score -->
           <div
@@ -1004,7 +1006,7 @@ function handleToolbarRefresh() {
             <div
               class="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-72 -translate-x-1/2 opacity-0 transition-opacity duration-200 group-hover:pointer-events-auto group-hover:opacity-100 md:left-full md:top-0 md:ml-2 md:mt-0 md:translate-x-0"
             >
-              <div class="rounded-xl bg-surface p-4 shadow-xl ring-1 ring-black/5  ">
+              <div class="rounded-xl bg-surface p-4 shadow-[var(--shadow-pop)] ring-1 ring-black/5  ">
                 <h4 class="mb-3 border-b border-line pb-2 text-sm font-bold text-foreground   flex items-center gap-2">
                   <Icon name="brain" size="sm" class="text-blue-500" />
                   {{ t('admin.ops.diagnosis.title') }}
@@ -1186,7 +1188,7 @@ function handleToolbarRefresh() {
                   <path
                     d="M0 16 Q 20 16, 40 16 T 80 16 T 120 10 T 160 22 T 200 16 T 240 16 T 280 16"
                     fill="none"
-                    stroke="#3b82f6"
+                    stroke="var(--accent)"
                     stroke-width="2"
                     vector-effect="non-scaling-stroke"
                   >
@@ -1210,7 +1212,7 @@ function handleToolbarRefresh() {
       <!-- Right: 6 cards (3 cols x 2 rows) -->
       <div class="grid h-full grid-cols-1 content-center gap-4 sm:grid-cols-2 lg:col-span-7 lg:grid-cols-3">
         <!-- Card 1: Requests -->
-        <div class="rounded-2xl bg-surface-2 p-4 " style="order: 1;">
+        <div class="rounded-xl bg-surface-2 p-4 " style="order: 1;">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
               <span class="text-[10px] font-bold uppercase text-muted">{{ t('admin.ops.requestsTitle') }}</span>
@@ -1246,7 +1248,7 @@ function handleToolbarRefresh() {
         </div>
 
         <!-- Card 2: SLA -->
-        <div class="rounded-2xl bg-surface-2 p-4 " style="order: 2;">
+        <div class="rounded-xl bg-surface-2 p-4 " style="order: 2;">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-2">
               <span class="text-[10px] font-bold uppercase text-muted">{{ t('admin.ops.sla') }}</span>
@@ -1277,7 +1279,7 @@ function handleToolbarRefresh() {
         </div>
 
         <!-- Card 4: Request Duration -->
-        <div class="rounded-2xl bg-surface-2 p-4 " style="order: 4;">
+        <div class="rounded-xl bg-surface-2 p-4 " style="order: 4;">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
               <span class="text-[10px] font-bold uppercase text-muted">{{ t('admin.ops.latencyDuration') }}</span>
@@ -1328,7 +1330,7 @@ function handleToolbarRefresh() {
         </div>
 
         <!-- Card 5: TTFT -->
-        <div class="rounded-2xl bg-surface-2 p-4 " style="order: 5;">
+        <div class="rounded-xl bg-surface-2 p-4 " style="order: 5;">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
               <span class="text-[10px] font-bold uppercase text-muted">TTFT</span>
@@ -1379,7 +1381,7 @@ function handleToolbarRefresh() {
         </div>
 
         <!-- Card 3: Request Errors -->
-        <div class="rounded-2xl bg-surface-2 p-4 " style="order: 3;">
+        <div class="rounded-xl bg-surface-2 p-4 " style="order: 3;">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
               <span class="text-[10px] font-bold uppercase text-muted">{{ t('admin.ops.requestErrors') }}</span>
@@ -1405,7 +1407,7 @@ function handleToolbarRefresh() {
         </div>
 
         <!-- Card 6: Upstream Errors -->
-        <div class="rounded-2xl bg-surface-2 p-4 " style="order: 6;">
+        <div class="rounded-xl bg-surface-2 p-4 " style="order: 6;">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-1">
               <span class="text-[10px] font-bold uppercase text-muted">{{ t('admin.ops.upstreamErrors') }}</span>
@@ -1626,3 +1628,24 @@ function handleToolbarRefresh() {
     </BaseDialog>
   </GlassCard>
 </template>
+
+<style scoped>
+/* Allow the PageHeader row to stack (title above, toolbar below) instead of
+   squeezing the h1 to near-zero width when the actions slot's filter/select
+   controls go full-width on narrow viewports (see deviations.md).
+   Note: PageHeader is invoked as this component's own root node, so its
+   rendered root (.ui-page-header) receives BOTH this component's scoped
+   data-v attribute and PageHeader's own — meaning a bare `:deep(.ui-page-header)`
+   compiles to a descendant selector that can never match its own root element.
+   The `.ops-header-shell` wrapper below gives :deep() a real ancestor to key off. */
+.ops-header-shell :deep(.ui-page-header) {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .ops-header-shell :deep(.ui-page-header-actions) {
+    flex-basis: 100%;
+    width: 100%;
+  }
+}
+</style>

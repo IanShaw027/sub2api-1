@@ -34,7 +34,10 @@ describe('Prompt Audit integration surface', () => {
     const events = read('../components/EventWorkspace.vue')
     expect(endpoint).toContain('aria-label')
     expect(events).toContain('aria-label')
-    expect(events).toContain('overflow-x-auto')
+    // Events table now renders through the shared DataTable component, which owns
+    // horizontal/vertical scroll (.table-wrapper { overflow-x/y: auto }) itself —
+    // assert that wiring instead of a literal `overflow-x-auto` utility class on this file.
+    expect(events).toContain('DataTable')
     expect(events).toContain('sm:grid-cols-2')
   })
 })

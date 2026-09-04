@@ -1,5 +1,5 @@
 <template>
- <BaseDialog :show="show" :title="t('admin.promptAudit.events.detailTitle')" width="extra-wide" @close="$emit('close')">
+ <UiModal :open="show" :title="t('admin.promptAudit.events.detailTitle')" width="xl" @close="$emit('close')">
  <div v-if="loading" class="py-12 text-center text-sm text-muted" aria-busy="true">{{ t('common.loading') }}</div>
  <div v-else-if="event" class="flex flex-col">
  <div class="flex flex-wrap gap-2 border-b border-line pb-3" role="tablist">
@@ -13,7 +13,7 @@
  <div v-show="activeTab === 'summary'" class="grid gap-5 lg:grid-cols-2" role="tabpanel">
  <div>
  <h4 class="text-sm font-medium text-foreground">{{ t('admin.promptAudit.events.promptFull') }}</h4>
- <pre class="mt-2 max-h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-4 text-sm text-foreground" data-test="summary-prompt-full">{{ displayPrompt(event) }}</pre>
+ <pre class="code-block mt-2 max-h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words" data-test="summary-prompt-full">{{ displayPrompt(event) }}</pre>
  </div>
  <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
  <dt class="text-muted">{{ t('admin.promptAudit.events.decision') }}</dt><dd class="font-medium text-foreground">{{ formatDecisionAction(event.decision, event.action) }}</dd>
@@ -31,21 +31,21 @@
  <section data-test="risk-prompt-preview">
  <h4 class="text-sm font-medium text-foreground">{{ t('admin.promptAudit.events.promptFull') }}</h4>
  <p class="mt-1 text-xs text-muted">{{ t('admin.promptAudit.events.promptFullHint') }}</p>
- <pre class="mt-2 h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-4 text-sm text-foreground" data-test="risk-prompt-full">{{ displayPrompt(event) }}</pre>
+ <pre class="code-block mt-2 h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words" data-test="risk-prompt-full">{{ displayPrompt(event) }}</pre>
  </section>
  <section data-test="risk-guard-return">
  <h4 class="text-sm font-medium text-foreground">{{ t('admin.promptAudit.events.guardReturn') }}</h4>
  <p class="mt-1 text-xs text-muted">{{ t('admin.promptAudit.events.guardReturnHint') }}</p>
- <pre class="mt-2 h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words rounded-lg bg-surface-2 p-4 font-mono text-xs text-foreground">{{ formatGuardReturn(event) }}</pre>
+ <pre class="code-block mt-2 h-[min(46vh,26rem)] overflow-auto whitespace-pre-wrap break-words">{{ formatGuardReturn(event) }}</pre>
  </section>
  </div>
 
  <div class="space-y-3">
  <h4 class="text-sm font-medium text-foreground">{{ t('admin.promptAudit.events.riskSummaries') }}</h4>
- <article v-for="issue in event.issue_summaries" :key="`${issue.scanner_id}-${issue.code}`" class="border-l-2 border-red-400 pl-4" data-test="risk-issue">
+ <article v-for="issue in event.issue_summaries" :key="`${issue.scanner_id}-${issue.code}`" class="border-l-2 border-[var(--danger)] pl-4" data-test="risk-issue">
  <div class="flex flex-wrap items-center gap-2">
  <h5 class="font-medium text-foreground">{{ issueTitle(issue) }}</h5>
- <span class="text-xs text-red-600">{{ issueSeverity(issue) }} · {{ issueAction(issue) }}</span>
+ <span class="text-xs text-danger-text">{{ issueSeverity(issue) }} · {{ issueAction(issue) }}</span>
  </div>
  <p class="mt-1 text-sm text-muted">{{ issueDescription(issue) }}</p>
  <dl class="mt-2 grid gap-1 text-xs text-muted sm:grid-cols-2">
@@ -72,13 +72,13 @@
  </dl>
  </div>
  </div>
- </BaseDialog>
+ </UiModal>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import type { PromptAuditEvent, PromptIssueSummary } from '../types'
 import { SCANNER_CATALOG } from '../viewModel'
 

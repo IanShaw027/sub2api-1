@@ -181,7 +181,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <div class="mb-4 flex items-start justify-between gap-4">
       <div>
         <h3 class="text-sm font-bold text-foreground ">{{ t('admin.ops.email.title') }}</h3>
@@ -208,7 +208,7 @@ onMounted(() => {
     </div>
 
     <div v-else class="space-y-6">
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-2 text-sm font-semibold text-foreground ">{{ t('admin.ops.email.alertTitle') }}</h4>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div class="text-xs text-muted ">
@@ -234,7 +234,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-2 text-sm font-semibold text-foreground ">{{ t('admin.ops.email.reportTitle') }}</h4>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div class="text-xs text-muted ">
@@ -263,7 +263,7 @@ onMounted(() => {
           <li v-for="msg in editorValidation.errors" :key="msg">{{ msg }}</li>
         </ul>
       </div>
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-3 text-sm font-semibold text-foreground ">{{ t('admin.ops.email.alertTitle') }}</h4>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
@@ -333,7 +333,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-3 text-sm font-semibold text-foreground ">{{ t('admin.ops.email.reportTitle') }}</h4>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>

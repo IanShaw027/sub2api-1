@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { opsAPI, type OpsRuntimeLogConfig, type OpsSystemLog, type OpsSystemLogSinkHealth } from '@/api/admin/ops'
+import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
+import type { Column } from '@/components/common/types'
 import { useAppStore } from '@/stores'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const appStore = useAppStore()
 const { t } = useI18n()
 
-// 与 DataTable 一致：< 768px 切换为卡片视图，避免宽表在移动端被截断。
-const isDesktopViewport = useMediaQuery('(min-width: 768px)')
+const columns = computed<Column[]>(() => [
+  { key: 'created_at', label: t('admin.ops.systemLogs.time'), class: 'w-[144px]' },
+  { key: 'host', label: t('admin.ops.systemLogs.host'), class: 'w-[140px]' },
+  { key: 'level', label: t('admin.ops.systemLogs.level'), class: 'w-[84px]' },
+  { key: 'detail', label: t('admin.ops.systemLogs.logDetails') }
+])
 
 const props = withDefaults(defineProps<{
   platformFilter?: string
@@ -369,8 +374,6 @@ const applyFilters = () => {
   fetchLogs()
 }
 
-const hasData = computed(() => logs.value.length > 0)
-
 onMounted(async () => {
   if (props.platformFilter) {
     filters.platform = props.platformFilter
@@ -380,7 +383,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <section class="rounded-2xl border border-line bg-surface p-4 shadow-sm  ">
+  <section class="rounded-xl border border-line bg-surface p-4 shadow-sm  ">
     <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h3 class="text-sm font-bold text-foreground ">{{ t('admin.ops.systemLogs.title') }}</h3>
@@ -513,53 +516,31 @@ onMounted(async () => {
     </div>
 
     <div class="overflow-hidden rounded-xl border border-line ">
-      <div v-if="loading" class="px-4 py-8 text-center text-sm text-muted">{{ t('common.loading') }}</div>
-      <div v-else-if="!hasData" class="px-4 py-8 text-center text-sm text-muted">{{ t('admin.ops.systemLogs.empty') }}</div>
-      <div v-else-if="!isDesktopViewport" class="divide-y divide-line ">
-        <div v-for="row in logs" :key="row.id" class="space-y-1.5 p-3">
-          <div class="flex items-center justify-between gap-2">
-            <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold" :class="levelBadgeClass(row.level)">
-              {{ row.level }}
-            </span>
-            <span class="text-xs text-muted ">{{ formatTime(row.created_at) }}</span>
-          </div>
-          <div v-if="row.host" class="truncate text-xs text-muted " :title="row.host">
-            {{ row.host }}
-          </div>
-          <div class="whitespace-normal break-all text-xs text-foreground ">
-            {{ formatSystemLogDetail(row) }}
-          </div>
-        </div>
-      </div>
-      <div v-else class="overflow-auto">
-        <table class="min-w-full table-fixed divide-y divide-line ">
-          <thead class="bg-surface-2 ">
-            <tr>
-              <th class="w-[170px] px-3 py-2 text-left text-[11px] font-semibold text-muted">{{ t('admin.ops.systemLogs.time') }}</th>
-              <th class="w-[160px] px-3 py-2 text-left text-[11px] font-semibold text-muted">{{ t('admin.ops.systemLogs.host') }}</th>
-              <th class="w-[80px] px-3 py-2 text-left text-[11px] font-semibold text-muted">{{ t('admin.ops.systemLogs.level') }}</th>
-              <th class="px-3 py-2 text-left text-[11px] font-semibold text-muted">{{ t('admin.ops.systemLogs.logDetails') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-line ">
-            <tr v-for="row in logs" :key="row.id" class="align-top">
-              <td class="px-3 py-2 text-xs text-foreground ">{{ formatTime(row.created_at) }}</td>
-              <td class="px-3 py-2 text-xs text-foreground ">
-                <span class="block truncate" :title="row.host || '-'">{{ row.host || '-' }}</span>
-              </td>
-              <td class="px-3 py-2 text-xs">
-                <span class="inline-flex rounded-full px-2 py-0.5 font-semibold" :class="levelBadgeClass(row.level)">
-                  {{ row.level }}
-                </span>
-              </td>
-              <td class="px-3 py-2 text-xs text-foreground  whitespace-normal break-all">
-                {{ formatSystemLogDetail(row) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <DataTable :columns="columns" :data="logs" :loading="loading">
+        <template #cell-created_at="{ row }">
+          <span class="text-xs text-foreground ">{{ formatTime(row.created_at) }}</span>
+        </template>
+
+        <template #cell-host="{ row }">
+          <span class="block max-w-[160px] truncate text-xs text-foreground " :title="row.host || '-'">{{ row.host || '-' }}</span>
+        </template>
+
+        <template #cell-level="{ row }">
+          <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold" :class="levelBadgeClass(row.level)">
+            {{ row.level }}
+          </span>
+        </template>
+
+        <template #cell-detail="{ row }">
+          <span class="block max-w-[560px] truncate text-xs text-foreground " :title="formatSystemLogDetail(row)">{{ formatSystemLogDetail(row) }}</span>
+        </template>
+
+        <template #empty>
+          <div class="px-4 py-8 text-center text-sm text-muted">{{ t('admin.ops.systemLogs.empty') }}</div>
+        </template>
+      </DataTable>
       <Pagination
+        v-if="total > 0"
         :total="total"
         :page="page"
         :page-size="pageSize"

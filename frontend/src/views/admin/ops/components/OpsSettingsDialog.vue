@@ -3,7 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { opsAPI } from '@/api/admin/ops'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import Select from '@/components/common/Select.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import type { OpsAlertRuntimeSettings, EmailNotificationConfig, AlertSeverity, OpsAdvancedSettings, OpsMetricThresholds } from '../types'
@@ -232,7 +232,7 @@ async function saveAllSettings() {
 </script>
 
 <template>
-  <BaseDialog :show="show" :title="t('admin.ops.settings.title')" width="extra-wide" @close="emit('close')">
+  <UiModal :open="show" :title="t('admin.ops.settings.title')" width="xl" @close="emit('close')">
     <div v-if="loading" class="py-10 text-center text-sm text-muted">
       {{ t('common.loading') }}
     </div>
@@ -247,7 +247,7 @@ async function saveAllSettings() {
       </div>
 
       <!-- 数据采集频率 -->
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-3 text-sm font-semibold text-foreground ">{{ t('admin.ops.settings.dataCollection') }}</h4>
         <div>
           <label class="input-label">{{ t('admin.ops.settings.evaluationInterval') }}</label>
@@ -263,7 +263,7 @@ async function saveAllSettings() {
       </div>
 
       <!-- 预警配置 -->
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-3 text-sm font-semibold text-foreground ">{{ t('admin.ops.settings.alertConfig') }}</h4>
 
         <div class="space-y-4">
@@ -311,7 +311,7 @@ async function saveAllSettings() {
       </div>
 
       <!-- 评估报告配置 -->
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-3 text-sm font-semibold text-foreground ">{{ t('admin.ops.settings.reportConfig') }}</h4>
 
         <div class="space-y-4">
@@ -371,7 +371,7 @@ async function saveAllSettings() {
       </div>
 
       <!-- 指标阈值配置 -->
-      <div class="rounded-2xl bg-surface-2 p-4 ">
+      <div class="rounded-xl bg-surface-2 p-4 ">
         <h4 class="mb-3 text-sm font-semibold text-foreground ">{{ t('admin.ops.settings.metricThresholds') }}</h4>
         <p class="mb-4 text-xs text-muted ">{{ t('admin.ops.settings.metricThresholdsHint') }}</p>
 
@@ -431,7 +431,7 @@ async function saveAllSettings() {
       </div>
 
       <!-- 高级设置 -->
-      <details class="rounded-2xl bg-surface-2 ">
+      <details class="rounded-xl bg-surface-2 ">
         <summary class="cursor-pointer p-4 text-sm font-semibold text-foreground ">
           {{ t('admin.ops.settings.advancedSettings') }}
         </summary>
@@ -646,5 +646,5 @@ async function saveAllSettings() {
         </button>
       </div>
     </template>
-  </BaseDialog>
+  </UiModal>
 </template>

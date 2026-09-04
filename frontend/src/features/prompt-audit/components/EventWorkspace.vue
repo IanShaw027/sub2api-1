@@ -15,100 +15,106 @@
  </div>
  </div>
 
- <form class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5" @submit.prevent="applyFilters">
- <label class="text-xs text-muted">
- <span>{{ t('admin.promptAudit.events.decision') }}</span>
- <select v-model="localFilters.decision" class="input mt-1 w-full" :aria-label="t('admin.promptAudit.events.decision')" @change="filtersChanged">
- <option value="">{{ t('common.all') }}</option>
+ <form class="mt-5 flex flex-wrap items-center gap-2" @submit.prevent="applyFilters">
+ <select v-model="localFilters.decision" class="input h-9 w-[128px]" :aria-label="t('admin.promptAudit.events.decision')" @change="filtersChanged">
+ <option value="">{{ t('admin.promptAudit.events.decision') }}</option>
  <option value="pass">{{ t('admin.promptAudit.decisions.pass') }}</option>
  <option value="flag">{{ t('admin.promptAudit.decisions.flag') }}</option>
  <option value="critical">{{ t('admin.promptAudit.decisions.critical') }}</option>
  </select>
- </label>
- <label class="text-xs text-muted">
- <span>{{ t('admin.promptAudit.events.risk') }}</span>
- <select v-model="localFilters.risk_level" class="input mt-1 w-full" :aria-label="t('admin.promptAudit.events.risk')" @change="filtersChanged">
- <option value="">{{ t('common.all') }}</option>
+ <select v-model="localFilters.risk_level" class="input h-9 w-[128px]" :aria-label="t('admin.promptAudit.events.risk')" @change="filtersChanged">
+ <option value="">{{ t('admin.promptAudit.events.risk') }}</option>
  <option value="low">{{ t('admin.promptAudit.riskLevels.low') }}</option>
  <option value="medium">{{ t('admin.promptAudit.riskLevels.medium') }}</option>
  <option value="high">{{ t('admin.promptAudit.riskLevels.high') }}</option>
  <option value="critical">{{ t('admin.promptAudit.riskLevels.critical') }}</option>
  </select>
- </label>
- <FilterInput v-model="localFilters.endpoint" :label="t('admin.promptAudit.events.endpoint')" @change="filtersChanged" />
+ <input v-model="localFilters.endpoint" type="text" class="input h-9 w-[150px]" :placeholder="t('admin.promptAudit.events.endpoint')" :aria-label="t('admin.promptAudit.events.endpoint')" @change="filtersChanged" />
+ <input v-model="localFilters.keyword" type="text" class="input h-9 w-[180px]" :placeholder="t('admin.promptAudit.events.keyword')" :aria-label="t('admin.promptAudit.events.keyword')" @change="filtersChanged" />
+ <DateRangePicker v-model:start-date="filterStartDate" v-model:end-date="filterEndDate" @change="handleDateRangeChange" />
+ <button type="submit" class="btn btn-primary btn-sm h-9">{{ t('common.search') }}</button>
+ <button type="button" class="btn btn-ghost btn-sm h-9" data-test="toggle-advanced" @click="advancedOpen = !advancedOpen">
+ {{ t('admin.promptAudit.events.advancedFilters') }}
+ <Icon name="chevronDown" size="xs" :class="advancedOpen ? 'rotate-180' : ''" />
+ </button>
+ <button type="button" class="btn btn-ghost btn-sm h-9" @click="resetFilters">{{ t('common.reset') }}</button>
+ </form>
+ <div v-show="advancedOpen" data-test="advanced-filters" class="mt-3 grid gap-3 rounded-lg border border-line bg-surface-2 p-3 sm:grid-cols-2 lg:grid-cols-4">
  <FilterInput v-model="localFilters.group_id" :label="t('admin.promptAudit.events.groupId')" type="number" @change="filtersChanged" />
  <FilterInput v-model="localFilters.user_id" :label="t('admin.promptAudit.events.userId')" type="number" @change="filtersChanged" />
  <FilterInput v-model="localFilters.api_key_id" :label="t('admin.promptAudit.events.apiKeyId')" type="number" @change="filtersChanged" />
  <FilterInput v-model="localFilters.request_id" :label="t('admin.promptAudit.events.requestId')" @change="filtersChanged" />
  <FilterInput v-model="localFilters.prompt_hash" :label="t('admin.promptAudit.events.promptHash')" @change="filtersChanged" />
- <FilterInput v-model="localFilters.keyword" :label="t('admin.promptAudit.events.keyword')" @change="filtersChanged" />
- <label class="text-xs text-muted">
- <span>{{ t('admin.promptAudit.events.startAt') }}</span>
- <input v-model="localFilters.start_at" type="datetime-local" class="input mt-1 w-full" :aria-label="t('admin.promptAudit.events.startAt')" @change="filtersChanged" />
- </label>
- <label class="text-xs text-muted">
- <span>{{ t('admin.promptAudit.events.endAt') }}</span>
- <input v-model="localFilters.end_at" type="datetime-local" class="input mt-1 w-full" :aria-label="t('admin.promptAudit.events.endAt')" @change="filtersChanged" />
- </label>
- <div class="flex items-end gap-2 sm:col-span-2">
- <button type="submit" class="btn btn-primary btn-sm">{{ t('common.search') }}</button>
- <button type="button" class="btn btn-ghost btn-sm" @click="resetFilters">{{ t('common.reset') }}</button>
  </div>
- </form>
- <div v-if="error" role="alert" class="mt-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{{ error }}</div>
- <div class="mt-5 overflow-x-auto rounded-xl border border-line">
- <table class="min-w-[1120px] w-full text-left text-sm">
- <thead class="bg-surface-2 text-xs uppercase tracking-wide text-muted">
- <tr>
- <th class="w-10 px-3 py-3"><input type="checkbox" :checked="allSelected" :aria-label="t('admin.promptAudit.events.selectAll')" @change="toggleAll" /></th>
- <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.time') }}</th>
- <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.identity') }}</th>
- <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.group') }}</th>
- <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.route') }}</th>
- <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.result') }}</th>
- <th class="px-3 py-3 font-medium">{{ t('admin.promptAudit.events.preview') }}</th>
- <th class="px-3 py-3 text-right font-medium">{{ t('admin.promptAudit.common.actions') }}</th>
- </tr>
- </thead>
- <tbody class="divide-y divide-line bg-surface">
- <tr v-if="loading"><td colspan="8" class="px-4 py-12 text-center text-muted" aria-busy="true">{{ t('common.loading') }}</td></tr>
- <tr v-else-if="events.length === 0"><td colspan="8" class="px-4 py-12 text-center text-muted">{{ t('admin.promptAudit.events.empty') }}</td></tr>
- <tr v-for="event in events" v-else :key="event.id" :data-test="`event-${event.id}`" class="align-top hover:bg-surface-2/70">
- <td class="px-3 py-3"><input type="checkbox" :checked="selectedIds.includes(event.id)" :aria-label="t('admin.promptAudit.events.selectEvent', { id: event.id })" @change="toggleOne(event.id)" /></td>
- <td class="whitespace-nowrap px-3 py-3 text-xs text-muted">{{ formatDate(event.created_at) }}</td>
- <td class="px-3 py-3">
- <CopyLine :label="t('admin.promptAudit.events.user')" :value="event.snapshot.username" />
- <CopyLine :label="t('admin.promptAudit.events.email')" :value="event.snapshot.user_email" />
- <CopyLine :label="t('admin.promptAudit.events.apiKey')" :value="event.snapshot.api_key_name" />
- </td>
- <td class="px-3 py-3 text-foreground">{{ event.snapshot.group_name || '—' }}</td>
- <td class="px-3 py-3">
- <p class="font-medium text-foreground">{{ event.snapshot.endpoint }}</p>
- <p class="mt-1 text-xs text-muted">{{ event.snapshot.model }} · {{ event.snapshot.protocol }} · {{ event.snapshot.stage || 'http' }}</p>
- </td>
- <td class="px-3 py-3">
- <span class="rounded-full px-2 py-0.5 text-xs font-medium" :class="decisionClass(event.decision)">{{ formatDecisionRisk(event.decision, event.risk_level) }}</span>
- <p class="mt-2 max-w-48 truncate text-xs text-muted" :title="formatCategories(event.categories)">{{ formatCategories(event.categories) }}</p>
- </td>
- <td class="max-w-xs px-3 py-3"><p class="line-clamp-2 break-words text-muted">{{ event.snapshot.redacted_preview || '—' }}</p></td>
- <td class="whitespace-nowrap px-3 py-3 text-right">
- <button type="button" class="btn btn-ghost btn-sm" @click="$emit('view', event.id)">{{ t('common.view') }}</button>
- <button type="button" class="btn btn-ghost btn-sm text-red-600" @click="$emit('delete', event.id)">{{ t('common.delete') }}</button>
- </td>
- </tr>
- </tbody>
- </table>
- <Pagination :total="total" :page="page" :page-size="pageSize" @update:page="$emit('page', $event)" @update:page-size="$emit('page-size', $event)" />
+ <div v-if="error" role="alert" class="notice notice-danger mt-4 text-sm">{{ error }}</div>
+ <div class="mt-5 overflow-hidden rounded-xl border border-line pa-events-card">
+ <DataTable
+ :columns="cols"
+ :data="events"
+ :loading="loading"
+ row-key="id"
+ :estimate-row-height="61"
+ >
+ <template #header-select>
+ <input type="checkbox" class="pa-checkbox" :checked="allSelected" :aria-label="t('admin.promptAudit.events.selectAll')" @change="toggleAll" />
+ </template>
+ <template #cell-select="{ row }">
+ <input type="checkbox" class="pa-checkbox" :checked="selectedIds.includes(row.id)" :aria-label="t('admin.promptAudit.events.selectEvent', { id: row.id })" @change="toggleOne(row.id)" />
+ </template>
+ <template #cell-time="{ row }">
+ <span class="cell-time" :title="formatDate(row.created_at)">{{ formatRelativeTime(row.created_at) }}</span>
+ </template>
+ <template #cell-identity="{ row }">
+ <div class="cell-stack" :title="`${row.snapshot.username} · ${row.snapshot.user_email} · ${row.snapshot.api_key_name}`">
+ <span class="cell-title">{{ row.snapshot.username || '—' }}</span>
+ <span class="cell-meta">{{ row.snapshot.user_email }}{{ row.snapshot.api_key_name ? ` · ${row.snapshot.api_key_name}` : '' }}</span>
+ </div>
+ </template>
+ <template #cell-group="{ row }">
+ <span class="cell-meta">{{ row.snapshot.group_name || '—' }}</span>
+ </template>
+ <template #cell-route="{ row }">
+ <div class="cell-stack">
+ <span class="cell-title">{{ row.snapshot.endpoint }}</span>
+ <span class="cell-meta">{{ row.snapshot.model }} · {{ row.snapshot.protocol }} · {{ row.snapshot.stage || 'http' }}</span>
+ </div>
+ </template>
+ <template #cell-result="{ row }">
+ <div class="cell-stack">
+ <span class="tag" :class="decisionClass(row.decision)">{{ formatDecisionRisk(row.decision, row.risk_level) }}</span>
+ <span class="cell-meta" :title="formatCategories(row.categories)">{{ formatCategories(row.categories) }}</span>
+ </div>
+ </template>
+ <template #cell-preview="{ row }">
+ <p class="cell-meta" :title="row.snapshot.redacted_preview || '—'">{{ row.snapshot.redacted_preview || '—' }}</p>
+ </template>
+ <template #cell-actions="{ row }">
+ <button type="button" class="btn btn-ghost btn-sm" @click="$emit('view', row.id)">{{ t('common.view') }}</button>
+ <button type="button" class="btn btn-ghost btn-sm text-danger-text" @click="$emit('delete', row.id)">{{ t('common.delete') }}</button>
+ </template>
+ <template #empty>
+ <div class="empty-state data-table-empty">
+ <Icon name="inbox" class="data-table-empty-icon" :stroke-width="1.6" aria-hidden="true" />
+ <p class="data-table-empty-title">{{ t('admin.promptAudit.events.empty') }}</p>
+ </div>
+ </template>
+ </DataTable>
+ <Pagination class="pa-events-pagination" :total="total" :page="page" :page-size="pageSize" @update:page="$emit('page', $event)" @update:page-size="$emit('page-size', $event)" />
  </div>
  </section>
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, reactive, watch } from 'vue'
+import { computed, defineComponent, h, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import Icon from '@/components/icons/Icon.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
+import type { Column } from '@/components/common/types'
 import type { PromptAuditEvent, PromptEventFilters } from '../types'
 import { cloneData, emptyEventFilters, SCANNER_CATALOG } from '../viewModel'
+import { formatRelativeTime } from '@/utils/format'
 
 const props = defineProps<{
  events: PromptAuditEvent[]; total: number; page: number; pageSize: number
@@ -127,8 +133,29 @@ const emit = defineEmits<{
 }>()
 const { t, locale } = useI18n()
 const localFilters = reactive<PromptEventFilters>(cloneData(props.filters))
-watch(() => props.filters, (value) => Object.assign(localFilters, cloneData(value)), { deep: true })
+// DateRangePicker only exposes date-level granularity (YYYY-MM-DD) and is kept as separate
+// local state so that the end-of-day time suffix normalized into localFilters.end_at (see
+// handleDateRangeChange) never round-trips back into the picker's own display value.
+const datePart = (value: string) => (value ? value.slice(0, 10) : '')
+const filterStartDate = ref(datePart(props.filters.start_at))
+const filterEndDate = ref(datePart(props.filters.end_at))
+watch(() => props.filters, (value) => {
+ Object.assign(localFilters, cloneData(value))
+ filterStartDate.value = datePart(value.start_at)
+ filterEndDate.value = datePart(value.end_at)
+}, { deep: true })
+const advancedOpen = ref(false)
 const allSelected = computed(() => props.events.length > 0 && props.events.every((event) => props.selectedIds.includes(event.id)))
+const cols = computed<Column[]>(() => [
+ { key: 'select', label: '' },
+ { key: 'time', label: t('admin.promptAudit.events.time'), class: 'w-[104px]' },
+ { key: 'identity', label: t('admin.promptAudit.events.identity'), class: 'w-[170px]' },
+ { key: 'group', label: t('admin.promptAudit.events.group'), class: 'w-[96px]' },
+ { key: 'route', label: t('admin.promptAudit.events.route'), class: 'w-[160px]' },
+ { key: 'result', label: t('admin.promptAudit.events.result'), class: 'w-[128px]' },
+ { key: 'preview', label: t('admin.promptAudit.events.preview'), class: 'w-[220px]' },
+ { key: 'actions', label: t('admin.promptAudit.common.actions'), class: 'w-[112px] text-right' },
+])
 
 const FilterInput = defineComponent({
  props: { modelValue: { type: String, required: true }, label: { type: String, required: true }, type: { type: String, default: 'text' } },
@@ -145,20 +172,6 @@ const FilterInput = defineComponent({
  },
 })
 
-const CopyLine = defineComponent({
- props: { label: { type: String, required: true }, value: { type: String, default: '' } },
- setup(componentProps) {
- return () => h('div', { class: 'flex max-w-56 items-center gap-1 text-xs' }, [
- h('span', { class: 'w-16 flex-none text-muted' }, componentProps.label),
- h('span', { class: 'min-w-0 flex-1 truncate text-foreground' }, componentProps.value || '—'),
- componentProps.value ? h('button', {
- type: 'button', class: 'text-accent hover:underline', 'aria-label': `${t('common.copy')} ${componentProps.label}`,
- onClick: () => navigator.clipboard?.writeText(componentProps.value),
- }, t('common.copy')) : null,
- ])
- },
-})
-
 function filtersChanged() {
  emit('filters-change', cloneData(localFilters))
 }
@@ -169,7 +182,17 @@ function applyFilters() {
 }
 function resetFilters() {
  Object.assign(localFilters, emptyEventFilters())
+ filterStartDate.value = ''
+ filterEndDate.value = ''
  applyFilters()
+}
+// Selecting a calendar end date should include that entire day, so append end-of-day time
+// only on localFilters.start_at/end_at (consumed by eventQueryParams' toISO), never on the
+// picker's own filterStartDate/filterEndDate refs.
+function handleDateRangeChange() {
+ localFilters.start_at = filterStartDate.value
+ localFilters.end_at = filterEndDate.value ? `${filterEndDate.value}T23:59:59.999` : ''
+ filtersChanged()
 }
 function toggleOne(id: number) {
  const selected = new Set(props.selectedIds)
@@ -184,9 +207,9 @@ function formatDate(value: string): string {
  return new Intl.DateTimeFormat(locale.value, { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value))
 }
 function decisionClass(decision: string): string {
- if (decision === 'critical') return 'bg-red-100 text-red-700'
- if (decision === 'flag') return 'bg-amber-100 text-amber-700'
- return 'bg-emerald-100 text-emerald-700'
+ if (decision === 'critical') return 'tag-danger'
+ if (decision === 'flag') return 'tag-warning'
+ return 'tag-success'
 }
 const DECISIONS = new Set(['pass', 'flag', 'critical'])
 const RISK_LEVELS = new Set(['low', 'medium', 'high', 'critical'])
@@ -210,3 +233,61 @@ function formatCategories(categories: string[]): string {
  return categories.map(translateCategory).join(', ')
 }
 </script>
+
+<style scoped>
+/* Sub-section table wrapper: a plain border box (no nested GlassCard — EventWorkspace
+ * already renders inside PromptAuditView's outer GlassCard) around DataTable/Pagination,
+ * since this workspace is one panel of the DashboardPage-shaped /admin/prompt-audit route,
+ * not a standalone full-viewport ListPage route (so no TablePageLayout shell either). */
+.pa-events-card {
+ overflow: hidden;
+}
+
+.pa-events-pagination {
+ border-top: 1px solid var(--border);
+}
+
+.pa-checkbox {
+ width: 16px;
+ height: 16px;
+ border-radius: 5px;
+ border: 1.5px solid var(--border);
+ accent-color: var(--accent);
+ cursor: pointer;
+}
+
+/* Same converged two-line cell pattern as TicketsView/RiskControlView (11G): page-scoped,
+ * layout-only tokens are not yet available for font-size/font-weight (see deviations.md). */
+.cell-stack {
+ display: flex;
+ flex-direction: column;
+ gap: 2px;
+ min-width: 0;
+}
+
+.cell-title {
+ font-size: 13px;
+ font-weight: 500;
+ line-height: 1.25;
+ color: var(--foreground);
+ white-space: nowrap;
+ overflow: hidden;
+ text-overflow: ellipsis;
+}
+
+.cell-meta {
+ font-size: 11.5px;
+ line-height: 1.3;
+ color: var(--muted);
+ white-space: nowrap;
+ overflow: hidden;
+ text-overflow: ellipsis;
+}
+
+.cell-time {
+ font-size: 12.5px;
+ color: var(--muted);
+ font-variant-numeric: tabular-nums;
+ white-space: nowrap;
+}
+</style>

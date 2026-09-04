@@ -10,7 +10,7 @@ import { formatHistoryLabel, sumNumbers } from '../utils/opsFormatters'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { formatNumber } from '@/utils/format'
-import { useTheme } from '@/composables/useTheme'
+import { alpha, baseChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale, Filler)
 
@@ -44,14 +44,14 @@ watch(
   }
 )
 
-const { isDark: isDarkMode } = useTheme()
+const theme = useChartTheme()
 const colors = computed(() => ({
-  blue: '#3b82f6',
-  blueAlpha: '#3b82f620',
-  green: '#10b981',
-  greenAlpha: '#10b98120',
-  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  blue: theme.value.accent,
+  blueAlpha: alpha(theme.value.accent, 12),
+  green: theme.value.success,
+  greenAlpha: alpha(theme.value.success, 12),
+  grid: theme.value.grid,
+  text: theme.value.text
 }))
 
 const totalRequests = computed(() => sumNumbers(props.points.map((p) => p.request_count)))
@@ -94,23 +94,19 @@ const state = computed<ChartState>(() => {
 
 const options = computed(() => {
   const c = colors.value
+  const base = baseChartOptions(theme.value)
   return {
-    responsive: true,
-    maintainAspectRatio: false,
+    ...base,
     interaction: { intersect: false, mode: 'index' as const },
     plugins: {
+      ...base.plugins,
       legend: {
         position: 'top' as const,
         align: 'end' as const,
         labels: { color: c.text, usePointStyle: true, boxWidth: 6, font: { size: 10 } }
       },
       tooltip: {
-        backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-        bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563',
-        borderColor: c.grid,
-        borderWidth: 1,
-        padding: 10,
+        ...base.plugins.tooltip,
         displayColors: true,
         callbacks: {
           label: (context: any) => {
@@ -174,7 +170,7 @@ function downloadChart() {
 </script>
 
 <template>
-  <div class="flex h-full min-w-0 flex-col rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="flex h-full min-w-0 flex-col rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <div
       data-testid="throughput-chart-header"
       class="mb-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"

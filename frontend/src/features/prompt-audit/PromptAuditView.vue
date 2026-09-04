@@ -2,7 +2,6 @@
  <AppLayout>
  <div class="mx-auto max-w-[1600px]" :class="activeTab === 'config' && draft ? 'pb-28' : 'pb-8'">
  <PageHeader
- :eyebrow="t('nav.securityAudit')"
  :title="t('admin.promptAudit.title')"
  :description="t('admin.promptAudit.description')"
  >
@@ -14,8 +13,8 @@
  </template>
  </PageHeader>
 
- <div v-if="loadErrors.config && !draft" role="alert" class="rounded-xl border border-red-200 bg-red-50 p-5">
- <p class="text-sm text-red-700">{{ loadErrors.config }}</p>
+ <div v-if="loadErrors.config && !draft" role="alert" class="notice notice-danger flex-col items-start">
+ <p class="text-sm">{{ loadErrors.config }}</p>
  <button type="button" class="btn-glass-secondary text-sm mt-3" @click="loadConfig">{{ t('admin.promptAudit.actions.retry') }}</button>
  </div>
 
@@ -50,7 +49,7 @@
  @update:endpoints="updateEndpoints"
  @probe="runProbe"
  />
- <div v-if="loadErrors.groups" role="alert" class="mt-5 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">{{ loadErrors.groups }}</div>
+ <div v-if="loadErrors.groups" role="alert" class="notice notice-warning mt-5 text-sm">{{ loadErrors.groups }}</div>
  <PolicyPanel :draft="draft" :groups="groups" @update:draft="replaceDraft" />
  </template>
  </div>
@@ -60,7 +59,7 @@
  v-if="draft?.enabled && !draft.store_pass_events"
  data-test="pass-events-disabled-notice"
  role="status"
- class="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+ class="notice notice-warning mt-6 flex-wrap items-center justify-between gap-3 text-sm"
  >
  <span>{{ t('admin.promptAudit.events.passEventsDisabled') }}</span>
  <button type="button" class="btn-glass-secondary text-sm" @click="activeTab = 'config'">
@@ -91,7 +90,7 @@
  </template>
  </div>
 
- <div v-if="draft && activeTab === 'config'" class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 py-3 shadow-[0_-12px_35px_rgba(15,23,42,0.08)] backdrop-blur" :style="saveBarOffsetStyle">
+ <div v-if="draft && activeTab === 'config'" class="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 px-4 py-3 shadow-[var(--shadow-pop)] backdrop-blur" :style="saveBarOffsetStyle">
  <div class="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
  <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
  <SaveToggle :label="t('admin.promptAudit.saveBar.enabled')" :model-value="draft.enabled" data-test="enabled-toggle" @update:model-value="setEnabled" />
@@ -100,7 +99,7 @@
  <SaveToggle :label="t('admin.promptAudit.saveBar.storePass')" :model-value="draft.store_pass_events" data-test="store-pass-toggle" @update:model-value="replaceDraft({ ...draft!, store_pass_events: $event })" />
  </div>
  <div class="flex items-center gap-3">
- <span class="text-sm" :class="dirty ? 'text-amber-700' : 'text-muted'">
+ <span class="text-sm" :class="dirty ? 'text-warning-text' : 'text-muted'">
  {{ dirty ? t('admin.promptAudit.saveBar.dirty') : t('admin.promptAudit.saveBar.synced') }}
  </span>
  <button type="button" class="btn-glass-secondary" :disabled="!dirty || loading.saving" @click="resetDraft">{{ t('common.reset') }}</button>

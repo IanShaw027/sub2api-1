@@ -63,7 +63,7 @@ describe('OpsErrorDetailModal', () => {
       props: { show: true, errorId: 1, errorType: 'request' },
       global: {
         stubs: {
-          BaseDialog: { template: '<div><slot /></div>' },
+          UiModal: { template: '<div><slot /></div>' },
           Icon: true
         }
       }

@@ -1,5 +1,5 @@
 <template>
-  <BaseDialog :show="show" :title="title" width="full" :close-on-click-outside="true" @close="close">
+  <UiModal :open="show" :title="title" width="xl" @close="close">
     <div v-if="loading" class="flex items-center justify-center py-16">
       <div class="flex flex-col items-center gap-3">
         <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-accent"></div>
@@ -136,7 +136,7 @@
         <div v-else class="mt-4 space-y-4">
           <div v-for="section in diagnosticPayloadSections" :key="section.key">
             <div class="mb-2 text-xs font-bold uppercase tracking-wider text-muted ">{{ diagnosticPayloadLabel(section.key) }}</div>
-            <pre class="max-h-[520px] overflow-auto rounded-xl border border-line bg-surface p-4 text-xs text-foreground   "><code>{{ prettyJSON(section.value) }}</code></pre>
+            <pre class="code-block max-h-[520px]"><code>{{ prettyJSON(section.value) }}</code></pre>
           </div>
         </div>
       </div>
@@ -205,7 +205,7 @@
 
             <pre
               v-if="expandedUpstreamDetailIds.has(ev.id)"
-              class="mt-3 max-h-[240px] overflow-auto rounded-xl border border-line bg-surface-2 p-3 text-xs text-foreground   "
+              class="code-block mt-3 max-h-[240px]"
             ><code>{{ prettyJSON(getUpstreamResponsePreview(ev)) }}</code></pre>
           </div>
         </div>
@@ -221,13 +221,13 @@
         {{ t('admin.ops.errorDetail.backToList') }}
       </button>
     </template>
-  </BaseDialog>
+  </UiModal>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores'
 import { opsAPI, type OpsErrorDetail } from '@/api/admin/ops'

@@ -359,7 +359,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
 </script>
 
 <template>
-  <div class="rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div>
         <h3 class="text-sm font-bold text-foreground ">{{ t('admin.ops.alertEvents.title') }}</h3>
