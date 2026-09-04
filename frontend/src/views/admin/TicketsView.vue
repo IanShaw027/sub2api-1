@@ -56,31 +56,15 @@
             :searchable="false"
             @change="applyFilters"
           />
-          <input
-            v-model="filters.start_date"
-            type="date"
-            class="field filter-date"
-            :aria-label="t('tickets.table.createdAt')"
+          <DateRangePicker
+            v-model:start-date="filters.start_date"
+            v-model:end-date="filters.end_date"
             @change="applyFilters"
           />
-          <span class="filter-dash" aria-hidden="true">–</span>
-          <input
-            v-model="filters.end_date"
-            type="date"
-            class="field filter-date"
-            :aria-label="t('tickets.table.updatedAt')"
-            @change="applyFilters"
-          />
-          <button
-            type="button"
-            class="filter-pill"
-            :class="{ 'is-active': filters.unread_only }"
-            :aria-pressed="filters.unread_only"
-            @click="toggleUnreadOnly"
-          >
-            <span class="filter-pill-label">{{ t('tickets.unreadOnly') }}</span>
-            <span class="filter-pill-value">{{ filters.unread_only ? t('common.yes') : t('common.no') }}</span>
-          </button>
+          <label class="filter-toggle">
+            <span class="filter-toggle-label">{{ t('tickets.unreadOnly') }}</span>
+            <ToggleSwitch :model-value="filters.unread_only" @update:model-value="toggleUnreadOnly" />
+          </label>
           <span class="filter-count">
             {{ t('tickets.filters.unreadSummary') }} <b>{{ unreadCount }}</b> / {{ pagination.total }}
           </span>
@@ -120,11 +104,11 @@
             </template>
 
             <template #cell-created_at="{ value }">
-              <span class="cell-time">{{ formatRelativeWithDateTime(value) }}</span>
+              <span class="cell-time" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
             </template>
 
             <template #cell-updated_at="{ value }">
-              <span class="cell-time">{{ formatRelativeWithDateTime(value) }}</span>
+              <span class="cell-time" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
             </template>
 
             <template #cell-actions="{ row }">
@@ -177,12 +161,14 @@ import Pagination from '@/components/common/Pagination.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import SearchInput from '@/components/common/SearchInput.vue'
 import Select from '@/components/common/Select.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
+import ToggleSwitch from '@/components/ui/ToggleSwitch.vue'
 import type { Column } from '@/components/common/types'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore } from '@/stores'
 import { adminTicketsAPI } from '@/api/admin/tickets'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { formatRelativeWithDateTime } from '@/utils/format'
+import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import { ticketCategoryOptions, ticketStatusOptions } from '@/utils/tickets'
 import type { SupportTicket, TicketCategory, TicketStatus } from '@/types/ticket'
 
@@ -208,13 +194,13 @@ const filters = reactive<{ search: string; category: TicketCategory | ''; status
 })
 
 const columns = computed<Column[]>(() => [
-  { key: 'title', label: t('tickets.table.title'), class: 'min-w-[18rem] whitespace-normal' },
-  { key: 'category', label: t('tickets.table.category'), class: 'w-36' },
-  { key: 'user_name', label: t('tickets.table.user'), class: 'min-w-[14rem] whitespace-normal' },
-  { key: 'status', label: t('tickets.table.status'), class: 'w-40' },
-  { key: 'created_at', label: t('tickets.table.createdAt'), class: 'w-44' },
-  { key: 'updated_at', label: t('tickets.table.updatedAt'), class: 'w-44' },
-  { key: 'actions', label: t('tickets.table.actions'), class: 'w-24 text-right' },
+  { key: 'title', label: t('tickets.table.title'), class: 'min-w-[14rem] whitespace-normal' },
+  { key: 'category', label: t('tickets.table.category'), class: 'w-24' },
+  { key: 'user_name', label: t('tickets.table.user'), class: 'min-w-[11rem] whitespace-normal' },
+  { key: 'status', label: t('tickets.table.status'), class: 'w-32' },
+  { key: 'created_at', label: t('tickets.table.createdAt'), class: 'w-28' },
+  { key: 'updated_at', label: t('tickets.table.updatedAt'), class: 'w-28' },
+  { key: 'actions', label: t('tickets.table.actions'), class: 'w-20 text-right' },
 ])
 const categoryFilterOptions = computed(() => [
   { value: '', label: t('tickets.filters.allCategories') },
@@ -370,14 +356,24 @@ onMounted(() => {
   flex: none;
 }
 
-.filter-date {
-  width: 150px;
+.filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-field);
+  background: color-mix(in oklch, var(--surface) 85%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: var(--field-shadow);
+  cursor: pointer;
   flex: none;
 }
 
-.filter-dash {
-  font-size: 12.5px;
-  color: var(--muted);
+.filter-toggle-label {
+  font-size: 13px;
+  color: var(--foreground);
+  white-space: nowrap;
 }
 
 .filter-count {
@@ -413,6 +409,7 @@ onMounted(() => {
 
 .cell-title {
   font-weight: 600;
+  line-height: 1.4;
   color: var(--foreground);
   white-space: normal;
   word-break: break-word;
@@ -420,6 +417,7 @@ onMounted(() => {
 
 .cell-meta {
   font-size: 11.5px;
+  line-height: 1.4;
   font-family: var(--font-mono);
   color: var(--muted);
   white-space: nowrap;

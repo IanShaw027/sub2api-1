@@ -74,10 +74,10 @@
 
           <template #cell-actor="{ row }">
             <div class="min-w-0 max-w-[220px]">
-              <div class="truncate font-medium text-foreground" :title="row.actor_email">
+              <div class="truncate font-medium leading-tight text-foreground" :title="row.actor_email">
                 {{ row.actor_email || '—' }}
               </div>
-              <div class="mt-0.5 truncate text-xs text-muted">
+              <div class="mt-0.5 truncate text-xs leading-tight text-muted">
                 {{ row.actor_role }}<span v-if="row.auth_method"> · {{ authMethodLabel(row.auth_method) }}</span>
               </div>
             </div>
@@ -85,10 +85,10 @@
 
           <template #cell-action="{ row }">
             <div class="min-w-0 max-w-xs">
-              <div class="truncate font-mono text-sm text-foreground" :title="row.action">
+              <div class="truncate font-mono text-sm leading-tight text-foreground" :title="row.action">
                 {{ row.action }}
               </div>
-              <div class="mt-0.5 truncate font-mono text-xs text-muted" :title="`${row.method} ${row.path}`">
+              <div class="mt-0.5 truncate font-mono text-xs leading-tight text-muted" :title="`${row.method} ${row.path}`">
                 {{ row.method }} {{ row.path }}
               </div>
             </div>
