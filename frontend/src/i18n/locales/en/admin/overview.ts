@@ -483,6 +483,7 @@ export default {
       title: 'User Management',
       description: 'Manage users and their permissions',
       createUser: 'Create User',
+      selectedOfTotal: 'Selected',
       bulkLimits: {
         action: 'Set limits ({count})',
         title: 'Set user limits',

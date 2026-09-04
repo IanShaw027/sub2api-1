@@ -1,34 +1,29 @@
 <template>
   <AppLayout>
-    <PageHeader :title="t('admin.groups.title')" :description="t('admin.groups.description')">
+    <PageHeader class="grp-header" :title="t('admin.groups.title')" :description="t('admin.groups.description')">
       <template #actions>
         <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="loadGroups">
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </Button>
-        <div class="relative" ref="columnDropdownRef">
-          <Button variant="secondary" :title="t('admin.groups.columnSettings')" @click="showColumnDropdown = !showColumnDropdown">
-            <Icon name="grid" size="md" class="mr-2" />
-            <span class="hidden md:inline">{{ t("admin.groups.columnSettings") }}</span>
+
+        <!-- 更多：排序 -->
+        <div class="grp-menu" ref="moreDropdownRef">
+          <Button variant="secondary" :aria-expanded="showMoreDropdown" @click="showMoreDropdown = !showMoreDropdown">
+            <span>{{ t("common.more") }}</span>
+            <Icon name="chevronDown" size="xs" />
           </Button>
-          <div
-            v-if="showColumnDropdown"
-            class="absolute right-0 top-full z-50 mt-1 max-h-80 w-48 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
-          >
+          <div v-if="showMoreDropdown" class="dropdown grp-dropdown">
             <button
-              v-for="col in toggleableColumns"
-              :key="col.key"
-              class="flex w-full items-center justify-between px-4 py-2 text-left text-sm text-foreground hover:bg-surface-2"
-              @click="toggleColumn(col.key)"
+              type="button"
+              class="dropdown-item"
+              @click="showSortModal = true; showMoreDropdown = false"
             >
-              <span>{{ col.label }}</span>
-              <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-accent" :stroke-width="2" />
+              <Icon name="arrowsUpDown" size="sm" />
+              <span>{{ t("admin.groups.sortOrder") }}</span>
             </button>
           </div>
         </div>
-        <Button variant="secondary" :title="t('admin.groups.sortOrder')" @click="openSortModal">
-          <Icon name="arrowsUpDown" size="md" class="mr-2" />
-          {{ t("admin.groups.sortOrder") }}
-        </Button>
+
         <Button class="groups-create-desktop" data-tour="groups-create-btn" @click="openCreateModal">
           <Icon name="plus" size="md" />
           {{ t("admin.groups.createGroup") }}
@@ -37,50 +32,78 @@
     </PageHeader>
     <TablePageLayout>
       <template #filters>
-        <div class="flex flex-col gap-3">
-          <MiniStatCard :items="groupMiniStats" />
-          <FilterBar :search-placeholder="t('admin.groups.searchGroups')">
-            <template #search>
-              <div class="relative w-full">
-                <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                <input
-                  v-model="searchQuery"
-                  type="text"
-                  :placeholder="t('admin.groups.searchGroups')"
-                  class="input pl-10"
-                  @input="handleSearch"
-                />
-              </div>
-            </template>
-            <template #filters>
-              <Select
-                v-model="filters.platform"
-                :options="platformFilterOptions"
-                :placeholder="t('admin.groups.allPlatforms')"
-                class="w-44"
-                @change="loadGroups"
-              />
-              <Select
-                v-model="filters.status"
-                :options="statusOptions"
-                :placeholder="t('admin.groups.allStatus')"
-                class="w-40"
-                @change="loadGroups"
-              />
-              <Select
-                v-model="filters.is_exclusive"
-                :options="exclusiveOptions"
-                :placeholder="t('admin.groups.allGroups')"
-                class="w-44"
-                @change="loadGroups"
-              />
-            </template>
-          </FilterBar>
-          <ChipScroller
-            :model-value="String(filters.status || '')"
-            :chips="statusChipOptions"
-            @update:model-value="onStatusChipChange"
+        <div class="grp-summary" role="group" :aria-label="t('admin.groups.columns.status')">
+          <button
+            v-for="chip in summaryChips"
+            :key="chip.key"
+            type="button"
+            class="summary-chip"
+            :class="{ 'is-active': chip.active }"
+            @click="chip.onClick"
+          >
+            <span class="summary-chip-label">
+              <span class="summary-chip-dot" :style="{ background: chip.color }"></span>
+              {{ chip.label }}
+            </span>
+            <span class="summary-chip-value num">{{ chip.count }}</span>
+          </button>
+        </div>
+        <div class="grp-filter-row">
+          <SearchInput
+            v-model="searchQuery"
+            :placeholder="t('admin.groups.searchGroups')"
+            @search="handleSearch"
           />
+          <div class="grp-filter-pill">
+            <Select
+              v-model="filters.platform"
+              :options="platformFilterOptions"
+              :placeholder="t('admin.groups.allPlatforms')"
+              @change="applyFilter"
+            />
+          </div>
+          <div class="grp-filter-pill">
+            <Select
+              v-model="filters.status"
+              :options="statusOptions"
+              :placeholder="t('admin.groups.allStatus')"
+              @change="applyFilter"
+            />
+          </div>
+          <div class="grp-filter-pill">
+            <Select
+              v-model="filters.is_exclusive"
+              :options="exclusiveOptions"
+              :placeholder="t('admin.groups.allGroups')"
+              @change="applyFilter"
+            />
+          </div>
+
+          <div class="grp-menu" ref="columnDropdownRef">
+            <button
+              type="button"
+              class="grp-icon-pill"
+              :title="t('admin.groups.columnSettings')"
+              :aria-expanded="showColumnDropdown"
+              @click="showColumnDropdown = !showColumnDropdown"
+            >
+              <Icon name="grid" size="sm" />
+            </button>
+            <div v-if="showColumnDropdown" class="dropdown grp-dropdown grp-columns-dropdown">
+              <div class="dropdown-label">{{ t("admin.groups.columnSettings") }}</div>
+              <button
+                v-for="col in toggleableColumns"
+                :key="col.key"
+                type="button"
+                class="dropdown-item"
+                :class="{ 'is-active': isColumnVisible(col.key) }"
+                @click="toggleColumn(col.key)"
+              >
+                <span>{{ col.label }}</span>
+                <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" />
+              </button>
+            </div>
+          </div>
         </div>
       </template>
 
@@ -101,37 +124,11 @@
           </template>
 
           <template #cell-id="{ value }">
-            <span class="font-mono text-xs text-muted"
-              >#{{ value }}</span
-            >
+            <MonoCell :value="`#${value}`" />
           </template>
 
           <template #cell-platform="{ value }">
-            <span
-              :class="[
- 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
- value === 'anthropic'
- ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-orange-700  '
- : value === 'openai'
- ? 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  '
- : value === 'antigravity'
- ? 'bg-purple-500/15 text-purple-700  '
- : value === 'kiro'
- ? 'bg-cyan-500/15 text-cyan-700  '
- : value === 'grok'
- ? 'bg-zinc-200 text-zinc-800  '
- : value === 'kimi'
- ? 'bg-pink-500/15 text-pink-700  '
- : value === 'zhipu'
- ? 'bg-indigo-500/15 text-indigo-700  '
- : value === 'deepseek'
- ? 'bg-teal-500/15 text-teal-700  '
- : 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent  ',
- ]"
-            >
-              <PlatformIcon :platform="value" size="xs" />
-              {{ t("admin.groups.platforms." + value) }}
-            </span>
+            <PlatformCell :platform="value" :label="t('admin.groups.platforms.' + value)" />
           </template>
 
           <template #cell-billing_type="{ row }">
@@ -234,11 +231,10 @@
           </template>
 
           <template #cell-is_exclusive="{ value }">
-            <span :class="['badge', value ? 'badge-primary' : 'badge-gray']">
-              {{
-                value ? t("admin.groups.exclusive") : t("admin.groups.public")
-              }}
-            </span>
+            <TypeTagCell
+              :label="value ? t('admin.groups.exclusive') : t('admin.groups.public')"
+              :tone="value ? 'accent' : 'default'"
+            />
           </template>
 
           <template #cell-account_count="{ row }">
@@ -335,81 +331,38 @@
           </template>
 
           <template #cell-status="{ value }">
-            <span
-              :class="[
- 'badge',
- value === 'active' ? 'badge-success' : 'badge-danger',
- ]"
-            >
-              {{ t("admin.accounts.status." + value) }}
-            </span>
+            <StatusCell :status="value" :label="t('admin.accounts.status.' + value)" />
           </template>
 
           <template #cell-actions="{ row }">
-            <div class="flex items-center gap-1">
-              <button
-                @click="handleEdit(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent "
-              >
-                <Icon name="edit" size="sm" />
-                <span class="text-xs">{{ t("common.edit") }}</span>
-              </button>
-              <button
-                data-testid="group-duplicate"
-                :title="
-                  duplicatingGroupIds.has(row.id)
-                    ? t('admin.groups.duplicating')
-                    : t('admin.groups.duplicate')
-                "
-                :disabled="duplicatingGroupIds.has(row.id)"
-                @click="handleDuplicate(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 "
-              >
-                <Icon name="copy" size="sm" />
-                <span class="text-xs">
-                  {{
+            <ActionsCell
+              :edit-label="t('common.edit')"
+              :more-label="t('common.more')"
+              :items="getGroupActionItems(row)"
+              @edit="handleEdit(row)"
+            >
+              <template #extra>
+                <button
+                  type="button"
+                  class="icon-btn"
+                  data-testid="group-duplicate"
+                  :title="
                     duplicatingGroupIds.has(row.id)
-                      ? t("admin.groups.duplicating")
-                      : t("admin.groups.duplicate")
-                  }}
-                </span>
-              </button>
-              <button
-                v-if="row.platform === 'composite'"
-                @click="handleCompositeRoutes(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-cyan-600 "
-              >
-                <Icon name="swap" size="sm" />
-                <span class="text-xs">{{
-                  t("admin.groups.compositeRoutes.action")
-                }}</span>
-              </button>
-              <button
-                @click="handleRateMultipliers(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-purple-600 "
-              >
-                <Icon name="dollar" size="sm" />
-                <span class="text-xs">{{
-                  t("admin.groups.rateMultipliers")
-                }}</span>
-              </button>
-              <button
-                @click="handleRPMOverrides(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-warning-text "
-              >
-                <Icon name="bolt" size="sm" />
-                <span class="text-xs">{{
-                  t("admin.groups.rpmOverrides")
-                }}</span>
-              </button>
-              <button
-                @click="handleDelete(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text  "
-              >
-                <Icon name="trash" size="sm" />
-                <span class="text-xs">{{ t("common.delete") }}</span>
-              </button>
-            </div>
+                      ? t('admin.groups.duplicating')
+                      : t('admin.groups.duplicate')
+                  "
+                  :aria-label="
+                    duplicatingGroupIds.has(row.id)
+                      ? t('admin.groups.duplicating')
+                      : t('admin.groups.duplicate')
+                  "
+                  :disabled="duplicatingGroupIds.has(row.id)"
+                  @click.stop="handleDuplicate(row)"
+                >
+                  <Icon name="copy" size="sm" :stroke-width="1.8" />
+                </button>
+              </template>
+            </ActionsCell>
           </template>
 
           <template #empty>
@@ -502,7 +455,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.copyAccounts.tooltip") }}
@@ -631,7 +584,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="mb-2 text-xs font-medium">
                     {{ t("admin.groups.exclusiveTooltip.title") }}
@@ -1252,7 +1205,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.supportedScopes.tooltip") }}
@@ -1325,7 +1278,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.mcpXml.tooltip") }}
@@ -1383,7 +1336,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.claudeCode.tooltip") }}
@@ -1805,7 +1758,7 @@
                   <div
                     v-for="row in createForm.exact_model_mappings"
                     :key="getCreateMessagesDispatchRowKey(row)"
-                    class="group relative rounded-xl border border-line bg-surface p-4 shadow-sm transition-all hover:border-accent hover:shadow-md "
+                    class="group relative rounded-xl border border-line bg-surface p-4 shadow-sm transition-all hover:border-accent hover:shadow-[var(--shadow-hover)] "
                   >
                     <div class="flex items-center gap-4">
                       <div
@@ -1997,7 +1950,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-80 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.modelRouting.tooltip") }}
@@ -2119,7 +2072,7 @@
                           accountSearchResults[getCreateRuleSearchKey(rule)]
                             ?.length > 0
                         "
-                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-surface shadow-lg"
+                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-surface shadow-[var(--shadow-pop)]"
                       >
                         <button
                           v-for="account in accountSearchResults[
@@ -2278,7 +2231,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.copyAccounts.tooltipEdit") }}
@@ -2405,7 +2358,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="mb-2 text-xs font-medium">
                     {{ t("admin.groups.exclusiveTooltip.title") }}
@@ -3031,7 +2984,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.supportedScopes.tooltip") }}
@@ -3104,7 +3057,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.mcpXml.tooltip") }}
@@ -3162,7 +3115,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-72 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.claudeCode.tooltip") }}
@@ -3579,7 +3532,7 @@
                   <div
                     v-for="row in editForm.exact_model_mappings"
                     :key="getEditMessagesDispatchRowKey(row)"
-                    class="group relative rounded-xl border border-line bg-surface p-4 shadow-sm transition-all hover:border-accent hover:shadow-md "
+                    class="group relative rounded-xl border border-line bg-surface p-4 shadow-sm transition-all hover:border-accent hover:shadow-[var(--shadow-hover)] "
                   >
                     <div class="flex items-center gap-4">
                       <div
@@ -3771,7 +3724,7 @@
                 class="pointer-events-none absolute bottom-full left-0 z-50 mb-2 w-80 opacity-0 transition-all duration-200 group-hover:pointer-events-auto group-hover:opacity-100"
               >
                 <div
-                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-lg "
+                  class="rounded-lg bg-[var(--code-bg)] p-3 text-white shadow-[var(--shadow-pop)] "
                 >
                   <p class="text-xs leading-relaxed text-muted">
                     {{ t("admin.groups.modelRouting.tooltip") }}
@@ -3892,7 +3845,7 @@
                           accountSearchResults[getEditRuleSearchKey(rule)]
                             ?.length > 0
                         "
-                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-surface shadow-lg"
+                        class="absolute z-50 mt-1 max-h-48 w-full overflow-auto rounded-lg border bg-surface shadow-[var(--shadow-pop)]"
                       >
                         <button
                           v-for="account in accountSearchResults[
@@ -4013,463 +3966,18 @@
     />
 
     <!-- Sort Order Modal -->
-    <BaseDialog
+    <GroupSortModal
       :show="showSortModal"
-      :title="t('admin.groups.sortOrder')"
-      width="normal"
-      @close="closeSortModal"
-    >
-      <div class="space-y-4">
-        <p class="text-sm text-muted">
-          {{ t("admin.groups.sortOrderHint") }}
-        </p>
-        <VueDraggable
-          v-model="sortableGroups"
-          :animation="200"
-          class="space-y-2"
-        >
-          <div
-            v-for="group in sortableGroups"
-            :key="group.id"
-            class="flex cursor-grab items-center gap-3 rounded-lg border border-line bg-surface p-3 transition-shadow hover:shadow-md active:cursor-grabbing"
-          >
-            <div class="text-muted">
-              <Icon name="menu" size="md" />
-            </div>
-            <div class="flex-1">
-              <div class="font-medium text-foreground">
-                {{ group.name }}
-              </div>
-              <div class="text-xs text-muted">
-                <span
-                  :class="[
- 'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
- group.platform === 'anthropic'
- ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-orange-700  '
- : group.platform === 'openai'
- ? 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  '
- : group.platform === 'antigravity'
- ? 'bg-purple-500/15 text-purple-700  '
- : group.platform === 'kiro'
- ? 'bg-cyan-500/15 text-cyan-700  '
- : group.platform === 'grok'
- ? 'bg-zinc-200 text-zinc-800  '
- : group.platform === 'kimi'
- ? 'bg-pink-500/15 text-pink-700  '
- : group.platform === 'zhipu'
- ? 'bg-indigo-500/15 text-indigo-700  '
- : group.platform === 'deepseek'
- ? 'bg-teal-500/15 text-teal-700  '
- : 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent  ',
- ]"
-                >
-                  {{ t("admin.groups.platforms." + group.platform) }}
-                </span>
-              </div>
-            </div>
-            <div class="text-sm text-muted">#{{ group.id }}</div>
-          </div>
-        </VueDraggable>
-      </div>
-
-      <template #footer>
-        <div class="flex justify-end gap-3 pt-4">
-          <button
-            @click="closeSortModal"
-            type="button"
-            class="btn-glass-secondary"
-          >
-            {{ t("common.cancel") }}
-          </button>
-          <button
-            @click="saveSortOrder"
-            :disabled="sortSubmitting"
-            class="btn-glass-primary"
-          >
-            <svg
-              v-if="sortSubmitting"
-              class="-ml-1 mr-2 h-4 w-4 animate-spin"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                class="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="4"
-              ></circle>
-              <path
-                class="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              ></path>
-            </svg>
-            {{ sortSubmitting ? t("common.saving") : t("common.save") }}
-          </button>
-        </div>
-      </template>
-    </BaseDialog>
+      @close="showSortModal = false"
+      @saved="loadGroups"
+    />
 
     <!-- Composite Routes Modal -->
-    <BaseDialog
+    <GroupCompositeRoutesModal
       :show="showCompositeRoutesModal"
-      :title="
-        compositeRoutesGroup
-          ? t('admin.groups.compositeRoutes.titleWithGroup', {
-              name: compositeRoutesGroup.name,
-            })
-          : t('admin.groups.compositeRoutes.title')
-      "
-      width="wide"
+      :group="compositeRoutesGroup"
       @close="closeCompositeRoutesModal"
-    >
-      <div class="grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <section class="min-w-0">
-          <div class="mb-3 flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-foreground">
-              {{ t("admin.groups.compositeRoutes.routes") }}
-            </h3>
-            <button
-              type="button"
-              class="btn-glass-secondary text-sm"
-              :disabled="compositeRoutesLoading"
-              @click="loadCompositeRoutes"
-            >
-              <Icon
-                name="refresh"
-                size="sm"
-                :class="compositeRoutesLoading ? 'animate-spin' : ''"
-              />
-            </button>
-          </div>
-
-          <div
-            class="overflow-hidden rounded-lg border border-line"
-          >
-            <div
-              v-if="compositeRoutesLoading"
-              class="flex h-36 items-center justify-center text-sm text-muted"
-            >
-              {{ t("common.loading") }}
-            </div>
-            <div
-              v-else-if="compositeRoutes.length === 0"
-              class="flex h-36 items-center justify-center text-sm text-muted"
-            >
-              {{ t("admin.groups.compositeRoutes.empty") }}
-            </div>
-            <div v-else class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-line text-sm ">
-                <thead class="bg-surface-2 text-left text-xs font-medium uppercase tracking-wide text-muted">
-                  <tr>
-                    <th class="px-3 py-2">
-                      {{ t("admin.groups.compositeRoutes.publicModel") }}
-                    </th>
-                    <th class="px-3 py-2">
-                      {{ t("admin.groups.compositeRoutes.target") }}
-                    </th>
-                    <th class="px-3 py-2">
-                      {{ t("admin.groups.compositeRoutes.scope") }}
-                    </th>
-                    <th class="px-3 py-2 text-right">
-                      {{ t("admin.groups.columns.actions") }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y divide-line bg-surface ">
-                  <tr
-                    v-for="route in compositeRoutes"
-                    :key="route.id"
-                    :class="!route.enabled && 'opacity-60'"
-                  >
-                    <td class="max-w-[15rem] px-3 py-2">
-                      <div class="break-all font-medium text-foreground">
-                        {{ route.public_model }}
-                      </div>
-                      <div class="mt-1 flex flex-wrap items-center gap-1.5">
-                        <span class="badge badge-gray">{{
-                          compositeRouteMatchLabel(route.match_type)
-                        }}</span>
-                        <span
-                          v-if="!route.enabled"
-                          class="badge badge-danger"
-                        >
-                          {{ t("admin.accounts.status.inactive") }}
-                        </span>
-                      </div>
-                    </td>
-                    <td class="px-3 py-2">
-                      <div class="flex items-center gap-1.5 text-foreground">
-                        <PlatformIcon :platform="route.target_platform" size="xs" />
-                        <span>{{ formatCompositePlatform(route.target_platform) }}</span>
-                      </div>
-                      <div class="mt-1 break-all text-xs text-muted">
-                        {{ route.upstream_model || route.public_model }}
-                      </div>
-                    </td>
-                    <td class="px-3 py-2">
-                      <div class="text-foreground">
-                        {{ formatCompositeEndpoint(route.endpoint) }}
-                      </div>
-                      <div class="text-xs text-muted">
-                        {{ t("admin.groups.compositeRoutes.priority") }}:
-                        {{ route.priority }}
-                      </div>
-                    </td>
-                    <td class="px-3 py-2">
-                      <div class="flex justify-end gap-1">
-                        <button
-                          type="button"
-                          class="rounded p-1.5 text-muted hover:bg-surface-2 hover:text-accent "
-                          :title="t('common.edit')"
-                          @click="editCompositeRoute(route)"
-                        >
-                          <Icon name="edit" size="sm" />
-                        </button>
-                        <button
-                          type="button"
-                          class="rounded p-1.5 text-muted hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text  "
-                          :title="t('common.delete')"
-                          @click="deleteCompositeRoute(route)"
-                        >
-                          <Icon name="trash" size="sm" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </section>
-
-        <section class="space-y-5">
-          <form class="space-y-3" @submit.prevent="saveCompositeRoute">
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="text-sm font-semibold text-foreground">
-                {{
-                  compositeRouteEditingId
-                    ? t("admin.groups.compositeRoutes.editRoute")
-                    : t("admin.groups.compositeRoutes.addRoute")
-                }}
-              </h3>
-              <button
-                v-if="compositeRouteEditingId"
-                type="button"
-                class="text-xs font-medium text-muted hover:text-foreground "
-                @click="resetCompositeRouteForm"
-              >
-                {{ t("common.cancel") }}
-              </button>
-            </div>
-
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.compositeRoutes.publicModel")
-              }}</label>
-              <input
-                v-model.trim="compositeRouteForm.public_model"
-                type="text"
-                class="input"
-                required
-                placeholder="openrouter/gpt-5"
-              />
-            </div>
-
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.matchType")
-                }}</label>
-                <Select
-                  v-model="compositeRouteForm.match_type"
-                  :options="compositeRouteMatchOptions"
-                />
-              </div>
-              <div>
-                <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.endpoint")
-                }}</label>
-                <Select
-                  v-model="compositeRouteForm.endpoint"
-                  :options="compositeRouteEndpointOptions"
-                />
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div>
-                <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.targetPlatform")
-                }}</label>
-                <Select
-                  v-model="compositeRouteForm.target_platform"
-                  :options="compositeRoutePlatformOptions"
-                />
-              </div>
-              <div>
-                <label class="input-label">{{
-                  t("admin.groups.compositeRoutes.priority")
-                }}</label>
-                <input
-                  v-model.number="compositeRouteForm.priority"
-                  type="number"
-                  min="1"
-                  step="1"
-                  class="input"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.compositeRoutes.upstreamModel")
-              }}</label>
-              <input
-                v-model.trim="compositeRouteForm.upstream_model"
-                type="text"
-                class="input"
-                placeholder="gpt-5"
-              />
-              <p class="mt-1 text-xs text-muted">
-                {{ t("admin.groups.compositeRoutes.upstreamModelHint") }}
-              </p>
-            </div>
-
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.compositeRoutes.notes")
-              }}</label>
-              <textarea
-                v-model.trim="compositeRouteForm.notes"
-                rows="2"
-                class="input"
-              ></textarea>
-            </div>
-
-            <div class="flex items-center justify-between gap-3">
-              <label class="flex items-center gap-2 text-sm text-foreground">
-                <input
-                  v-model="compositeRouteForm.enabled"
-                  type="checkbox"
-                  class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
-                />
-                {{ t("admin.groups.compositeRoutes.enabled") }}
-              </label>
-              <button
-                type="submit"
-                class="btn-glass-primary"
-                :disabled="compositeRouteSaving"
-              >
-                <Icon
-                  v-if="!compositeRouteSaving"
-                  name="check"
-                  size="sm"
-                  class="mr-2"
-                />
-                {{ compositeRouteEditingId ? t("common.update") : t("common.create") }}
-              </button>
-            </div>
-          </form>
-
-          <div class="border-t border-line pt-4">
-            <h3 class="mb-3 text-sm font-semibold text-foreground">
-              {{ t("admin.groups.compositeRoutes.preview") }}
-            </h3>
-            <div class="space-y-3">
-              <input
-                v-model.trim="compositePreviewModel"
-                type="text"
-                class="input"
-                placeholder="openrouter/gpt-5"
-                @keyup.enter="previewCompositeRoute"
-              />
-              <div class="flex gap-2">
-                <Select
-                  v-model="compositePreviewEndpoint"
-                  :options="compositeRouteEndpointOptions"
-                  class="min-w-0 flex-1"
-                />
-                <button
-                  type="button"
-                  class="btn-glass-secondary"
-                  :disabled="compositePreviewLoading || !compositePreviewModel"
-                  @click="previewCompositeRoute"
-                >
-                  <Icon name="play" size="sm" />
-                </button>
-              </div>
-
-              <div
-                v-if="compositePreviewDecision"
-                class="rounded-lg border border-line bg-surface-2 p-3 text-sm"
-              >
-                <div class="mb-2 flex items-center gap-2">
-                  <span
-                    :class="[
- 'badge',
- compositePreviewDecision.matched
- ? 'badge-success'
- : 'badge-danger',
- ]"
-                  >
-                    {{
-                      compositePreviewDecision.matched
-                        ? t("admin.groups.compositeRoutes.matched")
-                        : t("admin.groups.compositeRoutes.notMatched")
-                    }}
-                  </span>
-                  <span class="badge badge-gray">
-                    {{
-                      compositeRouteSourceLabel(
-                        compositePreviewDecision.source,
-                      )
-                    }}
-                  </span>
-                </div>
-                <div
-                  v-if="compositePreviewDecision.matched"
-                  class="space-y-1 text-foreground"
-                >
-                  <div>
-                    {{ t("admin.groups.compositeRoutes.targetPlatform") }}:
-                    {{
-                      formatCompositePlatform(
-                        compositePreviewDecision.target_platform,
-                      )
-                    }}
-                  </div>
-                  <div class="break-all">
-                    {{ t("admin.groups.compositeRoutes.upstreamModel") }}:
-                    {{ compositePreviewDecision.upstream_model }}
-                  </div>
-                </div>
-                <div
-                  v-else
-                  class="text-muted"
-                >
-                  {{ compositePreviewDecision.reason }}
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <template #footer>
-        <div class="flex justify-end pt-4">
-          <button
-            type="button"
-            class="btn-glass-secondary"
-            @click="closeCompositeRoutesModal"
-          >
-            {{ t("common.close") }}
-          </button>
-        </div>
-      </template>
-    </BaseDialog>
+    />
 
     <!-- Group Rate Multipliers Modal -->
     <GroupRateMultipliersModal
@@ -4497,37 +4005,29 @@ import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
 import type {
   AdminGroup,
-  CompositeModelRoute,
-  CompositeModelRouteInput,
-  CompositeRouteDecision,
-  CompositeRouteEndpoint,
-  CompositeRouteMatchType,
   GroupPlatform,
   SubscriptionType,
 } from "@/types";
-import {
-  CONCRETE_PLATFORM_OPTIONS,
-  GROUP_PLATFORM_OPTIONS,
-} from "@/constants/platforms";
+import { GROUP_PLATFORM_OPTIONS } from "@/constants/platforms";
 import type { Column } from "@/components/common/types";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import Button from "@/components/ui/Button.vue";
-import FilterBar from "@/components/ui/FilterBar.vue";
-import ChipScroller from "@/components/ui/ChipScroller.vue";
-import MiniStatCard from "@/components/ui/MiniStatCard.vue";
 import Fab from "@/components/ui/Fab.vue";
+import SearchInput from "@/components/common/SearchInput.vue";
 import DataTable from "@/components/common/DataTable.vue";
 import Pagination from "@/components/common/Pagination.vue";
 import BaseDialog from "@/components/common/BaseDialog.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Select from "@/components/common/Select.vue";
-import PlatformIcon from "@/components/common/PlatformIcon.vue";
+import { PlatformCell, TypeTagCell, StatusCell, MonoCell, ActionsCell, type ActionsCellItem } from "@/components/common/cells";
 import Icon from "@/components/icons/Icon.vue";
 import GroupRateMultipliersModal from "@/components/admin/group/GroupRateMultipliersModal.vue";
 import GroupRPMOverridesModal from "@/components/admin/group/GroupRPMOverridesModal.vue";
+import GroupSortModal from "@/components/admin/group/GroupSortModal.vue";
+import GroupCompositeRoutesModal from "@/components/admin/group/GroupCompositeRoutesModal.vue";
 import GroupCapacityBadge from "@/components/common/GroupCapacityBadge.vue";
 import ReasoningEffortPolicyFields from "@/components/admin/group/ReasoningEffortPolicyFields.vue";
 import PricingEntryCard from "@/components/admin/channel/PricingEntryCard.vue";
@@ -4541,7 +4041,6 @@ import {
   toNullableNumber,
 } from "@/components/admin/channel/types";
 import type { ChannelModelPricing } from "@/api/admin/channels";
-import { VueDraggable } from "vue-draggable-plus";
 import { createStableObjectKeyResolver } from "@/utils/stableObjectKey";
 import { extractApiErrorMessage } from "@/utils/apiError";
 import { useKeyedDebouncedSearch } from "@/composables/useKeyedDebouncedSearch";
@@ -4725,6 +4224,10 @@ const hiddenColumns = reactive<Set<string>>(new Set());
 const showColumnDropdown = ref(false);
 const columnDropdownRef = ref<HTMLElement | null>(null);
 
+// Header "更多" dropdown（排序入口）
+const showMoreDropdown = ref(false);
+const moreDropdownRef = ref<HTMLElement | null>(null);
+
 const getValidHiddenColumnKeys = () =>
   new Set(toggleableColumns.value.map((col) => col.key));
 
@@ -4837,30 +4340,62 @@ const statusOptions = computed(() => [
   { value: "inactive", label: t("admin.accounts.status.inactive") },
 ]);
 
-const statusChipOptions = computed(() =>
-  statusOptions.value.map((opt) => ({
-    value: String(opt.value),
-    label: opt.label,
-  })),
-);
+// ListPage 配方：三段迷你统计卡 → 一行可点击的 .summary-chip。
+// 计数只统计当前页（后端未提供全量分桶接口，与旧 MiniStatCard 的口径一致，非功能回退）。
+interface GroupSummaryChip {
+  key: string;
+  label: string;
+  color: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}
 
-const groupMiniStats = computed(() => [
-  { label: t("common.total"), value: pagination.total },
-  {
-    label: t("common.active"),
-    value: groups.value.filter((group) => group.status === "active").length,
-  },
-  {
-    label: t("admin.groups.exclusive"),
-    value: groups.value.filter((group) => group.is_exclusive).length,
-  },
-]);
-
-const onStatusChipChange = (value: string) => {
-  filters.status = value;
+const applyFilter = () => {
   pagination.page = 1;
   loadGroups();
 };
+
+const toggleStatusFilter = (value: string) => {
+  filters.status = filters.status === value ? "" : value;
+  applyFilter();
+};
+
+const toggleExclusiveFilter = (value: string) => {
+  filters.is_exclusive = filters.is_exclusive === value ? "" : value;
+  applyFilter();
+};
+
+const summaryChips = computed<GroupSummaryChip[]>(() => [
+  {
+    key: "all",
+    label: t("common.total"),
+    color: "var(--accent)",
+    count: pagination.total,
+    active: filters.status === "" && filters.is_exclusive === "",
+    onClick: () => {
+      filters.status = "";
+      filters.is_exclusive = "";
+      applyFilter();
+    },
+  },
+  {
+    key: "active",
+    label: t("common.active"),
+    color: "var(--success)",
+    count: groups.value.filter((group) => group.status === "active").length,
+    active: filters.status === "active",
+    onClick: () => toggleStatusFilter("active"),
+  },
+  {
+    key: "exclusive",
+    label: t("admin.groups.exclusive"),
+    color: "var(--warning)",
+    count: groups.value.filter((group) => group.is_exclusive).length,
+    active: filters.is_exclusive === "true",
+    onClick: () => toggleExclusiveFilter("true"),
+  },
+]);
 
 const exclusiveOptions = computed(() => [
   { value: "", label: t("admin.groups.allGroups") },
@@ -4873,41 +4408,6 @@ const platformOptions = computed(() => [...GROUP_PLATFORM_OPTIONS]);
 const platformFilterOptions = computed(() => [
   { value: "", label: t("admin.groups.allPlatforms") },
   ...GROUP_PLATFORM_OPTIONS,
-]);
-
-const compositeRoutePlatformOptions = computed(() => [
-  ...CONCRETE_PLATFORM_OPTIONS,
-]);
-
-const compositeRouteEndpointOptions = computed(() => [
-  { value: "any", label: t("admin.groups.compositeRoutes.endpoints.any") },
-  {
-    value: "messages",
-    label: t("admin.groups.compositeRoutes.endpoints.messages"),
-  },
-  {
-    value: "count_tokens",
-    label: t("admin.groups.compositeRoutes.endpoints.countTokens"),
-  },
-  {
-    value: "responses",
-    label: t("admin.groups.compositeRoutes.endpoints.responses"),
-  },
-  {
-    value: "chat_completions",
-    label: t("admin.groups.compositeRoutes.endpoints.chatCompletions"),
-  },
-  {
-    value: "embeddings",
-    label: t("admin.groups.compositeRoutes.endpoints.embeddings"),
-  },
-  { value: "images", label: t("admin.groups.compositeRoutes.endpoints.images") },
-  { value: "gemini", label: t("admin.groups.compositeRoutes.endpoints.gemini") },
-]);
-
-const compositeRouteMatchOptions = computed(() => [
-  { value: "exact", label: t("admin.groups.compositeRoutes.match.exact") },
-  { value: "prefix", label: t("admin.groups.compositeRoutes.match.prefix") },
 ]);
 
 const editStatusOptions = computed(() => [
@@ -5087,7 +4587,6 @@ let liveCapabilityRequest: Promise<{
 }> | null = null;
 const showSortModal = ref(false);
 const submitting = ref(false);
-const sortSubmitting = ref(false);
 const editingGroup = ref<AdminGroup | null>(null);
 const deletingGroup = ref<AdminGroup | null>(null);
 const duplicatingGroupIds = reactive(new Set<number>());
@@ -5095,39 +4594,8 @@ const showRateMultipliersModal = ref(false);
 const rateMultipliersGroup = ref<AdminGroup | null>(null);
 const showRPMOverridesModal = ref(false);
 const rpmOverridesGroup = ref<AdminGroup | null>(null);
-const sortableGroups = ref<AdminGroup[]>([]);
-type ConcreteGroupPlatform = Exclude<GroupPlatform, "composite">;
-type CompositeRouteFormState = {
-  public_model: string;
-  match_type: CompositeRouteMatchType;
-  target_platform: ConcreteGroupPlatform;
-  upstream_model: string;
-  endpoint: CompositeRouteEndpoint;
-  priority: number;
-  enabled: boolean;
-  notes: string;
-};
-
 const showCompositeRoutesModal = ref(false);
 const compositeRoutesGroup = ref<AdminGroup | null>(null);
-const compositeRoutes = ref<CompositeModelRoute[]>([]);
-const compositeRoutesLoading = ref(false);
-const compositeRouteSaving = ref(false);
-const compositeRouteEditingId = ref<number | null>(null);
-const compositePreviewModel = ref("");
-const compositePreviewEndpoint = ref<CompositeRouteEndpoint>("any");
-const compositePreviewLoading = ref(false);
-const compositePreviewDecision = ref<CompositeRouteDecision | null>(null);
-const compositeRouteForm = reactive<CompositeRouteFormState>({
-  public_model: "",
-  match_type: "exact",
-  target_platform: "openai",
-  upstream_model: "",
-  endpoint: "any",
-  priority: 100,
-  enabled: true,
-  notes: "",
-});
 const createMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
 const editMessagesDispatchDefaults = createDefaultMessagesDispatchFormState();
 const createModelsListState = reactive(createInitialModelsListState());
@@ -5937,13 +5405,10 @@ const loadCapacitySummary = async () => {
   }
 };
 
-let searchTimeout: ReturnType<typeof setTimeout>;
+// ListPage 配方：SearchInput 组件内置 300ms 防抖，这里只需响应它 debounce 后触发的 `search` 事件。
 const handleSearch = () => {
-  clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => {
-    pagination.page = 1;
-    loadGroups();
-  }, 300);
+  pagination.page = 1;
+  loadGroups();
 };
 
 const handlePageChange = (page: number) => {
@@ -6564,191 +6029,38 @@ const handleDuplicate = async (group: AdminGroup) => {
   }
 };
 
-const compositeRouteMatchLabel = (matchType: CompositeRouteMatchType) =>
-  compositeRouteMatchOptions.value.find((option) => option.value === matchType)
-    ?.label || matchType;
-
-const formatCompositeEndpoint = (endpoint: CompositeRouteEndpoint) =>
-  compositeRouteEndpointOptions.value.find((option) => option.value === endpoint)
-    ?.label || endpoint;
-
-const formatCompositePlatform = (platform: string) => {
-  if (!platform) return "—";
-  return t(`admin.groups.platforms.${platform}`);
-};
-
-const compositeRouteSourceLabel = (source: string) => {
-  if (source === "route") return t("admin.groups.compositeRoutes.sources.route");
-  if (source === "detector") {
-    return t("admin.groups.compositeRoutes.sources.detector");
-  }
-  return source || "—";
-};
-
-const resetCompositeRouteForm = () => {
-  compositeRouteEditingId.value = null;
-  compositeRouteForm.public_model = "";
-  compositeRouteForm.match_type = "exact";
-  compositeRouteForm.target_platform = "openai";
-  compositeRouteForm.upstream_model = "";
-  compositeRouteForm.endpoint = "any";
-  compositeRouteForm.priority = 100;
-  compositeRouteForm.enabled = true;
-  compositeRouteForm.notes = "";
-};
-
-const toCompositeRouteInput = (): CompositeModelRouteInput => ({
-  public_model: compositeRouteForm.public_model.trim(),
-  match_type: compositeRouteForm.match_type,
-  target_platform: compositeRouteForm.target_platform,
-  upstream_model: compositeRouteForm.upstream_model.trim(),
-  endpoint: compositeRouteForm.endpoint,
-  priority: Number(compositeRouteForm.priority) || 100,
-  enabled: compositeRouteForm.enabled,
-  notes: compositeRouteForm.notes.trim(),
-});
-
-const loadCompositeRoutes = async () => {
-  if (!compositeRoutesGroup.value) return;
-  compositeRoutesLoading.value = true;
-  try {
-    const routes = await adminAPI.groups.listCompositeRoutes(
-      compositeRoutesGroup.value.id,
-    );
-    compositeRoutes.value = routes.sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      return a.id - b.id;
-    });
-  } catch (error: any) {
-    appStore.showError(
-      error.response?.data?.detail ||
-        error.response?.data?.message ||
-        t("admin.groups.compositeRoutes.failedToLoad"),
-    );
-    console.error("Error loading composite routes:", error);
-  } finally {
-    compositeRoutesLoading.value = false;
-  }
-};
-
-const handleCompositeRoutes = async (group: AdminGroup) => {
+const handleCompositeRoutes = (group: AdminGroup) => {
   compositeRoutesGroup.value = group;
-  compositePreviewModel.value = "";
-  compositePreviewEndpoint.value = "any";
-  compositePreviewDecision.value = null;
-  resetCompositeRouteForm();
   showCompositeRoutesModal.value = true;
-  await loadCompositeRoutes();
 };
 
 const closeCompositeRoutesModal = () => {
   showCompositeRoutesModal.value = false;
   compositeRoutesGroup.value = null;
-  compositeRoutes.value = [];
-  compositePreviewDecision.value = null;
-  resetCompositeRouteForm();
-};
-
-const editCompositeRoute = (route: CompositeModelRoute) => {
-  compositeRouteEditingId.value = route.id;
-  compositeRouteForm.public_model = route.public_model;
-  compositeRouteForm.match_type = route.match_type;
-  compositeRouteForm.target_platform = route.target_platform;
-  compositeRouteForm.upstream_model = route.upstream_model;
-  compositeRouteForm.endpoint = route.endpoint;
-  compositeRouteForm.priority = route.priority || 100;
-  compositeRouteForm.enabled = route.enabled;
-  compositeRouteForm.notes = route.notes || "";
-};
-
-const saveCompositeRoute = async () => {
-  if (!compositeRoutesGroup.value) return;
-  if (!compositeRouteForm.public_model.trim()) {
-    appStore.showError(t("admin.groups.compositeRoutes.publicModelRequired"));
-    return;
-  }
-  compositeRouteSaving.value = true;
-  try {
-    const payload = toCompositeRouteInput();
-    if (compositeRouteEditingId.value) {
-      await adminAPI.groups.updateCompositeRoute(
-        compositeRoutesGroup.value.id,
-        compositeRouteEditingId.value,
-        payload,
-      );
-      appStore.showSuccess(t("admin.groups.compositeRoutes.routeUpdated"));
-    } else {
-      await adminAPI.groups.createCompositeRoute(
-        compositeRoutesGroup.value.id,
-        payload,
-      );
-      appStore.showSuccess(t("admin.groups.compositeRoutes.routeCreated"));
-    }
-    resetCompositeRouteForm();
-    await loadCompositeRoutes();
-  } catch (error: any) {
-    appStore.showError(
-      error.response?.data?.detail ||
-        error.response?.data?.message ||
-        t("admin.groups.compositeRoutes.failedToSave"),
-    );
-    console.error("Error saving composite route:", error);
-  } finally {
-    compositeRouteSaving.value = false;
-  }
-};
-
-const deleteCompositeRoute = async (route: CompositeModelRoute) => {
-  if (!compositeRoutesGroup.value) return;
-  if (!window.confirm(t("admin.groups.compositeRoutes.deleteConfirm"))) return;
-  try {
-    await adminAPI.groups.deleteCompositeRoute(
-      compositeRoutesGroup.value.id,
-      route.id,
-    );
-    if (compositeRouteEditingId.value === route.id) {
-      resetCompositeRouteForm();
-    }
-    appStore.showSuccess(t("admin.groups.compositeRoutes.routeDeleted"));
-    await loadCompositeRoutes();
-  } catch (error: any) {
-    appStore.showError(
-      error.response?.data?.detail ||
-        error.response?.data?.message ||
-        t("admin.groups.compositeRoutes.failedToDelete"),
-    );
-    console.error("Error deleting composite route:", error);
-  }
-};
-
-const previewCompositeRoute = async () => {
-  if (!compositeRoutesGroup.value || !compositePreviewModel.value.trim()) {
-    return;
-  }
-  compositePreviewLoading.value = true;
-  try {
-    compositePreviewDecision.value = await adminAPI.groups.previewCompositeRoute(
-      compositeRoutesGroup.value.id,
-      {
-        model: compositePreviewModel.value.trim(),
-        endpoint: compositePreviewEndpoint.value,
-      },
-    );
-  } catch (error: any) {
-    appStore.showError(
-      error.response?.data?.detail ||
-        error.response?.data?.message ||
-        t("admin.groups.compositeRoutes.failedToPreview"),
-    );
-    console.error("Error previewing composite route:", error);
-  } finally {
-    compositePreviewLoading.value = false;
-  }
 };
 
 const handleDelete = (group: AdminGroup) => {
   deletingGroup.value = group;
   showDeleteDialog.value = true;
+};
+
+// ListPage 配方：操作列改用共享的 ActionsCell（编辑图标 + 复制图标 + `…` 溢出菜单），
+// 不再手写 flex 按钮组。菜单项与旧版一一对应，零功能损失。
+const getGroupActionItems = (group: AdminGroup): ActionsCellItem[] => {
+  const items: ActionsCellItem[] = [];
+  if (group.platform === "composite") {
+    items.push({
+      label: t("admin.groups.compositeRoutes.action"),
+      icon: "swap",
+      onClick: () => handleCompositeRoutes(group),
+    });
+  }
+  items.push(
+    { label: t("admin.groups.rateMultipliers"), icon: "dollar", onClick: () => handleRateMultipliers(group) },
+    { label: t("admin.groups.rpmOverrides"), icon: "bolt", onClick: () => handleRPMOverrides(group) },
+    { label: t("common.delete"), icon: "trash", danger: true, onClick: () => handleDelete(group) },
+  );
+  return items;
 };
 
 const confirmDelete = async () => {
@@ -6941,49 +6253,8 @@ const handleClickOutside = (event: MouseEvent) => {
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false;
   }
-};
-
-// 打开排序弹窗
-const openSortModal = async () => {
-  try {
-    // 获取所有分组（不分页）
-    const allGroups = await adminAPI.groups.getAll();
-    // 按 sort_order 排序
-    sortableGroups.value = [...allGroups].sort(
-      (a, b) => a.sort_order - b.sort_order,
-    );
-    showSortModal.value = true;
-  } catch (error) {
-    appStore.showError(t("admin.groups.failedToLoad"));
-    console.error("Error loading groups for sorting:", error);
-  }
-};
-
-// 关闭排序弹窗
-const closeSortModal = () => {
-  showSortModal.value = false;
-  sortableGroups.value = [];
-};
-
-// 保存排序
-const saveSortOrder = async () => {
-  sortSubmitting.value = true;
-  try {
-    const updates = sortableGroups.value.map((g, index) => ({
-      id: g.id,
-      sort_order: index * 10,
-    }));
-    await adminAPI.groups.updateSortOrder(updates);
-    appStore.showSuccess(t("admin.groups.sortOrderUpdated"));
-    closeSortModal();
-    loadGroups();
-  } catch (error: any) {
-    appStore.showError(
-      error.response?.data?.detail || t("admin.groups.failedToUpdateSortOrder"),
-    );
-    console.error("Error updating sort order:", error);
-  } finally {
-    sortSubmitting.value = false;
+  if (moreDropdownRef.value && !moreDropdownRef.value.contains(target)) {
+    showMoreDropdown.value = false;
   }
 };
 
@@ -7001,6 +6272,83 @@ onUnmounted(() => {
 });
 </script>
 <style scoped>
+/* ---------- Header "更多" 下拉 ---------- */
+.grp-menu {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.grp-dropdown {
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  min-width: 200px;
+}
+
+.grp-columns-dropdown {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* ---------- Summary chips ---------- */
+.grp-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.grp-summary .summary-chip {
+  width: 100%;
+  text-align: left;
+}
+
+/* ---------- Filter row ---------- */
+.grp-filter-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+
+.grp-filter-row :deep(.search-input) {
+  width: 260px;
+  flex: none;
+}
+
+.grp-filter-pill {
+  width: 112px;
+  flex: none;
+}
+
+.grp-filter-row > .grp-menu {
+  margin-left: auto;
+}
+
+.grp-icon-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border-radius: var(--radius-field);
+  border: 1px solid var(--border);
+  background: color-mix(in oklch, var(--surface) 85%, transparent);
+  box-shadow: var(--field-shadow);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.grp-icon-pill:hover {
+  color: var(--foreground);
+  border-color: color-mix(in oklch, var(--foreground) 18%, transparent);
+}
+
 .groups-fab {
   display: none;
 }
@@ -7010,6 +6358,15 @@ onUnmounted(() => {
   }
   .groups-fab {
     display: inline-flex;
+  }
+
+  .grp-summary {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .grp-filter-row :deep(.search-input) {
+    width: 100%;
   }
 }
 </style>

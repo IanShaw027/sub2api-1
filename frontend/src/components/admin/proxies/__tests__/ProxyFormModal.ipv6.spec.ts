@@ -4,14 +4,16 @@ import { resolve } from 'node:path'
 
 // parseProxyUrl is not exported; assert on the source to lock in the
 // bracketed-IPv6 host alternative and exercise the regex directly.
+// (parseProxyUrl lives in ProxyFormModal.vue, extracted from ProxiesView.vue
+// as part of the glass-ui-redesign ListPage recipe refactor.)
 const source = readFileSync(
-  resolve(process.cwd(), 'src/views/admin/ProxiesView.vue'),
+  resolve(process.cwd(), 'src/components/admin/proxies/ProxyFormModal.vue'),
   'utf8'
 )
 
 function extractRegex(): RegExp {
   const match = source.match(/const regex =\s*\n?\s*(\/\^\(https\?[^;\n]+\/i)\n/)
-  expect(match, 'parseProxyUrl regex not found in ProxiesView.vue').toBeTruthy()
+  expect(match, 'parseProxyUrl regex not found in ProxyFormModal.vue').toBeTruthy()
   return new RegExp((match as RegExpMatchArray)[1].slice(1, -2), 'i')
 }
 

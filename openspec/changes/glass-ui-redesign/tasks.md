@@ -126,10 +126,10 @@
 ## 11. 管理员列表、详情与仪表盘（3 批，每批 4 个代理；每个代理 1–2 个路由）
 
 批次 1（用户与资源 / 渠道）
-- [ ] 11.1 `/admin/users`（`UsersView.vue` + `components/admin/users/*` + 用户弹层）：ListPage 配方，`.summary-chip` 替换三段卡，统一单元格，操作列不重叠，属性配置 / 筛选设置 / 列设置进入 `更多` 与筛选行；验证截图（亮 / 暗 / 390）+ spec + `anchor-diff`
-- [ ] 11.2 `/admin/groups`（`GroupsView.vue` + `components/admin/groups/*`，含模型路由 / Claude Max 模拟 / 分组容量弹层）；验证同上
-- [ ] 11.3 `/admin/subscriptions`（`SubscriptionsView.vue` + 分配 / 延期弹层）；验证同上
-- [ ] 11.4 `/admin/proxies`（`ProxiesView.vue` + 代理弹层 + IP 地理批量工具条）；验证同上
+- [x] 11.1 `/admin/users`（`UsersView.vue` + `components/admin/users/*` + 用户弹层）：ListPage 配方，`.summary-chip` 替换三段卡，统一单元格，操作列不重叠，属性配置 / 筛选设置 / 列设置进入 `更多` 与筛选行；验证截图（亮 / 暗 / 390）+ spec + `anchor-diff`
+- [x] 11.2 `/admin/groups`（`GroupsView.vue` + `components/admin/groups/*`，含模型路由 / Claude Max 模拟 / 分组容量弹层）；验证同上
+- [x] 11.3 `/admin/subscriptions`（`SubscriptionsView.vue` + 分配 / 延期弹层）；验证同上
+- [x] 11.4 `/admin/proxies`（`ProxiesView.vue` + 代理弹层 + IP 地理批量工具条）；验证同上
 - [ ] 11.5 `/admin/channels/pricing`（`ChannelsView.vue` + `components/admin/channels/*`：模型定价表格、倍率 `.tag`、批量编辑弹层）；验证同上
 - [ ] 11.6 `/admin/channels/monitor`（`ChannelMonitorView.vue`：状态玻璃卡网格 + 圆点徽章 + 8px pulse + 96×28 sparkline + 详情弹层）；验证同上
 - [ ] 11.7 `/admin/plugins`（`PluginsView.vue`：卡片网格或 ListPage、安装 / 配置弹层）；验证同上

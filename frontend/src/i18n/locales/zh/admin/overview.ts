@@ -483,6 +483,7 @@ export default {
       title: '用户管理',
       description: '管理用户账户和权限',
       createUser: '创建用户',
+      selectedOfTotal: '已选',
       bulkLimits: {
         action: '批量设置限制（{count}）',
         title: '批量设置用户限制',

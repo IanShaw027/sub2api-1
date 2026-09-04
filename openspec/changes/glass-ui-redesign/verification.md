@@ -69,3 +69,9 @@
 ### 8B 阶段 2（账号弹窗拆分，2026-09-04）
 - vue-tsc：account 范围 0 错误（其余错误来自 11B 进行中的 ProxiesView）；eslint 0；vitest account 范围 341/341；ui-lint（BulkEdit/bulk/*/Create/Edit）legacy 0 / color 0 / scoped 0。
 - 未完成：Create/Edit 弹窗仍 5963/5372 行，见 deviations。
+
+### 组 11 批次 1（users / groups / subscriptions / proxies，2026-09-04）
+- vue-tsc 0（范围内）；eslint 0；vitest views/admin/__tests__ + components/admin/proxies 223/223；ui-lint 4 页 + 新组件 total 0；i18n parity 0/0/0（overview.ts 仅 users 块新增 `selectedOfTotal`）。
+- anchor-diff：Users/Groups 各「丢失」7 个 handler（状态 chip、行菜单迁入 ActionsCell / GroupSortModal），Subscriptions 3 个（`closeAssignModal` 逻辑进入 SubscriptionAssignDialog，`handleResetQuota/handleRevoke` 经菜单包装仍在），Proxies 34 个（create/edit 表单合并进 ProxyFormModal、批量操作经 `runMoreMenuAction` 包装）——均为迁移非丢失。
+- 探针（1440，light）：h1 74/35，filter-bar 146 h36，thead 211 h42（subscriptions / proxies）；无参考图，按 ListPage 配方核验。
+- 行数：ProxiesView 2140→1324，SubscriptionsView 1557→1128，UsersView 1940；GroupsView 6372（Create/Edit 弹层拆分延后，见 deviations，health-cleanup 6.4 标 [~]）。

@@ -16,7 +16,12 @@ describe('admin platform filters', () => {
   it('uses the shared catalogs on the groups page', () => {
     const source = readSource('src/views/admin/GroupsView.vue')
     expect(source).toContain('...GROUP_PLATFORM_OPTIONS')
-    expect(source).toContain('...CONCRETE_PLATFORM_OPTIONS')
+    // The composite-route "target platform" selector (concrete platforms only,
+    // since a route can't target another composite group) was extracted into
+    // GroupCompositeRoutesModal.vue alongside the rest of the composite-routes
+    // modal — see components/admin/group/GroupCompositeRoutesModal.vue.
+    const compositeRoutesModalSource = readSource('src/components/admin/group/GroupCompositeRoutesModal.vue')
+    expect(compositeRoutesModalSource).toContain('...CONCRETE_PLATFORM_OPTIONS')
   })
 
   it('uses the concrete platform catalog wherever concrete platforms are selected', () => {
