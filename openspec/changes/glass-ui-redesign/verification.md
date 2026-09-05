@@ -202,3 +202,7 @@
 | `/studio` | 390 亮 | `html` h844 无纵向溢出（三段式面板切换） | 达标（`12h-390.png`） |
 
 门禁：`vue-tsc` 0；eslint 0；vitest `src/views/user src/components/user` 20 文件 109 用例 + `src/features/creation` 7 文件 56 用例通过；ui-lint `--scoped --palette` 所有权文件 0；i18n zh/en 8955 = 8955；anchor-diff 无丢失（两处迁移见 deviations）。
+
+## 13.2 对比度门禁（lead）
+
+`node scripts/check-contrast.js`：glass-light / glass-dark 各 5 tone × 3 底色徽章 + tooltip 全部 PASS（最低为亮色 warning-on-canvas 4.60、danger-on-canvas 4.61）；令牌调整后 `npx vitest run src/components/ui src/__tests__` 30 文件 110 用例通过。亮色残余 4 条非文字失败（border / accent-on-canvas）延至 15.x。

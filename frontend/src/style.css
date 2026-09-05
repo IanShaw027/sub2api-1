@@ -698,7 +698,7 @@
   .badge-blue,
   .badge-purple {
     background: color-mix(in oklch, var(--accent) 12%, transparent);
-    color: var(--accent);
+    color: var(--info-text);
   }
 
   .badge-success,

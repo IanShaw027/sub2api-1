@@ -33,12 +33,12 @@ export function oklchToLinearSRGB(L, C, Hdeg) {
   return [r, g, bb]
 }
 
-function linearToGamma(c) {
+export function linearToGamma(c) {
   const clamped = Math.min(1, Math.max(0, c))
   return clamped <= 0.0031308 ? 12.92 * clamped : 1.055 * clamped ** (1 / 2.4) - 0.055
 }
 
-function gammaToLinear(c) {
+export function gammaToLinear(c) {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
 }
 
@@ -50,6 +50,26 @@ export function relativeLuminance([r, g, b]) {
   const G = gammaToLinear(linearToGamma(g))
   const B = gammaToLinear(linearToGamma(b))
   return 0.2126 * R + 0.7152 * G + 0.0722 * B
+}
+
+/**
+ * Composite `color-mix(in oklch, <tone> <alpha>%, transparent)` over an opaque
+ * backdrop the way a browser paints it (alpha blend in gamma sRGB), and return
+ * the result as a linear sRGB triple usable by relativeLuminance().
+ */
+export function compositeTint(toneOklch, alpha, backdropOklch) {
+  const tone = oklchToLinearSRGB(...toneOklch).map(linearToGamma)
+  const back = oklchToLinearSRGB(...backdropOklch).map(linearToGamma)
+  return tone.map((c, i) => gammaToLinear(c * alpha + back[i] * (1 - alpha)))
+}
+
+/** Contrast ratio from two linear sRGB triples. */
+export function contrastRatioLinear(a, b) {
+  const la = relativeLuminance(a)
+  const lb = relativeLuminance(b)
+  const lighter = Math.max(la, lb)
+  const darker = Math.min(la, lb)
+  return (lighter + 0.05) / (darker + 0.05)
 }
 
 /** WCAG 2.x contrast ratio between two OKLCH colors, each as [L, C, H]. */
@@ -86,13 +106,35 @@ export function cssBlock(source, selector) {
   throw new Error(`unbalanced braces for selector: ${selector}`)
 }
 
-/** Read a `--name: value;` declaration out of a CSS block. Follows one `var(--x)` indirection. */
+/** Format an [L, C, H] triple back into an `oklch()` string. */
+function fmtOklch([L, C, H]) {
+  return `oklch(${(L * 100).toFixed(2)}% ${C.toFixed(4)} ${H.toFixed(2)})`
+}
+
+/**
+ * Read a `--name: value;` declaration out of a CSS block. Follows `var(--x)`
+ * indirections and resolves `color-mix(in oklch, <a> P%, <b>)` between two
+ * resolvable oklch colors (linear interpolation of L/C/H, which is what the
+ * browser does for in-gamut colors with the same hue arc).
+ */
 export function tokenValue(block, name) {
   const match = block.match(new RegExp(`${name}\\s*:\\s*([^;]+);`))
   const raw = match?.[1]?.trim()
   if (!raw) return undefined
+  return resolveColor(block, raw)
+}
+
+function resolveColor(block, raw) {
   const varMatch = raw.match(/^var\((--[\w-]+)\)$/)
   if (varMatch) return tokenValue(block, varMatch[1])
+  const mix = raw.match(/^color-mix\(in oklch,\s*(.+?)\s+([\d.]+)%\s*,\s*(.+)\)$/)
+  if (mix) {
+    const a = parseOklch(resolveColor(block, mix[1]) || '')
+    const b = parseOklch(resolveColor(block, mix[3]) || '')
+    if (!a || !b) return raw
+    const p = parseFloat(mix[2]) / 100
+    return fmtOklch([0, 1, 2].map((i) => a[i] * p + b[i] * (1 - p)))
+  }
   return raw
 }
 
@@ -121,7 +163,8 @@ export function loadThemeTokens(tokensPath) {
     'warning',
     'warning-text',
     'danger',
-    'danger-text'
+    'danger-text',
+    'info-text'
   ]
 
   const build = (block) => {

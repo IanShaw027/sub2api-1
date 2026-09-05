@@ -181,7 +181,7 @@
 ## 13. 暗色主题全站核对（2 个代理，各半路由）
 
 - [ ] 13.1 生成全部路由暗色 1440 截图，逐张对照亮色：无白底块 / 浅灰边 / 黑字，图表 / tooltip / 下拉 / 弹层 / Toast / 骨架均令牌化；验证 `verification.md` 登记 64 条路由"暗色对等 = 2 分"
-- [ ] 13.2 对比度抽检脚本 `scripts/check-contrast.js` 扩展到徽章 5 tone × 2 主题、muted-on-surface、danger-text-on-danger-14%、tooltip；验证全部 ≥ 4.5:1（大字 ≥ 3:1）
+- [x] 13.2 对比度抽检脚本 `scripts/check-contrast.js` 扩展到徽章 5 tone × 2 主题、muted-on-surface、danger-text-on-danger-14%、tooltip；验证全部 ≥ 4.5:1（大字 ≥ 3:1）
 
 ## 14. 移动端全站核对（2 个代理，各半路由）
 

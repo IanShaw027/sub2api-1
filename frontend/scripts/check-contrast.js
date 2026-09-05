@@ -9,7 +9,7 @@
 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { contrastRatio, loadThemeTokens } from './contrast-utils.js'
+import { compositeTint, contrastRatio, contrastRatioLinear, loadThemeTokens, oklchToLinearSRGB } from './contrast-utils.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const tokensPath = resolve(here, '../src/styles/tokens.css')
@@ -39,6 +39,44 @@ const NON_TEXT_PAIRS = [
   ['accent', 'background', 3, 'focus ring / accent vs background']
 ]
 
+// Badge tones (src/style.css `.badge-*`): text token on `color-mix(tone alpha%, transparent)`
+// composited over each surface the badge can sit on. Badges are 11–12px text → 4.5:1.
+// [text token, tint tone token, tint alpha, description]
+const BADGE_TONES = [
+  ['info-text', 'accent', 0.12, 'badge-info / badge-primary'],
+  ['success-text', 'success', 0.16, 'badge-success'],
+  ['warning-text', 'warning', 0.18, 'badge-warning'],
+  ['danger-text', 'danger', 0.14, 'badge-danger (danger-text on danger 14%)'],
+  ['muted', null, 0, 'badge-muted (muted on surface-secondary)']
+]
+const BADGE_BACKDROPS = ['surface', 'background', 'canvas']
+
+// Tooltip (`.tooltip-bubble`): --background text on --foreground bubble.
+const TOOLTIP_PAIRS = [['background', 'foreground', 4.5, 'tooltip text on tooltip bubble']]
+
+function runBadges(tokens) {
+  let failures = 0
+  for (const [textTok, toneTok, alpha, desc] of BADGE_TONES) {
+    for (const backdrop of BADGE_BACKDROPS) {
+      const text = tokens[textTok]
+      const back = toneTok ? tokens[backdrop] : tokens['surface-secondary']
+      if (!text || !back || (toneTok && !tokens[toneTok])) {
+        console.log(`  SKIP  badge ${desc} (token not defined)`)
+        continue
+      }
+      const bg = toneTok ? compositeTint(tokens[toneTok], alpha, back) : oklchToLinearSRGB(...back)
+      const ratio = contrastRatioLinear(oklchToLinearSRGB(...text), bg)
+      const pass = ratio >= 4.5
+      if (!pass) failures += 1
+      console.log(
+        `  ${pass ? 'PASS' : 'FAIL'}  ${`badge ${desc}`.padEnd(46)} on --${backdrop.padEnd(12)} = ${fmt(ratio).padEnd(8)} (min 4.5:1)`
+      )
+      if (!toneTok) break
+    }
+  }
+  return failures
+}
+
 function fmt(n) {
   return `${n.toFixed(2)}:1`
 }
@@ -47,7 +85,11 @@ function runTheme(name, tokens) {
   console.log(`\n${name}`)
   console.log('-'.repeat(name.length))
   let failures = 0
-  const rows = [...TEXT_PAIRS.map((p) => [...p, 'text']), ...NON_TEXT_PAIRS.map((p) => [...p, 'non-text'])]
+  const rows = [
+    ...TEXT_PAIRS.map((p) => [...p, 'text']),
+    ...TOOLTIP_PAIRS.map((p) => [...p, 'text']),
+    ...NON_TEXT_PAIRS.map((p) => [...p, 'non-text'])
+  ]
 
   for (const [fg, bg, min, desc] of rows) {
     const fgColor = tokens[fg]
@@ -64,6 +106,7 @@ function runTheme(name, tokens) {
       `  ${status}  --${fg.padEnd(18)} vs --${bg.padEnd(18)} = ${fmt(ratio).padEnd(8)} (min ${min}:1)  ${desc}`
     )
   }
+  failures += runBadges(tokens)
   return failures
 }
 
