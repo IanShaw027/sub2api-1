@@ -2,7 +2,8 @@
 // Glass UI static consistency scan (openspec glass-ui-quality-gates).
 // Usage: node scripts/ui-lint.mjs [--scoped] [--json] [paths...]
 //   default : legacy class patterns + colour literals outside the whitelist
-//   --scoped: additionally scan views/** <style scoped> for non-layout declarations
+//   --scoped : additionally scan views/** <style scoped> for non-layout declarations
+//   --palette: additionally flag raw Tailwind palette classes (group 15 gate)
 // Exit code 1 when any hit is found.
 import fs from 'node:fs'
 import path from 'node:path'
@@ -11,6 +12,7 @@ const ROOT = path.resolve(new URL('..', import.meta.url).pathname)
 const SRC = path.join(ROOT, 'src')
 const args = process.argv.slice(2)
 const scoped = args.includes('--scoped')
+const palette = args.includes('--palette')
 const asJson = args.includes('--json')
 const targets = args.filter((a) => !a.startsWith('--'))
 
@@ -19,11 +21,19 @@ const LEGACY = [
   /\brounded-2xl\b/, /\brounded-3xl\b/, /\bshadow-lg\b/, /\bshadow-md\b/, /\bshadow-xl\b/, /\bshadow-2xl\b/,
   /\btext-lg font-semibold\b/, /fonts\.googleapis\.com/, /fonts\.gstatic\.com/
 ]
+// Raw Tailwind palette classes. The LEGACY list above only ever covered the
+// gray ramp, so semantic colours (red/green/amber/...) passed the gate
+// unnoticed across the codebase. Opt in with --palette until group 15 makes it
+// mandatory; every hit should become a token (var(--danger), var(--success), ...).
+const PALETTE = /\b(?:border|bg|text|ring|from|to|via|divide|outline|decoration|shadow|accent|caret|fill|stroke)-(?:red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose|slate|zinc|neutral|stone)-(?:50|[1-9]00|950)\b/g
+
 const COLOR = /(?<![\w/])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b|(?<![\w-])rgba?\(|(?<![\w-])hsla?\(/g // `repo#123` issue refs are not colors
 const COLOR_WHITELIST = [
   /^style\.css$/, /^styles\/tokens\.css$/, /^utils\/platformTile\.ts$/, /^utils\/chartTheme\.ts$/, /^components\/icons\//,
   /^components\/common\/PlatformIcon\.vue$/, /^components\/common\/ModelIcon\.vue$/, /^i18n\/locales\//,
-  /^components\/payment\/.*Brand/, /^components\/auth\/.*(Brand|OAuth|LinuxDo|WeChat)/i
+  /^components\/payment\/.*Brand/, /^components\/auth\/.*(Brand|OAuth|LinuxDo|WeChat)/i,
+  // QR codes must stay pure black on white for scanners to decode them.
+  /^components\/user\/profile\/TotpSetupModal\.vue$/
 ]
 const SCOPED_WHITELIST = [/^views\/HomeView\.vue$/, /^views\/auth\//]
 const SCOPED_PROPS = /^\s*(color|background(?:-color)?|border-radius|box-shadow|font-size|font-weight)\s*:/
@@ -38,6 +48,7 @@ function walk(dir, out = []) {
 }
 const files = targets.length ? targets.map((t) => path.resolve(t)) : walk(SRC)
 const hits = { legacy: [], color: [], scoped: [] }
+if (palette) hits.palette = []
 const rel = (f) => path.relative(SRC, f).split(path.sep).join('/')
 
 for (const file of files) {
@@ -46,6 +57,7 @@ for (const file of files) {
   const lines = text.split('\n')
   lines.forEach((line, i) => {
     for (const re of LEGACY) { const m = line.match(re); if (m) hits.legacy.push({ file: r, line: i + 1, match: m[0] }) }
+    if (palette) { for (const m of line.matchAll(PALETTE)) hits.palette.push({ file: r, line: i + 1, match: m[0] }) }
     if (!COLOR_WHITELIST.some((w) => w.test(r))) {
       const trimmed = line.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '').replace(/<!--.*?-->/g, '')
       for (const m of trimmed.matchAll(COLOR)) {
@@ -69,7 +81,7 @@ for (const file of files) {
   }
 }
 
-const total = hits.legacy.length + hits.color.length + hits.scoped.length
+const total = Object.values(hits).reduce((n, list) => n + list.length, 0)
 if (asJson) console.log(JSON.stringify({ total, ...hits }, null, 2))
 else {
   for (const [k, list] of Object.entries(hits)) {
