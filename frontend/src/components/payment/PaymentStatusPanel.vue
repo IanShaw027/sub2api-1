@@ -6,8 +6,8 @@
  <template v-if="outcome === 'success'">
  <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
- <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
- <Icon name="check" size="lg" class="text-green-500" />
+ <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success-100">
+ <Icon name="check" size="lg" class="text-success-500" />
  </div>
  <p class="text-lg font-bold text-foreground">{{ props.orderType === 'subscription' ? t('payment.result.subscriptionSuccess') : t('payment.result.success') }}</p>
  <div v-if="paidOrder" class="w-full rounded-xl bg-surface-2 p-4">
@@ -55,8 +55,8 @@
  <template v-else-if="outcome === 'expired'">
  <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
- <div class="flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
- <svg class="h-8 w-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+ <div class="flex h-16 w-16 items-center justify-center rounded-full bg-warning-100">
+ <svg class="h-8 w-8 text-warning-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
  </svg>
  </div>
@@ -81,7 +81,7 @@
  ></div>
  <div
  v-else
- class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50"
+ class="flex h-12 w-12 items-center justify-center rounded-full bg-accent-50"
  >
               <Icon name="checkCircle" size="lg" :style="{ color: ALIPAY_BRAND_COLOR }" />
  </div>
@@ -305,8 +305,8 @@ const qrBrandColor = computed(() => {
 })
 
 const qrBorderClass = computed(() => {
- if (isAlipay.value) return 'bg-blue-50'
- if (isWxpay.value) return 'bg-green-50'
+ if (isAlipay.value) return 'bg-accent-50'
+ if (isWxpay.value) return 'bg-success-50'
  return 'border-line bg-surface'
 })
 

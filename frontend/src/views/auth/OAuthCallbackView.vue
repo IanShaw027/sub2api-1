@@ -9,7 +9,7 @@
  />
 
  <div v-else-if="needsRegistrationCompletion" class="glass-card p-6">
- <h1 class="text-lg font-semibold text-foreground">
+ <h1 class="text-[18px] font-semibold text-foreground">
  {{ t('auth.oidc.callbackTitle', { providerName }) }}
  </h1>
  <p class="mt-2 text-sm text-muted">
@@ -62,7 +62,7 @@
  @keyup.enter="handleSubmitRegistration"
  />
  </div>
- <p v-if="registrationError" class="text-sm text-red-600 ">
+ <p v-if="registrationError" class="text-sm text-danger-text ">
  {{ registrationError }}
  </p>
  <button
@@ -100,7 +100,7 @@
  </CallbackStatusCard>
 
  <div v-else class="glass-card p-6">
- <h1 class="text-lg font-semibold text-foreground">
+ <h1 class="text-[18px] font-semibold text-foreground">
  {{ t('auth.oauth.callbackTitle') }}
  </h1>
  <p class="mt-2 text-sm text-muted">

@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div
       v-if="visible"
-      class="batch-prompt-popover fixed z-[9999] rounded-lg border border-line bg-surface p-3 text-sm text-foreground shadow-xl ring-1 ring-black/5 "
+      class="batch-prompt-popover fixed z-[9999] rounded-lg border border-line bg-surface p-3 text-sm text-foreground shadow-glass ring-1 ring-black/5 "
       :style="style"
       @mouseenter="$emit('cancel-close')"
       @mouseleave="$emit('schedule-close')"

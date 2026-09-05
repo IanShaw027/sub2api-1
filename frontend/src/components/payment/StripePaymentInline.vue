@@ -11,7 +11,7 @@
  <template v-else-if="success">
  <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
- <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+ <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success-100">
  <Icon name="check" size="lg" class="text-success" />
  </div>
  <p class="text-lg font-bold text-foreground">{{ t('payment.result.success') }}</p>

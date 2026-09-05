@@ -119,7 +119,7 @@ async function renderQR() {
     const y = (canvas.height - logoSize) / 2
     // White background with rounded corners
     const pad = 5
-    ctx.fillStyle = '#FFFFFF'
+    ctx.fillStyle = 'white'
     ctx.beginPath()
     const r = 6
     ctx.moveTo(x - pad + r, y - pad)

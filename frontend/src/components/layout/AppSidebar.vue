@@ -10,7 +10,7 @@
  <router-link
  :to="homePath"
  class="sidebar-logo flex h-[30px] w-[30px] flex-none items-center justify-center overflow-hidden rounded-[9px] transition-opacity hover:opacity-80"
- style="background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 70%, white) 0%, var(--accent) 55%, color-mix(in oklch, var(--accent) 80%, black) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 6px 14px -6px var(--accent)"
+ style="background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 70%, white) 0%, var(--accent) 55%, color-mix(in oklch, var(--accent) 80%, black) 100%); box-shadow: inset 0 1px 0 color-mix(in oklch, white 45%, transparent), 0 6px 14px -6px var(--accent)"
  @click="handleMenuItemClick(homePath)"
  >
  <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />

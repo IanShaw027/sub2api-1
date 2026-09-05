@@ -42,10 +42,10 @@ withDefaults(defineProps<{
 
 function statusClass(used: number, limit: number) {
  if (used >= limit && limit > 0) {
- return 'bg-red-100 text-red-700'
+ return 'bg-danger-100 text-danger-text'
  }
  if (used > 0) {
- return 'bg-yellow-100 text-yellow-700'
+ return 'bg-warning-100 text-warning-text'
  }
  return 'bg-surface-2 text-muted'
 }

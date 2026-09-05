@@ -14,7 +14,7 @@
  >
  <svg
  v-if="isDark"
- class="h-4 w-4 flex-none text-amber-500"
+ class="h-4 w-4 flex-none text-warning-500"
  viewBox="0 0 24 24"
  fill="none"
  stroke="currentColor"

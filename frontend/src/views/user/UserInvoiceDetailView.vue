@@ -217,11 +217,10 @@ onMounted(load)
   display: flex;
   flex-direction: column;
   gap: 12px;
-  --cell-fs-3: 12px;
 }
 
 .invoice-status-label {
-  font-size: var(--cell-fs-3);
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 

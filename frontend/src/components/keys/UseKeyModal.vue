@@ -7,15 +7,15 @@
  >
  <div class="space-y-4">
  <!-- No Group Assigned Warning -->
- <div v-if="!platform" class="flex items-start gap-3 p-4 rounded-lg bg-yellow-50 border border-yellow-200">
- <svg class="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+ <div v-if="!platform" class="flex items-start gap-3 p-4 rounded-lg bg-warning-50 border border-warning-200">
+ <svg class="w-5 h-5 text-warning-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
  </svg>
  <div>
- <p class="text-sm font-medium text-yellow-800">
+ <p class="text-sm font-medium text-warning-800">
  {{ t('keys.useKeyModal.noGroupTitle') }}
  </p>
- <p class="text-sm text-yellow-700 mt-1">
+ <p class="text-sm text-warning-text mt-1">
  {{ t('keys.useKeyModal.noGroupDescription') }}
  </p>
  </div>
@@ -103,7 +103,7 @@
  <div
  v-if="codexAuthMode === 'api-key'"
  data-testid="codex-api-key-restart-notice"
- class="mt-3 flex items-start gap-2 border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800"
+ class="mt-3 flex items-start gap-2 border-l-2 border-warning-400 bg-warning-50 px-3 py-2 text-xs leading-5 text-warning-800"
  >
  <Icon name="exclamationCircle" size="sm" class="mt-0.5 flex-shrink-0" />
  <p>{{ t('keys.useKeyModal.openai.authModeApiKeyRestartNotice') }}</p>
@@ -141,7 +141,7 @@
  class="relative"
  >
  <!-- File Hint (if exists) -->
- <p v-if="file.hint" class="text-xs text-amber-600 mb-1.5 flex items-center gap-1">
+ <p v-if="file.hint" class="text-xs text-warning-text mb-1.5 flex items-center gap-1">
  <Icon name="exclamationCircle" size="sm" class="flex-shrink-0" />
  {{ file.hint }}
  </p>
@@ -154,8 +154,8 @@
  @click="copyContent(file.content, index)"
  class="flex flex-shrink-0 items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-lg transition-colors"
  :class="copiedIndex === index
- ? 'bg-green-500/20 text-green-400'
- : 'bg-white/5 hover:bg-white/10 text-muted hover:text-white'"
+ ? 'bg-success-500/20 text-success-400'
+ : 'bg-[color-mix(in_oklch,white_5%,transparent)] hover:bg-[color-mix(in_oklch,white_10%,transparent)] text-muted hover:text-white'"
  >
  <svg v-if="copiedIndex === index" class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
@@ -219,22 +219,22 @@
  </div>
  <p
  v-if="codexModelManifestState === 'ready'"
- class="border-t border-line px-4 py-2 text-xs text-emerald-700"
+ class="border-t border-line px-4 py-2 text-xs text-success-text"
  >
  {{ t('keys.useKeyModal.codexModelCatalog.modelsCount', { count: codexModelManifestModelCount }) }}
  </p>
  <p
  v-else-if="codexModelManifestState === 'error'"
- class="border-t border-red-200 px-4 py-2 text-xs text-red-700"
+ class="border-t border-danger-200 px-4 py-2 text-xs text-danger-text"
  >
  {{ t('keys.useKeyModal.codexModelCatalog.errorDescription') }}
  </p>
  </section>
 
  <!-- Usage Note -->
- <div v-if="showPlatformNote" class="flex items-start gap-3 p-3 rounded-lg bg-blue-50 border border-blue-100">
- <Icon name="infoCircle" size="md" class="text-blue-500 flex-shrink-0 mt-0.5" />
- <p class="text-sm text-blue-700">
+ <div v-if="showPlatformNote" class="flex items-start gap-3 p-3 rounded-lg bg-accent-50 border border-accent-100">
+ <Icon name="infoCircle" size="md" class="text-accent-500 flex-shrink-0 mt-0.5" />
+ <p class="text-sm text-accent-700">
  {{ platformNote }}
  </p>
  </div>
@@ -675,11 +675,11 @@ const escapeHtml = (value: string) => value
 const wrapToken = (className: string, value: string) =>
  `<span class="${className}">${escapeHtml(value)}</span>`
 
-const keyword = (value: string) => wrapToken('text-emerald-300', value)
-const variable = (value: string) => wrapToken('text-sky-200', value)
-const operator = (value: string) => wrapToken('text-slate-400', value)
-const string = (value: string) => wrapToken('text-amber-200', value)
-const comment = (value: string) => wrapToken('text-slate-500', value)
+const keyword = (value: string) => wrapToken('text-success-300', value)
+const variable = (value: string) => wrapToken('text-accent-200', value)
+const operator = (value: string) => wrapToken('text-muted', value)
+const string = (value: string) => wrapToken('text-warning-200', value)
+const comment = (value: string) => wrapToken('text-muted', value)
 
 // Syntax highlighting helpers
 // Generate file configs based on platform and active tab

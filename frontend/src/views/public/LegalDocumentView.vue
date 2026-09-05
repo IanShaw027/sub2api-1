@@ -190,8 +190,8 @@ onMounted(async () => {
 
 .legal-brand-name {
   overflow: hidden;
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--foreground);
@@ -200,7 +200,7 @@ onMounted(async () => {
 .legal-brand-name-skeleton {
   width: 112px;
   height: 20px;
-  border-radius: 5px;
+  border-radius: var(--radius-5);
 }
 
 .legal-main {
@@ -238,7 +238,7 @@ onMounted(async () => {
   justify-content: center;
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: var(--radius-field);
   background: color-mix(in oklch, var(--accent) 10%, transparent);
   color: var(--accent);
 }
@@ -248,8 +248,8 @@ onMounted(async () => {
 }
 
 .legal-doc-type {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
   color: var(--accent);
 }
 
@@ -260,7 +260,7 @@ onMounted(async () => {
 
 .legal-doc-updated {
   margin-top: 10px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--muted);
 }
 

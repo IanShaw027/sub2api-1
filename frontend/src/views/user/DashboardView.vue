@@ -319,7 +319,7 @@ const heroDescription = computed(() => {
 
 .dash-hero-orb {
   position: absolute;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .dash-hero-orb-accent {
@@ -327,12 +327,7 @@ const heroDescription = computed(() => {
   top: -140px;
   width: 380px;
   height: 380px;
-  background: radial-gradient(
-    circle at 35% 35%,
-    color-mix(in oklch, var(--accent) 60%, white) 0%,
-    color-mix(in oklch, var(--accent) 30%, transparent) 42%,
-    transparent 70%
-  );
+  background: radial-gradient(circle at 35% 35%, color-mix(in oklch, var(--accent) 60%, white) 0%, color-mix(in oklch, var(--accent) 30%, transparent) 42%, transparent 70%);
 }
 
 .dash-hero-orb-success {
@@ -352,7 +347,7 @@ const heroDescription = computed(() => {
 }
 
 .dash-hero-kicker {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
   line-height: 1.3;
   margin-bottom: 3px;
@@ -361,8 +356,8 @@ const heroDescription = computed(() => {
 .dash-hero-title {
   margin: 0;
   font-family: var(--display);
-  font-size: 30px;
-  font-weight: 800;
+  font-size: var(--fs-30);
+  font-weight: var(--fw-extrabold);
   letter-spacing: -0.03em;
   line-height: 1.15;
 }
@@ -373,7 +368,7 @@ const heroDescription = computed(() => {
 
 .dash-hero-desc {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
   color: var(--muted);
   max-width: 540px;
   line-height: 1.55;
@@ -407,7 +402,7 @@ const heroDescription = computed(() => {
   height: 28px;
   padding: 0 10px;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .dash-refresh-btn {
@@ -416,11 +411,11 @@ const heroDescription = computed(() => {
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: color-mix(in oklch, var(--surface) 80%, transparent);
   color: var(--foreground);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
   border: 1px solid var(--border);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
@@ -467,23 +462,23 @@ const heroDescription = computed(() => {
 }
 
 .dash-mini-label {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   line-height: 1.3;
 }
 
 .dash-mini-value {
   font-family: var(--display);
-  font-size: 24px;
-  font-weight: 800;
+  font-size: var(--fs-24);
+  font-weight: var(--fw-extrabold);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .dash-mini-sub {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--muted);
   line-height: 1.3;
 }
@@ -522,7 +517,7 @@ const heroDescription = computed(() => {
   }
   .dash-hero {
     padding: 18px 18px 16px;
-    border-radius: 18px;
+    border-radius: var(--radius-18);
     gap: 12px;
   }
   .dash-hero-tools {
@@ -533,7 +528,7 @@ const heroDescription = computed(() => {
     grid-template-columns: 1fr;
   }
   .dash-hero-title {
-    font-size: 22px;
+    font-size: var(--fs-22);
   }
 }
 </style>

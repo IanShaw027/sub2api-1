@@ -1089,14 +1089,14 @@ onUnmounted(() => {
 }
 
 .keys-sort-note {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
   white-space: nowrap;
 }
 
 .keys-sort-note b {
   color: var(--foreground);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .keys-column-settings {
@@ -1141,7 +1141,7 @@ onUnmounted(() => {
 }
 
 .keys-page .keys-chips :deep(.ui-chip) {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
 }
 
 /* ---------- Table card ---------- */
@@ -1156,7 +1156,7 @@ onUnmounted(() => {
 .keys-page .keys-layout :deep(.table-scroll-container) {
   background: color-mix(in oklch, var(--surface) 70%, transparent);
   border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
-  border-radius: 14px;
+  border-radius: var(--radius-card);
   box-shadow: var(--shadow);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -1178,8 +1178,8 @@ onUnmounted(() => {
 .keys-page .keys-layout :deep(th) {
   height: 43px;
   padding: 0 8px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1189,7 +1189,7 @@ onUnmounted(() => {
 .keys-page .keys-layout :deep(td) {
   height: 59px;
   padding: 0 8px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--foreground);
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
@@ -1276,7 +1276,7 @@ onUnmounted(() => {
 }
 
 .keys-name-text {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1289,7 +1289,7 @@ onUnmounted(() => {
 
 .keys-name-id {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--muted);
 }
 
@@ -1310,7 +1310,7 @@ onUnmounted(() => {
 .keys-icon-btn-xs {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: var(--radius-7);
 }
 
 .keys-icon-btn-xs.is-copied {
@@ -1325,7 +1325,7 @@ onUnmounted(() => {
   margin: -3px -6px;
   padding: 3px 6px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
   transition: background 0.15s ease;
@@ -1342,7 +1342,7 @@ onUnmounted(() => {
 .keys-group-suffix {
   flex: none;
   opacity: 0.65;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
 }
 
 .keys-group-caret {
@@ -1357,7 +1357,7 @@ onUnmounted(() => {
 
 .keys-concurrency {
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1371,11 +1371,11 @@ onUnmounted(() => {
 }
 
 .keys-usage-today {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .keys-usage-total {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--muted);
 }
 
@@ -1388,13 +1388,13 @@ onUnmounted(() => {
 .keys-rate-limit,
 .keys-expiry,
 .keys-muted-cell {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
 }
 
 .keys-mono-cell {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .keys-cell-empty {
@@ -1423,11 +1423,11 @@ onUnmounted(() => {
   height: 28px;
   padding: 0 9px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--accent);
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -1442,7 +1442,7 @@ onUnmounted(() => {
 }
 
 .keys-confirm-text {
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--muted);
   line-height: 1.6;
 }
@@ -1469,7 +1469,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 12px;
   padding: 14px;
-  border-radius: 14px;
+  border-radius: var(--radius-card);
 }
 
 .keys-list-fade {

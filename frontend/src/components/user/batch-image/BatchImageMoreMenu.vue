@@ -2,7 +2,7 @@
   <Teleport to="body">
     <div
       v-if="jobId"
-      class="fixed z-[9999] w-44 overflow-hidden rounded-xl bg-surface py-1 text-sm shadow-lg ring-1 ring-black/5 "
+      class="fixed z-[9999] w-44 overflow-hidden rounded-xl bg-surface py-1 text-sm shadow-glass ring-1 ring-black/5 "
       :style="style"
       @click.stop
     >

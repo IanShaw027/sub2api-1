@@ -287,8 +287,8 @@ onMounted(() => {
 
 .notice-title {
   margin-bottom: 4px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
 }
 
 .affiliate-tips-list {
@@ -319,7 +319,7 @@ onMounted(() => {
 }
 
 .rh-muted {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
 }
 

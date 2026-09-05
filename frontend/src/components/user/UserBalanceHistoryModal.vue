@@ -31,7 +31,7 @@
  <div class="mt-2.5 flex items-center justify-end border-t border-line/60 pt-2.5">
  <p class="text-xs text-muted">
  {{ t('admin.users.totalRecharged') }}:
- <span class="font-semibold text-emerald-600">${{ totalRecharged.toFixed(2) }}</span>
+ <span class="font-semibold text-success-text">${{ totalRecharged.toFixed(2) }}</span>
  </p>
  </div>
  </div>
@@ -218,38 +218,38 @@ function getIconName(item: RedeemHistoryItem) {
 function getIconBg(item: RedeemHistoryItem) {
  if (isBalanceType(item.type)) {
  return item.value >= 0
- ? 'bg-emerald-100'
- : 'bg-red-100'
+ ? 'bg-success-100'
+ : 'bg-danger-100'
  }
  if (isSubscriptionType(item.type)) {
- return 'bg-purple-100'
+ return 'bg-accent-100'
  }
  return item.value >= 0
- ? 'bg-blue-100'
- : 'bg-orange-100'
+ ? 'bg-accent-100'
+ : 'bg-warning-100'
 }
 
 function getIconColor(item: RedeemHistoryItem) {
  if (isBalanceType(item.type)) {
  return item.value >= 0
- ? 'text-emerald-600'
- : 'text-red-600'
+ ? 'text-success-text'
+ : 'text-danger-text'
  }
  if (isSubscriptionType(item.type)) {
- return 'text-purple-600'
+ return 'text-accent-600'
  }
  return item.value >= 0
- ? 'text-blue-600'
- : 'text-orange-600'
+ ? 'text-accent-600'
+ : 'text-warning-text'
 }
 
 function getValueColor(item: RedeemHistoryItem) {
  if (isSubscriptionType(item.type)) {
- return 'text-purple-600'
+ return 'text-accent-600'
  }
  return item.value >= 0
- ? 'text-emerald-600'
- : 'text-red-600'
+ ? 'text-success-text'
+ : 'text-danger-text'
 }
 
 function getItemTitle(item: RedeemHistoryItem) {

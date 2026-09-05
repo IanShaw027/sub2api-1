@@ -106,8 +106,8 @@ const { t } = useI18n()
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  color: white;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 14%, transparent);
   flex: none;
 }
 

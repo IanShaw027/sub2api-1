@@ -25,7 +25,7 @@
               <span v-if="group.user_rate_multiplier != null" class="text-xs text-muted">
                 {{ t('tickets.fields.specialRate') }}: {{ formatMultiplier(group.user_rate_multiplier) }}
               </span>
-              <span class="text-xs text-blue-600">
+              <span class="text-xs text-accent-600">
                 {{ t('tickets.fields.effectiveRate') }}: {{ formatMultiplier(group.effective_rate) }}
               </span>
             </div>

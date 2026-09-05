@@ -31,7 +31,7 @@ const COLOR = /(?<![\w/])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b|(
 const COLOR_WHITELIST = [
   /^style\.css$/, /^styles\/tokens\.css$/, /^utils\/platformTile\.ts$/, /^utils\/chartTheme\.ts$/, /^components\/icons\//,
   /^components\/common\/PlatformIcon\.vue$/, /^components\/common\/ModelIcon\.vue$/, /^i18n\/locales\//,
-  /^components\/payment\/.*Brand/, /^components\/auth\/.*(Brand|OAuth|LinuxDo|WeChat)/i,
+  /^components\/payment\/.*Brand/, /^components\/auth\/.*(Brand|OAuth|LinuxDo|WeChat|GoogleMark)/i,
   // QR codes must stay pure black on white for scanners to decode them.
   /^components\/user\/profile\/TotpSetupModal\.vue$/
 ]

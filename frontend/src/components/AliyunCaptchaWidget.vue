@@ -376,26 +376,14 @@ onUnmounted(() => {
   margin-top: 0.5rem;
   font-size: 0.75rem;
   font-weight: 500;
-  color: rgb(21 128 61);
+  color: var(--success-text);
 }
 
 .aliyun-captcha-status--muted {
-  color: rgb(107 114 128);
+  color: var(--muted);
 }
 
 .aliyun-captcha-status--error {
-  color: rgb(185 28 28);
-}
-
-:global(:root[data-theme='glass-dark']) .aliyun-captcha-status {
-  color: rgb(134 239 172);
-}
-
-:global(:root[data-theme='glass-dark']) .aliyun-captcha-status--muted {
-  color: rgb(156 163 175);
-}
-
-:global(:root[data-theme='glass-dark']) .aliyun-captcha-status--error {
-  color: rgb(252 165 165);
+  color: var(--danger-text);
 }
 </style>

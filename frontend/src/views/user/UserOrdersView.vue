@@ -356,7 +356,6 @@ onMounted(() => { hydrateInvoiceDraft(); fetchOrders(); loadRefundEligibility();
   /* Local type-scale token: ui-lint's scoped check requires `var(--...)` in
      view-level styles instead of literal font sizes (see AccountsView.vue /
      AdminOrdersView.vue precedent noted in deviations.md). */
-  --cell-fs-3: 12.5px;
 }
 
 .list-filter-chips {
@@ -365,7 +364,7 @@ onMounted(() => { hydrateInvoiceDraft(); fetchOrders(); loadRefundEligibility();
 
 .list-filter-meta {
   margin-left: auto;
-  font-size: var(--cell-fs-3);
+  font-size: var(--fs-12-5);
   color: var(--muted);
 }
 

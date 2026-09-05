@@ -395,8 +395,8 @@ onMounted(async () => {
 
 .notice-title {
   margin-bottom: 2px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
 }
 
 .redeem-rules {
@@ -406,7 +406,7 @@ onMounted(async () => {
   margin-top: 8px;
   padding-left: 18px;
   list-style: disc;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
 }
 

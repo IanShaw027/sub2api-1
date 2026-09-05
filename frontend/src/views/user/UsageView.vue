@@ -318,13 +318,11 @@ const {
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  --cell-fs-3: 13px;
-  --cell-fw-3: 600;
 }
 
 .usage-filter-label {
-  font-size: var(--cell-fs-3);
-  font-weight: var(--cell-fw-3);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 

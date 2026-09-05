@@ -770,8 +770,8 @@ onUnmounted(() => {
 }
 
 .key-usage-brand-name {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 
@@ -840,7 +840,7 @@ onUnmounted(() => {
 .key-usage-privacy {
   margin-top: 10px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 
@@ -854,7 +854,7 @@ onUnmounted(() => {
 }
 
 .key-usage-daterange-label {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 
@@ -874,7 +874,7 @@ onUnmounted(() => {
 .key-usage-date-input {
   width: auto;
   height: 30px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 /* ---------- Results ---------- */
@@ -954,7 +954,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
 }
 
 .key-usage-detail-icon-success {
@@ -978,13 +978,13 @@ onUnmounted(() => {
 }
 
 .key-usage-detail-label {
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--foreground);
 }
 
 .key-usage-detail-value {
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
   color: var(--foreground);
 }
@@ -1019,7 +1019,7 @@ onUnmounted(() => {
 }
 
 .key-usage-footer-copy {
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--muted);
 }
 
@@ -1030,7 +1030,7 @@ onUnmounted(() => {
 }
 
 .key-usage-footer-links a {
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--muted);
   text-decoration: none;
   transition: color 0.15s ease;

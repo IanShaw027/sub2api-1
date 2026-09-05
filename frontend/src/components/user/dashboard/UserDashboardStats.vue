@@ -422,10 +422,10 @@ const costSpark = computed(() => buildSparkline((props.trend ?? []).map((d) => d
  width: 20px;
  height: 20px;
  border-radius: 6px;
- color: #fff;
+ color: white;
  font-size: 10.5px;
  font-weight: 700;
- box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+ box-shadow: inset 0 0 0 1px color-mix(in oklch, white 14%, transparent);
  flex: none;
 }
 .dash-platform-tile-cost {

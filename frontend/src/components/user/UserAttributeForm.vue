@@ -3,7 +3,7 @@
  <div v-for="attr in attributes" :key="attr.id">
  <label class="input-label">
  {{ attr.name }}
- <span v-if="attr.required" class="text-red-500">*</span>
+ <span v-if="attr.required" class="text-danger-500">*</span>
  </label>
 
  <!-- Text Input -->

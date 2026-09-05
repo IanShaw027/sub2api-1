@@ -179,7 +179,7 @@ function chipClass(active: boolean): string {
 <style scoped>
 /* "全部" chip 激活态:与 .btn-glass-primary 同款实心主色。 */
 .chip-plain-active {
- color: #fff;
+ color: white;
  background-color: var(--accent);
  box-shadow: 0 8px 20px -10px var(--accent);
 }
@@ -212,7 +212,7 @@ function chipClass(active: boolean): string {
 }
 
 .chip-tinted-active {
- color: #fff;
+ color: white;
  background-color: var(--chip-accent);
  background-color: color-mix(in srgb, var(--chip-accent) 85%, black);
  box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--chip-accent) 35%, transparent);

@@ -431,7 +431,7 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border);
   background: color-mix(in oklch, var(--surface) 80%, transparent);
   color: var(--foreground);
-  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px rgba(16, 24, 40, 0.06);
+  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px color-mix(in oklch, black 6%, transparent);
   cursor: pointer;
   overflow: hidden;
 }

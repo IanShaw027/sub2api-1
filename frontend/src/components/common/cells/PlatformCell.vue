@@ -43,12 +43,12 @@ withDefaults(
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
-  color: #fff;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 14%, transparent);
+  color: white;
 }
 
 .cell-platform-icon {
-  color: #fff;
+  color: white;
 }
 
 .cell-platform-name {

@@ -152,13 +152,13 @@ onBeforeUnmount(releaseOverlay)
 .ui-drawer-panel.is-right {
   right: 0;
   border-left: 1px solid var(--border);
-  box-shadow: -30px 0 60px -30px rgba(0, 0, 0, 0.5);
+  box-shadow: -30px 0 60px -30px color-mix(in oklch, black 50%, transparent);
 }
 
 .ui-drawer-panel.is-left {
   left: 0;
   border-right: 1px solid var(--border);
-  box-shadow: 30px 0 60px -30px rgba(0, 0, 0, 0.5);
+  box-shadow: 30px 0 60px -30px color-mix(in oklch, black 50%, transparent);
 }
 
 .ui-drawer-header {

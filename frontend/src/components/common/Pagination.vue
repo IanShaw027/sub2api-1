@@ -293,7 +293,7 @@ const submitJump = () => {
 .pagination-btn-current {
   background: var(--accent);
   border-color: transparent;
-  color: #fff;
+  color: white;
   font-weight: 600;
 }
 

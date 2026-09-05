@@ -359,7 +359,7 @@ onBeforeUnmount(() => {
  backdrop-filter: blur(28px);
  -webkit-backdrop-filter: blur(28px);
  border-left: 1px solid var(--border);
- box-shadow: -30px 0 60px -30px rgba(0, 0, 0, 0.5);
+ box-shadow: -30px 0 60px -30px color-mix(in oklch, black 50%, transparent);
  color: var(--foreground);
 }
 
@@ -433,7 +433,7 @@ onBeforeUnmount(() => {
  color: var(--foreground);
  background: color-mix(in oklch, var(--surface) 80%, transparent);
  border: 1px solid var(--border);
- box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px rgba(16, 24, 40, 0.06);
+ box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px color-mix(in oklch, black 6%, transparent);
  cursor: pointer;
  text-decoration: none;
 }

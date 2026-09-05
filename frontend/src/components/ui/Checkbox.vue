@@ -87,12 +87,12 @@ function onChange(event: Event) {
   width: 16px;
   height: 16px;
   border-radius: 5px;
-  border: 1.5px solid var(--border);
+  border: 1.5px solid var(--border-strong);
   background: color-mix(in oklch, var(--surface) 85%, transparent);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: white;
   box-shadow: var(--field-shadow);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
@@ -107,7 +107,7 @@ function onChange(event: Event) {
   width: 8px;
   height: 1.5px;
   border-radius: 1px;
-  background: #fff;
+  background: white;
 }
 
 .ui-checkbox-input:focus-visible + .ui-checkbox-box {

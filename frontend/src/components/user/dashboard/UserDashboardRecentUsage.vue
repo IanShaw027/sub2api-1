@@ -99,10 +99,10 @@ const formatCost = (c: number) => c.toFixed(4)
  width: 22px;
  height: 22px;
  border-radius: 7px;
- color: #fff;
+ color: white;
  font-size: 11px;
  font-weight: 700;
- box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+ box-shadow: inset 0 0 0 1px color-mix(in oklch, white 14%, transparent);
 }
 .dash-usage-model {
  margin: 0;

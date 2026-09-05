@@ -55,7 +55,7 @@
  </div>
  <button
  type="button"
- class="rounded-lg px-2 py-1 text-sm text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
+ class="rounded-lg px-2 py-1 text-sm text-danger-500 transition-colors hover:bg-danger-50 hover:text-danger-text"
  :aria-label="t('tickets.templates.deleteSingle')"
  @click="removeTemplate(index)"
  >

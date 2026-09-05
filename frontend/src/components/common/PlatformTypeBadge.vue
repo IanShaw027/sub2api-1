@@ -198,24 +198,24 @@ const planBadgeClass = computed(() => {
  if (props.platform === 'grok' && normalizedPlanType.value) {
  // Heavy / SuperGrok Heavy → purple
  if (normalizedPlanType.value.includes('heavy')) {
- return 'tag bg-purple-100 text-purple-600'
+ return 'tag bg-accent-100 text-accent-600'
  }
  // SuperGrok → cyan
  if (normalizedPlanType.value.includes('supergrok')) {
- return 'tag bg-cyan-100 text-cyan-700'
+ return 'tag bg-accent-100 text-accent-700'
  }
  // Any other non-free Grok plan (future tiers) → amber so it still stands out
  return 'tag tag-warning'
  }
  // OpenAI / other paid plan labels: keep readable distinction from free gray
  if (normalizedPlanType.value === 'plus') {
- return 'tag bg-sky-100 text-sky-700'
+ return 'tag bg-accent-100 text-accent-700'
  }
  if (normalizedPlanType.value === 'team') {
- return 'tag bg-indigo-100 text-indigo-700'
+ return 'tag bg-accent-100 text-accent-700'
  }
  if (normalizedPlanType.value === 'pro' || normalizedPlanType.value === 'chatgptpro') {
- return 'tag bg-violet-100 text-violet-700'
+ return 'tag bg-accent-100 text-accent-700'
  }
  return typeClass.value
 })
@@ -289,8 +289,8 @@ const privacyBadge = computed(() => {
   height: 20px;
   flex: none;
   border-radius: 6px;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  color: white;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 14%, transparent);
 }
 
 .ptb-name {
