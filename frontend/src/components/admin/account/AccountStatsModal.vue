@@ -46,7 +46,7 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- 30-Day Total Cost -->
           <div
-            class="glass-card border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4"
+            class="glass-card border-[color-mix(in_oklch,var(--success)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--success)_14%,transparent)] to-transparent p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -72,7 +72,7 @@
 
           <!-- 30-Day Total Requests -->
           <div
-            class="glass-card border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4"
+            class="glass-card border-[color-mix(in_oklch,var(--accent)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--accent)_14%,transparent)] to-transparent p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -92,13 +92,13 @@
 
           <!-- Daily Average Cost -->
           <div
-            class="glass-card border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4"
+            class="glass-card border-[color-mix(in_oklch,var(--warning)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--warning)_14%,transparent)] to-transparent p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
                 t('admin.accounts.stats.avgDailyCost')
               }}</span>
-              <div class="rounded-lg bg-amber-100 p-1.5">
+              <div class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_16%,transparent)] p-1.5">
                 <Icon
                   name="calculator"
                   size="sm"
@@ -123,15 +123,15 @@
 
           <!-- Daily Average Requests -->
           <div
-            class="glass-card border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4"
+            class="glass-card border-[color-mix(in_oklch,var(--accent)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--accent)_14%,transparent)] to-transparent p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
                 t('admin.accounts.stats.avgDailyRequests')
               }}</span>
-              <div class="rounded-lg bg-purple-100 p-1.5">
+              <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-1.5">
                 <svg
-                  class="h-4 w-4 text-purple-600"
+                  class="h-4 w-4 text-accent"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -159,8 +159,8 @@
           <!-- Today Overview -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-cyan-100 p-1.5">
-                <Icon name="clock" size="sm" class="text-cyan-600" />
+              <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-1.5">
+                <Icon name="clock" size="sm" class="text-accent" />
               </div>
               <span class="text-sm font-semibold text-foreground">{{
                 t('admin.accounts.stats.todayOverview')
@@ -243,11 +243,11 @@
           <!-- Highest Request Day -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-indigo-100 p-1.5">
+              <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-1.5">
                 <Icon
                   name="trendingUp"
                   size="sm"
-                  class="text-indigo-600"
+                  class="text-accent"
                 />
               </div>
               <span class="text-sm font-semibold text-foreground">{{
@@ -267,7 +267,7 @@
                 <span class="text-xs text-muted">{{
                   t('admin.accounts.stats.requests')
                 }}</span>
-                <span class="text-sm font-semibold text-indigo-600">{{
+                <span class="text-sm font-semibold text-accent">{{
                   formatNumber(stats.summary.highest_request_day?.requests || 0)
                 }}</span>
               </div>
@@ -292,8 +292,8 @@
           <!-- Accumulated Tokens -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-teal-100 p-1.5">
-                <Icon name="cube" size="sm" class="text-teal-600" />
+              <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-1.5">
+                <Icon name="cube" size="sm" class="text-accent" />
               </div>
               <span class="text-sm font-semibold text-foreground">{{
                 t('admin.accounts.stats.accumulatedTokens')
@@ -322,8 +322,8 @@
           <!-- Performance -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-rose-100 p-1.5">
-                <Icon name="bolt" size="sm" class="text-rose-600" />
+              <div class="rounded-lg bg-[color-mix(in_oklch,var(--danger)_12%,transparent)] p-1.5">
+                <Icon name="bolt" size="sm" class="text-danger-text" />
               </div>
               <span class="text-sm font-semibold text-foreground">{{
                 t('admin.accounts.stats.performance')
@@ -352,11 +352,11 @@
           <!-- Recent Activity -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-lime-100 p-1.5">
+              <div class="rounded-lg bg-[color-mix(in_oklch,var(--success)_12%,transparent)] p-1.5">
                 <Icon
                   name="clipboard"
                   size="sm"
-                  class="text-lime-600"
+                  class="text-success-text"
                 />
               </div>
               <span class="text-sm font-semibold text-foreground">{{
@@ -470,7 +470,7 @@ import EndpointDistributionChart from '@/components/charts/EndpointDistributionC
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageStatsResponse } from '@/types'
-import { useTheme } from '@/composables/useTheme'
+import { alpha, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(
   CategoryScale,
@@ -498,13 +498,7 @@ const emit = defineEmits<{
 const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
 
-const { isDark: isDarkMode } = useTheme()
-
-// Chart colors
-const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
-}))
+const theme = useChartTheme()
 
 const hasSevenDayForecast = computed(() => (stats.value?.seven_day_forecasts?.length || 0) > 0)
 
@@ -515,15 +509,17 @@ const hasSevenDayForecast = computed(() => (stats.value?.seven_day_forecasts?.le
 const trendChartData = computed<any>(() => {
   if (!stats.value) return null
   const forecasts = stats.value.seven_day_forecasts || []
+  const series = theme.value.series
   if (forecasts.length > 0) {
+    const predicted = series[3]
     return {
       labels: forecasts.map((point) => `${point.bucket}%`),
       datasets: [
         {
           label: t('usage.predicted7dTotal'),
           data: forecasts.map((point) => point.predicted_total_cost),
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(139, 92, 246, 0.08)',
+          borderColor: predicted,
+          backgroundColor: alpha(predicted, 8),
           fill: false,
           tension: 0.3,
           yAxisID: 'y'
@@ -532,14 +528,14 @@ const trendChartData = computed<any>(() => {
           type: 'bar' as const,
           label: t('usage.rateLimit429'),
           data: forecasts.map((point) => point.rate_limit_429),
-          backgroundColor: 'rgba(239, 68, 68, 0.55)',
+          backgroundColor: alpha(theme.value.danger, 55),
           yAxisID: 'y1'
         },
         {
           type: 'bar' as const,
           label: t('usage.sessions'),
           data: forecasts.map((point) => point.sessions),
-          backgroundColor: 'rgba(14, 165, 233, 0.55)',
+          backgroundColor: alpha(theme.value.accent, 55),
           yAxisID: 'y1'
         }
       ]
@@ -554,8 +550,8 @@ const trendChartData = computed<any>(() => {
       {
         label: t('usage.accountBilled') + ' (USD)',
         data: stats.value.history.map((h) => h.actual_cost),
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderColor: theme.value.accent,
+        backgroundColor: alpha(theme.value.accent, 10),
         fill: true,
         tension: 0.3,
         yAxisID: 'y'
@@ -563,8 +559,8 @@ const trendChartData = computed<any>(() => {
       {
         label: t('usage.userBilled') + ' (USD)',
         data: stats.value.history.map((h) => h.user_cost),
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.08)',
+        borderColor: theme.value.success,
+        backgroundColor: alpha(theme.value.success, 8),
         fill: false,
         tension: 0.3,
         borderDash: [5, 5],
@@ -573,8 +569,8 @@ const trendChartData = computed<any>(() => {
       {
         label: t('admin.accounts.stats.requests'),
         data: stats.value.history.map((h) => h.requests),
-        borderColor: '#f97316',
-        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+        borderColor: theme.value.warning,
+        backgroundColor: alpha(theme.value.warning, 10),
         fill: false,
         tension: 0.3,
         yAxisID: 'y1'
@@ -595,7 +591,7 @@ const lineChartOptions = computed(() => ({
     legend: {
       position: 'top' as const,
       labels: {
-        color: chartColors.value.text,
+        color: theme.value.text,
         usePointStyle: true,
         pointStyle: 'circle',
         padding: 15,
@@ -605,6 +601,7 @@ const lineChartOptions = computed(() => ({
       }
     },
     tooltip: {
+      ...theme.value.tooltip,
       callbacks: {
         label: (context: any) => {
           const label = context.dataset.label || ''
@@ -620,10 +617,10 @@ const lineChartOptions = computed(() => ({
   scales: {
     x: {
       grid: {
-        color: chartColors.value.grid
+        color: theme.value.grid
       },
       ticks: {
-        color: chartColors.value.text,
+        color: theme.value.text,
         font: {
           size: 10
         },
@@ -636,10 +633,10 @@ const lineChartOptions = computed(() => ({
       display: true,
       position: 'left' as const,
       grid: {
-        color: chartColors.value.grid
+        color: theme.value.grid
       },
       ticks: {
-        color: '#3b82f6',
+        color: theme.value.accent,
         font: {
           size: 10
         },
@@ -650,7 +647,7 @@ const lineChartOptions = computed(() => ({
         text: hasSevenDayForecast.value
           ? t('usage.predicted7dTotal')
           : t('usage.accountBilled') + ' (USD)',
-        color: '#3b82f6',
+        color: theme.value.accent,
         font: {
           size: 11
         }
@@ -664,7 +661,7 @@ const lineChartOptions = computed(() => ({
         drawOnChartArea: false
       },
       ticks: {
-        color: '#f97316',
+        color: theme.value.warning,
         font: {
           size: 10
         },
@@ -675,7 +672,7 @@ const lineChartOptions = computed(() => ({
         text: hasSevenDayForecast.value
           ? `${t('usage.rateLimit429')} / ${t('usage.sessions')}`
           : t('admin.accounts.stats.requests'),
-        color: '#f97316',
+        color: theme.value.warning,
         font: {
           size: 11
         }

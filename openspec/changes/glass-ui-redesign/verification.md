@@ -258,3 +258,54 @@
 | `/studio`（聊天 + 图像 tab） | 无 | 无需修改 | `.shots/13b-studio-{dark,light}.png`、`13b-studio-image-dark.png` | 2 |
 
 门禁：`node_modules/.bin/vue-tsc --noEmit` 0 错误；`npx vitest run src/views/user src/components/user src/components/payment src/features` 46 文件 / 306 用例全过；`node scripts/i18n-diff.mjs` zh 8955 = en 8955，0 差异。因本任务零代码改动，未触发 `ui-lint.mjs`/`eslint` 的逐文件门禁（无所有权文件被修改）。
+
+## 13.1 暗色对等（A 半）
+
+方法：`click-shot.cjs`（`scripts/ui/shot.cjs` 的本地副本，新增 `UI_SHOTS_CLICK`——支持 CSS 选择器与 `text:` 文案匹配——及 `UI_SHOTS_PROBE` 几何探针）为 29 条 `/admin/*` 路由 + `/setup`、`/legal/:documentId`、404 共 32 条路由生成暗/亮双主题全页截图（含 `/admin/channels/pricing`、`/admin/channels/monitor`、`/admin/tickets/:id`、`/admin/orders/{dashboard,invoices,plans}`、`/admin/affiliates/{invites,rebates,transfers}` 等子路由），逐张核对白底块、浅灰边、黑字、未令牌化图表/下拉/弹层/Toast/骨架屏等缺陷类别。另对 9 个 ListPage 分别用 `UI_SHOTS_CLICK` 打开一个创建/分配弹层截图（accounts/users/groups/channels/proxies/promo-codes/announcements/subscriptions/redeem 的批量修改弹层），并针对 `/admin/accounts` 额外打开行内更多菜单（`AccountActionMenu`）、"查看统计"弹层（`AccountStatsModal`）与工具栏"容量预测"弹层（`PlatformCapacityDialog`）逐一截图核对。
+
+修复前 `vite.config.ts` 的 `/setup` 代理与 SPA 路由前缀冲突导致 `/setup` 首次截图空白（属共享配置，非本任务所有权文件，未修改，见 deviations）；改用种子参数 `to=%2F__blank` 规避后正常截图。`router.ts` 通配 404 路由缺少 `requiresAuth: false` 导致访客被重定向到 `/login` 而非看到 404 页（同属共享文件，未修改，见 deviations），截图改用已登录 admin 角色验证 404 页暗色渲染。
+
+发现两处真实暗色缺陷，均已在所有权文件内用 `color-mix(in oklch, var(--token) X%, transparent)` 类的语义令牌修复：
+1. **`AccountStatsModal.vue`**（"查看统计"弹层）：Row 1 四张统计卡片使用字面 `border-emerald-200/blue-200/amber-200/purple-200 bg-gradient-to-br from-X-50 to-white`——`to-white` 是 Tailwind 未重映射的字面白色（`tailwind.config.js` 只把具名调色板颜色如 `emerald/blue/purple` 重映射到 `success/accent` 语义色阶，`white`/`black` 不受影响），暗色主题下在卡片右侧留下明显白色色块；Row2/Row3 另有 6 处 `bg-cyan-100/bg-indigo-100/bg-teal-100/bg-rose-100/bg-lime-100` 图标底色同属未随主题变化的浅色实底。全部替换为对应语义色 `color-mix` 背景/边框，`text-purple-600`/`text-indigo-600` 等替换为 `text-accent`。图表部分（Chart.js 数据集与坐标轴颜色）原为 `isDarkMode.value ? hexA : hexB` 三元字面色，重构为 `@/utils/chartTheme.ts` 的 `useChartTheme()`/`alpha()`（项目既有的图表令牌化工具，`design.md` 明确要求 "chart.js 图表只对其做令牌化样式约束"），随主题与强调色切换器联动。
+2. **`PlatformCapacityDialog.vue`**（工具栏"容量预测"弹层）：KPI 卡片同款 `from-X-50 to-white` 白色块（4 张）、两处 `border-red-200 bg-red-50` 错误提示条为浅红实底、图表沿用与 (1) 相同的字面色三元表达式，均按同一模式修复；图例色块 `bg-blue-500`/`bg-emerald-500`/`bg-red-400/60` 也改为 `bg-accent`/`bg-[var(--success)]`/`color-mix(danger)`，与图表本身的强调色令牌保持一致（该弹层依赖的容量预测接口在 mock 后端未实现，加载态卡在 spinner，KPI/图表区域改用与 (1) 完全同构、已截图验证的修复模式，未能在本环境内对该弹层做逐像素截图复核）。
+
+`AccountActionMenu.vue`（账号行"更多"菜单，`components/admin/account/**`）另发现 8 处裸 Tailwind 调色板类（`text-indigo-500/text-orange-500/text-sky-500/text-purple-600/text-teal-600/text-sky-600/text-green-500`）与 1 处旧版 `shadow-lg ring-1 ring-black/5`，一并替换为 `text-accent/text-warning-text/text-success-text` 与 `border border-line shadow-[var(--shadow-pop)]`（后者是仓库内 15+ 处组件已采用的既有模式）。复核 `tailwind.config.js` 后确认：**全部** Tailwind 具名调色板颜色（含 `purple/indigo/sky/teal/orange/cyan/lime/fuchsia/pink/violet` 等，而不仅是 `red/orange/amber/emerald/green/rose`）都已被重映射到 `accent/success/warning/danger/neutral` 五个语义色阶，故这些类本身在暗色主题下其实已能正确取色；替换为显式令牌类是更符合仓库"禁止裸调色板类"铁律的写法，但并非修复"暗色渲染错误"意义上的缺陷——真正的暗色缺陷信号是與 `white`/`black` 字面值组合的部分（如 `to-white`、`bg-red-50`+`border-red-200` 这类浅底实色）。据此，经 grep 找到的另外 21 个仍含裸调色板类的所有权外/未直接触达文件（`OpsErrorDetailModal.vue`、`UsersView.vue`、`GroupsView.vue`、`OpsSwitchRateTrendChart.vue`、`OpsConcurrencyCard.vue`、`RiskControlView.vue`、`AdminRefundDialog.vue`、`OpsLatencyChart.vue`、`UsageStatsCards.vue`、`OpsErrorLogTable.vue`、`opsFormatters.ts`、`ReAuthAccountModal.vue`、`PaymentMethodChart.vue`、`AccountTestModal.vue`、`GroupRateMultipliersModal.vue`、`UsageTable.vue`、`GroupRPMOverridesModal.vue`、`GroupSortModal.vue`、`GroupReplaceModal.vue`、`SecurityTab.vue`、`UserAllowedGroupsModal.vue`、`UserBalanceHistoryModal.vue`）经抽样确认同样已被 Tailwind 重映射为语义色阶，未发现额外白底块/黑字类暗色缺陷，故未在本任务内改动，留给 `--palette` gate 转正的 group 15 做统一的类名规范化清理。
+
+几何抽查（`/admin/accounts`，glass-dark，与 `brief-common.md` 基线比对确认修复未引入布局偏移）：`.ui-page-header-title` top=74 left=244 h=35 w=723；`.ui-page-header` top=74 left=244 h=58 w=1172；首个 `.glass-card` top=263 h=613 w=1172（该页 header 下方先有筛选栏，故首块 top 大于 B 半基线的 146，属页面自身既有布局，非回归）。
+
+| 路由 | 缺陷 | 处理 | 截图路径 | 得分 |
+|---|---|---|---|---|
+| `/admin/dashboard` | 无 | 无需修改 | `.shots/13a-dashboard-{dark,light}.png` | 2 |
+| `/admin/accounts` | `AccountActionMenu.vue` 裸调色板类+旧版阴影；`AccountStatsModal.vue` 4 张统计卡片 `to-white` 白色块+6 处浅色图标底+图表字面色；`PlatformCapacityDialog.vue` 同款白色块 KPI 卡+浅红错误条+图表字面色 | 三文件均已用语义令牌 `color-mix()`/`useChartTheme()` 修复，见上文与 deviations | `.shots/13a-accounts-{dark,light}.png`、`13a-accounts-modal-dark.png`、`13a-accounts-actionmenu-dark.png`、`13a-accounts-statsmodal-dark-fixed.png`、`13a-platform-capacity-dark-fixed.png` | 1 |
+| `/admin/users` | 无 | 无需修改 | `.shots/13a-users-{dark,light}.png`、`13a-users-modal-dark.png` | 2 |
+| `/admin/groups` | 无 | 无需修改 | `.shots/13a-groups-{dark,light}.png`、`13a-groups-modal-dark.png` | 2 |
+| `/admin/subscriptions` | 无 | 无需修改 | `.shots/13a-subscriptions-{dark,light}.png`、`13a-subscriptions-modal-dark.png` | 2 |
+| `/admin/proxies` | 无 | 无需修改 | `.shots/13a-proxies-{dark,light}.png`、`13a-proxies-modal-dark.png` | 2 |
+| `/admin/channels` | 无 | 无需修改 | `.shots/13a-channels-{dark,light}.png`、`13a-channels-modal-dark.png` | 2 |
+| `/admin/channels/pricing` | 无 | 无需修改 | `.shots/13a-channels-pricing-{dark,light}.png` | 2 |
+| `/admin/channels/monitor` | 无 | 无需修改 | `.shots/13a-channels-monitor-{dark,light}.png` | 2 |
+| `/admin/plugins` | 无 | 无需修改 | `.shots/13a-plugins-{dark,light}.png` | 2 |
+| `/admin/announcements` | 无 | 无需修改 | `.shots/13a-announcements-{dark,light}.png`、`13a-announcements-modal-dark.png` | 2 |
+| `/admin/redeem` | 无 | 无需修改 | `.shots/13a-redeem-{dark,light}.png`、`13a-redeem-modal-dark.png` | 2 |
+| `/admin/promo-codes` | 无 | 无需修改 | `.shots/13a-promo-codes-{dark,light}.png`、`13a-promo-codes-modal-dark.png` | 2 |
+| `/admin/affiliates` | 无 | 无需修改 | `.shots/13a-affiliates-{dark,light}.png` | 2 |
+| `/admin/affiliates/invites` | 无 | 无需修改 | `.shots/13a-affiliates-invites-{dark,light}.png` | 2 |
+| `/admin/affiliates/rebates` | 无 | 无需修改 | `.shots/13a-affiliates-rebates-{dark,light}.png` | 2 |
+| `/admin/affiliates/transfers` | 无 | 无需修改 | `.shots/13a-affiliates-transfers-{dark,light}.png` | 2 |
+| `/admin/orders` | 无 | 无需修改 | `.shots/13a-orders-{dark,light}.png` | 2 |
+| `/admin/orders/dashboard` | 无 | 无需修改 | `.shots/13a-orders-dashboard-{dark,light}.png` | 2 |
+| `/admin/orders/invoices` | 无 | 无需修改 | `.shots/13a-orders-invoices-{dark,light}.png` | 2 |
+| `/admin/orders/plans` | 无 | 无需修改 | `.shots/13a-orders-plans-{dark,light}.png` | 2 |
+| `/admin/tickets` | 无 | 无需修改 | `.shots/13a-tickets-{dark,light}.png` | 2 |
+| `/admin/tickets/:id` | 无 | 无需修改 | `.shots/13a-tickets-detail-{dark,light}.png` | 2 |
+| `/admin/usage` | 无 | 无需修改 | `.shots/13a-usage-{dark,light}.png` | 2 |
+| `/admin/audit-logs` | 无 | 无需修改 | `.shots/13a-audit-logs-{dark,light}.png` | 2 |
+| `/admin/ops` | 无 | 无需修改 | `.shots/13a-ops-{dark,light}.png` | 2 |
+| `/admin/risk-control` | 无 | 无需修改 | `.shots/13a-risk-control-{dark,light}.png` | 2 |
+| `/admin/prompt-audit` | 无 | 无需修改 | `.shots/13a-prompt-audit-{dark,light}.png` | 2 |
+| `/admin/settings` | 无 | 无需修改 | `.shots/13a-settings-{dark,light}.png` | 2 |
+| `/setup`（SetupWizardView） | 无（`vite.config.ts` `/setup` 代理冲突为共享配置问题，非页面自身暗色缺陷，见 deviations） | 无需修改 | `.shots/13a-setup-{dark,light}.png` | 2 |
+| `/legal/:documentId` | 无 | 无需修改 | `.shots/13a-legal-{dark,light}.png` | 2 |
+| 404（NotFoundView） | 无（`router.ts` 通配路由缺 `requiresAuth: false` 导致访客被拦截到 `/login`，为共享路由配置问题，非页面自身暗色缺陷，见 deviations） | 无需修改 | `.shots/13a-notfound-admin-{dark,light}.png` | 2 |
+
+门禁：`node_modules/.bin/vue-tsc --noEmit` 0 错误；`npx vitest run src/views/admin src/components/admin src/features/prompt-audit` 73 文件 / 416 用例，1 个预置失败（`ChannelMonitorView.grok.spec.ts` 断言按钮 class 应含字面量 `zinc`，但被测组件早已改用 `border-[var(--muted)]` 等令牌类，与本任务改动的三个文件无关，attributable 于既有基线，非本次引入）；`node scripts/i18n-diff.mjs` zh 8955 = en 8955，0 差异；逐文件 `ui-lint.mjs --scoped --palette` 与 `eslint --ext .vue,.ts`：`AccountActionMenu.vue`、`AccountStatsModal.vue`、`PlatformCapacityDialog.vue` 均为 0/0/0/0 与 0 error。
