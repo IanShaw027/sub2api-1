@@ -110,7 +110,7 @@
               :class="
                 selectedEventMeta.optional
                   ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  '
-                  : 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-emerald-800  '
+                  : 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-800  '
               "
             >
               {{ selectedEventMeta.optional ? localText("可退订通知", "Optional") : localText("事务邮件", "Transactional") }}

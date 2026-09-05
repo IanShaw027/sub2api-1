@@ -12,7 +12,7 @@
       </template>
     </PageHeader>
 
-    <GlassCard v-if="loading" class="detail-loading">
+    <GlassCard v-if="loading" class="detail-loading text-[13px]">
       {{ t('common.loading') }}
     </GlassCard>
 
@@ -50,7 +50,7 @@
               >
                 <span class="filter-pill-value">{{ template.title }}</span>
               </button>
-              <span v-if="replyTemplates.length === 0" class="template-empty">{{ t('tickets.templates.empty') }}</span>
+              <span v-if="replyTemplates.length === 0" class="template-empty text-xs">{{ t('tickets.templates.empty') }}</span>
               <button type="button" class="filter-pill template-pill" @click="openTemplateDialog">
                 <span class="filter-pill-label">{{ t('tickets.templates.manage') }}</span>
               </button>
@@ -63,7 +63,7 @@
         <TicketDetailPane :ticket="ticket" show-user-meta>
           <template #actions>
             <div v-if="canUpdateStatus" class="status-block">
-              <p class="status-label">{{ t('tickets.adminActions') }}</p>
+              <p class="status-label text-[13px] font-medium">{{ t('tickets.adminActions') }}</p>
               <UiSelect
                 :model-value="ticket.status"
                 :options="statusActionOptions"
@@ -372,7 +372,6 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
 .detail-loading {
   padding: 40px;
   text-align: center;
-  font-size: 13px;
   color: var(--muted);
 }
 
@@ -407,8 +406,6 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
 }
 
 .status-label {
-  font-size: 13px;
-  font-weight: 500;
   color: var(--foreground);
 }
 
@@ -430,7 +427,6 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
 }
 
 .template-empty {
-  font-size: 12px;
   color: var(--muted);
 }
 </style>

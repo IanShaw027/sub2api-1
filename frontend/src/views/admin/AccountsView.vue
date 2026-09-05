@@ -1658,13 +1658,13 @@ function getOpenAICompactMeta(row: any): { label: string; className: string; dot
       return {
         label: t('admin.accounts.openai.compactSupported'),
         className: 'dash-tone-success',
-        dotClass: 'bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.14)]'
+        dotClass: 'bg-success-500 shadow-[0_0_0_2px_rgba(16,185,129,0.14)]'
       }
     case 'blocked':
       return {
         label: t('admin.accounts.openai.compactUnsupported'),
         className: 'dash-tone-danger',
-        dotClass: 'bg-rose-500 shadow-[0_0_0_2px_rgba(244,63,94,0.14)]'
+        dotClass: 'bg-danger-500 shadow-[0_0_0_2px_rgba(244,63,94,0.14)]'
       }
     case 'auto':
       return {
@@ -2720,14 +2720,14 @@ onUnmounted(() => {
 
 .acct-selection-count {
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
   white-space: nowrap;
 }
 
 .acct-selection-count b {
   color: var(--foreground);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2781,10 +2781,10 @@ onUnmounted(() => {
 
 .acct-dropdown-count {
   margin-left: auto;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 1px 7px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
   background: color-mix(in oklch, var(--accent) 12%, transparent);
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -2806,11 +2806,11 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-field);
   border: 1px solid color-mix(in oklch, var(--warning) 35%, transparent);
   background: color-mix(in oklch, var(--warning) 12%, transparent);
   color: var(--warning-text);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 
 /* ---------- Table card ---------- */
@@ -2855,8 +2855,8 @@ onUnmounted(() => {
 .acct-layout :deep(.table-scroll-container th) {
   height: 42px;
   padding: 0 6px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -2880,7 +2880,7 @@ onUnmounted(() => {
   height: 61px;
   padding: 0 6px;
   vertical-align: middle;
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1.2;
   border-bottom: 1px solid var(--border);
   box-sizing: border-box;
@@ -2918,7 +2918,7 @@ onUnmounted(() => {
   gap: 12px;
   flex: none;
   padding: 10px 16px;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
   border-top: 1px solid var(--border);
 }
@@ -2937,7 +2937,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 0;
+  border-radius: unset; /* = 0: the nav is a bare flex row, not a pill */
   box-shadow: none;
   margin: 0;
 }
@@ -2948,12 +2948,12 @@ onUnmounted(() => {
   min-width: 28px;
   padding: 0;
   margin: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-medium);
   justify-content: center;
 }
 
@@ -2965,8 +2965,8 @@ onUnmounted(() => {
 .acct-pagination :deep(nav > button[aria-current='page']) {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
+  color: var(--on-tone);
+  font-weight: var(--fw-semibold);
 }
 
 .acct-pagination :deep(nav > button:disabled) {
@@ -2982,7 +2982,7 @@ onUnmounted(() => {
 .acct-checkbox {
   width: 16px;
   height: 16px;
-  border-radius: 5px;
+  border-radius: var(--radius-5);
   border: 1.5px solid var(--border);
   accent-color: var(--accent);
   cursor: pointer;
@@ -3018,8 +3018,8 @@ onUnmounted(() => {
   border: 0;
   background: transparent;
   padding: 0;
-  font-size: 10.5px;
-  font-weight: 500;
+  font-size: var(--fs-10-5);
+  font-weight: var(--fw-medium);
   color: var(--muted);
   cursor: pointer;
 }
@@ -3046,14 +3046,14 @@ onUnmounted(() => {
   width: 22px;
   height: 22px;
   flex: none;
-  border-radius: 6px;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-6);
+  color: var(--on-tone);
+  box-shadow: inset 0 0 0 1px var(--ring-on-tone);
 }
 
 .acct-platform-name {
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
   white-space: nowrap;
 }
 
@@ -3075,26 +3075,26 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-medium);
   line-height: 1.3;
 }
 
 .acct-compact-dot {
   width: 6px;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex: none;
 }
 
 .acct-mono-muted {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 
 .acct-muted-text {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
 }
 
@@ -3104,17 +3104,17 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
 }
 
 .acct-priority-cell {
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--muted);
 }
 
 .acct-last-used {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -3134,16 +3134,16 @@ onUnmounted(() => {
 }
 
 .acct-proxy-name {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--foreground);
 }
 
 .acct-inline-btn {
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   border: 1px solid var(--border);
   background: transparent;
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--muted);
   cursor: pointer;
 }
@@ -3158,7 +3158,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   font-variant-numeric: tabular-nums;
   color: var(--foreground);
 }
@@ -3175,7 +3175,7 @@ onUnmounted(() => {
   gap: 2px;
   min-width: 7rem;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-11);
   line-height: 1.4;
 }
 
@@ -3197,7 +3197,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--foreground);
 }
 
@@ -3238,15 +3238,15 @@ onUnmounted(() => {
   }
 
   .acct-layout :deep(.data-table-mobile-card [data-field] > span:first-child) {
-    font-size: 11px;
+    font-size: var(--fs-11);
     letter-spacing: 0.02em;
     text-transform: none;
     color: var(--muted);
   }
 
   .acct-layout :deep(.data-table-mobile-card [data-field] > div) {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: var(--fs-13);
+    font-weight: var(--fw-semibold);
   }
 
   .acct-layout :deep(.data-table-mobile-card [data-field='name'] > span:first-child) {
@@ -3256,15 +3256,15 @@ onUnmounted(() => {
   .acct-layout :deep(.data-table-mobile-card [data-field='name'] > div) {
     width: 100%;
     text-align: left;
-    font-weight: 400;
+    font-weight: var(--fw-regular);
   }
 
   .acct-name-wrap :deep(.cell-name-id-name) {
-    font-size: 15px;
+    font-size: var(--fs-15);
   }
 
   .acct-name-wrap :deep(.cell-name-id-meta) {
-    font-size: 12px;
+    font-size: var(--fs-12);
   }
 
   .acct-actions-cell {
@@ -3275,7 +3275,7 @@ onUnmounted(() => {
   .acct-actions-cell .icon-btn {
     width: 44px;
     height: 44px;
-    border-radius: 12px;
+    border-radius: var(--radius-field);
     border: 1px solid var(--border);
     background: color-mix(in oklch, var(--surface) 80%, transparent);
   }

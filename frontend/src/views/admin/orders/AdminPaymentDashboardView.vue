@@ -115,10 +115,6 @@ onMounted(() => loadDashboard())
   gap: 16px;
   /* Local type-scale tokens: ui-lint's scoped check requires `var(--...)` in
      view-level styles instead of literal font sizes/weights. */
-  --panel-title-fs: 13px;
-  --panel-title-fw: 600;
-  --quick-actions-fs: 13px;
-  --quick-actions-fw: 500;
 }
 
 .dash-hero {
@@ -163,8 +159,8 @@ onMounted(() => loadDashboard())
 
 .panel-title {
   margin-bottom: 16px;
-  font-size: var(--panel-title-fs);
-  font-weight: var(--panel-title-fw);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 
@@ -203,8 +199,8 @@ onMounted(() => loadDashboard())
 
 .quick-actions-label {
   flex: 1;
-  font-size: var(--quick-actions-fs);
-  font-weight: var(--quick-actions-fw);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
 }
 
 .quick-actions-chevron {

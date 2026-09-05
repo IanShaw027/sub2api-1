@@ -62,10 +62,10 @@
             @change="applyFilters"
           />
           <label class="filter-toggle">
-            <span class="filter-toggle-label">{{ t('tickets.unreadOnly') }}</span>
+            <span class="filter-toggle-label text-[13px]">{{ t('tickets.unreadOnly') }}</span>
             <ToggleSwitch :model-value="filters.unread_only" @update:model-value="toggleUnreadOnly" />
           </label>
-          <span class="filter-count">
+          <span class="filter-count text-[12.5px]">
             {{ t('tickets.filters.unreadSummary') }} <b>{{ unreadCount }}</b> / {{ pagination.total }}
           </span>
         </div>
@@ -84,18 +84,18 @@
 
             <template #cell-title="{ row }">
               <div class="cell-stack">
-                <span class="cell-title">
+                <span class="cell-title font-semibold">
                   {{ row.title }}
-                  <span v-if="row.unread_by_admin" class="unread-dot" :title="t('tickets.unreadOnly')" />
+                  <span v-if="row.unread_by_admin" class="unread-dot rounded-full" :title="t('tickets.unreadOnly')" />
                 </span>
-                <span class="cell-meta">#{{ row.ticket_no }} · {{ t(`tickets.categories.${row.category}`) }}</span>
+                <span class="cell-meta text-[11.5px]">#{{ row.ticket_no }} · {{ t(`tickets.categories.${row.category}`) }}</span>
               </div>
             </template>
 
             <template #cell-user_name="{ row }">
               <div class="cell-stack">
-                <span class="cell-title">{{ row.user_name || row.user_email || '—' }}</span>
-                <span v-if="row.user_name && row.user_email" class="cell-meta">{{ row.user_email }}</span>
+                <span class="cell-title font-semibold">{{ row.user_name || row.user_email || '—' }}</span>
+                <span v-if="row.user_name && row.user_email" class="cell-meta text-[11.5px]">{{ row.user_email }}</span>
               </div>
             </template>
 
@@ -104,11 +104,11 @@
             </template>
 
             <template #cell-created_at="{ value }">
-              <span class="cell-time" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
+              <span class="cell-time text-[12.5px]" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
             </template>
 
             <template #cell-updated_at="{ value }">
-              <span class="cell-time" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
+              <span class="cell-time text-[12.5px]" :title="formatDateTime(value)">{{ formatRelativeTime(value) }}</span>
             </template>
 
             <template #cell-actions="{ row }">
@@ -371,14 +371,12 @@ onMounted(() => {
 }
 
 .filter-toggle-label {
-  font-size: 13px;
   color: var(--foreground);
   white-space: nowrap;
 }
 
 .filter-count {
   margin-left: auto;
-  font-size: 12.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -408,7 +406,6 @@ onMounted(() => {
 }
 
 .cell-title {
-  font-weight: 600;
   line-height: 1.4;
   color: var(--foreground);
   white-space: normal;
@@ -416,7 +413,6 @@ onMounted(() => {
 }
 
 .cell-meta {
-  font-size: 11.5px;
   line-height: 1.4;
   font-family: var(--font-mono);
   color: var(--muted);
@@ -426,7 +422,6 @@ onMounted(() => {
 }
 
 .cell-time {
-  font-size: 12.5px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -436,7 +431,6 @@ onMounted(() => {
   width: 8px;
   height: 8px;
   margin-left: 6px;
-  border-radius: 999px;
   background: var(--danger);
   vertical-align: middle;
 }

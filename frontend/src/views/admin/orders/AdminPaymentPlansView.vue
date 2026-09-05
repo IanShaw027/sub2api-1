@@ -234,10 +234,6 @@ onMounted(() => {
   gap: 14px;
   /* Local type-scale tokens: ui-lint's scoped check requires `var(--...)` in
      view-level styles instead of literal font sizes/weights. */
-  --cell-fs-1: 11.5px;
-  --cell-fs-3: 12.5px;
-  --cell-fs-4: 13px;
-  --cell-fw-semibold: 600;
 }
 
 .list-page :deep(.ui-page-header) {
@@ -251,14 +247,14 @@ onMounted(() => {
 
 .filter-count {
   margin-left: auto;
-  font-size: var(--cell-fs-3);
+  font-size: var(--fs-12-5);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .filter-count b {
   color: var(--foreground);
-  font-weight: var(--cell-fw-semibold);
+  font-weight: var(--fw-semibold);
 }
 
 .table-card {
@@ -283,15 +279,15 @@ onMounted(() => {
 }
 
 .cell-primary-name {
-  font-size: var(--cell-fs-4);
-  font-weight: var(--cell-fw-semibold);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
 }
 
 .cell-primary-meta {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--cell-fs-1);
+  font-size: var(--fs-11-5);
   color: var(--muted);
 }
 
@@ -303,13 +299,13 @@ onMounted(() => {
 }
 
 .cell-amount-value {
-  font-size: var(--cell-fs-4);
-  font-weight: var(--cell-fw-semibold);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 
 .cell-amount-meta {
-  font-size: var(--cell-fs-1);
+  font-size: var(--fs-11-5);
   color: var(--muted);
 }
 
@@ -318,7 +314,7 @@ onMounted(() => {
 }
 
 .cell-time {
-  font-size: var(--cell-fs-3);
+  font-size: var(--fs-12-5);
   color: var(--muted);
 }
 

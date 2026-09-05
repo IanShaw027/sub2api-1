@@ -138,7 +138,7 @@
                 :class="[
  'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
  row.subscription_type === 'subscription'
- ? 'bg-violet-500/15 text-violet-700  '
+ ? 'bg-accent-500/15 text-accent-700  '
  : 'bg-surface-2 text-muted  ',
  ]"
               >
@@ -825,7 +825,7 @@
               <input
                 v-model="createForm.allow_image_generation"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t(imagePricingI18nKey(createForm.platform, "allowImageGeneration")) }}
             </label>
@@ -833,7 +833,7 @@
               <input
                 v-model="createForm.image_rate_independent"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t(imagePricingI18nKey(createForm.platform, "independentMultiplier")) }}
             </label>
@@ -912,7 +912,7 @@
               <input
                 v-model="createForm.allow_batch_image_generation"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t("admin.groups.imagePricing.allowBatchImageGeneration") }}
             </label>
@@ -977,7 +977,7 @@
               <input
                 v-model="createForm.video_rate_independent"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t(videoPricingI18nKey("independentMultiplier")) }}
             </label>
@@ -1097,7 +1097,7 @@
               <input
                 v-model="createForm.peak_rate_enabled"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               <span>{{ t("admin.groups.peakRate.enable") }}</span>
             </label>
@@ -1143,7 +1143,7 @@
             <input
               v-model="createForm.profit_control_enabled"
               type="checkbox"
-              class="rounded border-line text-accent focus:ring-blue-500"
+              class="rounded border-line text-accent focus:ring-accent-500"
             />
             <span>{{ t("admin.groups.profitControl.enable") }}</span>
           </label>
@@ -1557,7 +1557,7 @@
               @click="createForm.free_openai_fast = !createForm.free_openai_fast"
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="createForm.free_openai_fast
- ? 'bg-emerald-500'
+ ? 'bg-success-500'
  : 'bg-surface-3 '"
             >
               <span
@@ -1653,7 +1653,7 @@
                 class="border-b border-line bg-surface-2 px-4 py-3"
               >
                 <div class="flex items-center gap-2">
-                  <div class="h-2 w-2 rounded-full bg-blue-500"></div>
+                  <div class="h-2 w-2 rounded-full bg-accent-500"></div>
                   <label
                     class="text-sm font-medium text-foreground"
                     >{{
@@ -2604,7 +2604,7 @@
               <input
                 v-model="editForm.allow_image_generation"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t(imagePricingI18nKey(editForm.platform, "allowImageGeneration")) }}
             </label>
@@ -2612,7 +2612,7 @@
               <input
                 v-model="editForm.image_rate_independent"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t(imagePricingI18nKey(editForm.platform, "independentMultiplier")) }}
             </label>
@@ -2691,7 +2691,7 @@
               <input
                 v-model="editForm.allow_batch_image_generation"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t("admin.groups.imagePricing.allowBatchImageGeneration") }}
             </label>
@@ -2756,7 +2756,7 @@
               <input
                 v-model="editForm.video_rate_independent"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               {{ t(videoPricingI18nKey("independentMultiplier")) }}
             </label>
@@ -2876,7 +2876,7 @@
               <input
                 v-model="editForm.peak_rate_enabled"
                 type="checkbox"
-                class="rounded border-line text-accent focus:ring-blue-500"
+                class="rounded border-line text-accent focus:ring-accent-500"
               />
               <span>{{ t("admin.groups.peakRate.enable") }}</span>
             </label>
@@ -2922,7 +2922,7 @@
             <input
               v-model="editForm.profit_control_enabled"
               type="checkbox"
-              class="rounded border-line text-accent focus:ring-blue-500"
+              class="rounded border-line text-accent focus:ring-accent-500"
             />
             <span>{{ t("admin.groups.profitControl.enable") }}</span>
           </label>
@@ -3332,7 +3332,7 @@
               @click="editForm.free_openai_fast = !editForm.free_openai_fast"
               class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
               :class="editForm.free_openai_fast
- ? 'bg-emerald-500'
+ ? 'bg-success-500'
  : 'bg-surface-3 '"
             >
               <span
@@ -3427,7 +3427,7 @@
                 class="border-b border-line bg-surface-2 px-4 py-3"
               >
                 <div class="flex items-center gap-2">
-                  <div class="h-2 w-2 rounded-full bg-blue-500"></div>
+                  <div class="h-2 w-2 rounded-full bg-accent-500"></div>
                   <label
                     class="text-sm font-medium text-foreground"
                     >{{

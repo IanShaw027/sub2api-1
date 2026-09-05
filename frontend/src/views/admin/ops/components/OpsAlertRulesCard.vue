@@ -560,7 +560,7 @@ function cancelDelete() {
           <div class="md:col-span-2">
             <label class="input-label">
               {{ t('admin.ops.alertRules.form.groupId') }}
-              <span v-if="isGroupMetricSelected" class="ml-1 text-red-500">*</span>
+              <span v-if="isGroupMetricSelected" class="ml-1 text-danger-500">*</span>
             </label>
             <Select
               v-model="draftGroupId"

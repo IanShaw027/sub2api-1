@@ -167,9 +167,9 @@
             </div>
           </template>
 
-          <span class="usr-selection-count">
+          <span class="usr-selection-count text-[12.5px]">
             {{ t('admin.users.selectedOfTotal') }}
-            <b>{{ selectedCount }}</b> / {{ pagination.total }}
+            <b class="font-semibold">{{ selectedCount }}</b> / {{ pagination.total }}
           </span>
 
           <div class="usr-menu" ref="columnDropdownRef">
@@ -296,8 +296,8 @@
                 class="group/ex relative inline-flex cursor-pointer items-center gap-1 whitespace-nowrap text-xs"
                 @click.stop="toggleExpandedGroup(row.id)"
               >
-                <Icon name="shield" size="xs" class="h-3.5 w-3.5 text-purple-500 " />
-                <span class="font-medium text-purple-600 ">{{ getUserGroups(row).exclusive.length }}</span>
+                <Icon name="shield" size="xs" class="h-3.5 w-3.5 text-accent-500 " />
+                <span class="font-medium text-accent-600 ">{{ getUserGroups(row).exclusive.length }}</span>
                 <span class="text-muted">{{ t('admin.users.exclusiveLabel') }}</span>
                 <!-- Hover tooltip（操作菜单未打开时显示） -->
                 <div
@@ -892,7 +892,7 @@ const columns = computed<Column[]>(() =>
   )
 )
 
-// ListPage 配方：固定列宽通过 `usr-col-<key>` class 挂到 th/td 上，宽度在 <style scoped> 里用 :deep() 指定。
+// ListPage 配方：固定列宽通过 `usr-col-<key>` class 挂到 th/td 上，宽度在 style（scoped）里用 :deep() 指定。
 const cols = computed<Column[]>(() =>
   columns.value.map((col) => ({ ...col, class: `usr-col-${col.key}` }))
 )
@@ -1829,14 +1829,12 @@ onUnmounted(() => {
 
 .usr-selection-count {
   margin-left: auto;
-  font-size: 12.5px;
   color: var(--muted);
   white-space: nowrap;
 }
 
 .usr-selection-count b {
   color: var(--foreground);
-  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1932,7 +1930,7 @@ onUnmounted(() => {
   :deep(.cell-actions .icon-btn) {
     width: 44px;
     height: 44px;
-    border-radius: 12px;
+    border-radius: var(--radius-field);
     border: 1px solid var(--border);
     background: color-mix(in oklch, var(--surface) 80%, transparent);
   }

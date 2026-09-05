@@ -59,6 +59,41 @@
   --radius-card: 14px;
   --radius-hero: 16px;
   --radius-panel: 20px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+  --radius-5: 5px;
+  --radius-6: 6px;
+  --radius-7: 7px;
+  --radius-18: 18px;
+  --radius-bar: 6px 6px 3px 3px; /* chart bar tops */
+  --radius-bar-sm: 3px 3px 1px 1px;
+
+  /* Type scale — the prototype's px sizes for page-level cells and headings; the shared
+     surface classes in style.css carry their own sizes, these are for views/** scoped styles
+     (ui-lint --scoped only accepts var() for font-size/font-weight/border-radius there). */
+  --fs-9-5: 9.5px;
+  --fs-10-5: 10.5px;
+  --fs-11: 11px;
+  --fs-11-5: 11.5px;
+  --fs-12: 12px;
+  --fs-12-5: 12.5px;
+  --fs-13: 13px;
+  --fs-13-5: 13.5px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-24: 24px;
+  --fs-30: 30px;
+  --fs-40: 40px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  /* Text and inset ring on solid tone fills (accent/success/danger buttons and pills) */
+  --on-tone: #fff;
+  --ring-on-tone: color-mix(in oklch, white 14%, transparent);
 
   /* Layout */
   --sidebar-width: 212px;

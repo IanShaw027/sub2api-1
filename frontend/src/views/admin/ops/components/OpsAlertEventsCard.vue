@@ -340,9 +340,9 @@ function severityBadgeClass(severity: string | undefined): string {
 
 function statusBadgeClass(status: string | undefined): string {
   const s = String(status || '').trim().toLowerCase()
-  if (s === 'firing') return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-red-600/20   '
-  if (s === 'resolved') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-green-600/20   '
-  if (s === 'manual_resolved') return 'bg-slate-500/15 text-slate-700 ring-slate-600/20   '
+  if (s === 'firing') return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-danger-600/20   '
+  if (s === 'resolved') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-success-600/20   '
+  if (s === 'manual_resolved') return 'bg-[color-mix(in_oklch,var(--muted)_15%,transparent)] text-[color-mix(in_oklch,var(--muted)_40%,var(--foreground))] ring-[color-mix(in_oklch,var(--muted)_20%,transparent)]   '
   return 'bg-surface-2 text-foreground ring-[color-mix(in_oklch,var(--foreground)_20%,transparent)]   '
 }
 

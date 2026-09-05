@@ -225,7 +225,7 @@ watch(
             <div class="relative group">
               <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                 <svg
-                  class="h-3.5 w-3.5 text-muted transition-colors group-focus-within:text-blue-500"
+                  class="h-3.5 w-3.5 text-muted transition-colors group-focus-within:text-accent-500"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -236,7 +236,7 @@ watch(
               <input
                 v-model="q"
                 type="text"
-                class="w-full rounded-lg border-line bg-surface-2 py-1.5 pl-9 pr-3 text-xs font-medium text-foreground transition-all focus:border-blue-500 focus:bg-surface focus:ring-2 focus:ring-blue-500/10    "
+                class="w-full rounded-lg border-line bg-surface-2 py-1.5 pl-9 pr-3 text-xs font-medium text-foreground transition-all focus:border-accent-500 focus:bg-surface focus:ring-2 focus:ring-accent-500/10    "
                 :placeholder="t('admin.ops.errorDetails.searchPlaceholder')"
               />
             </div>

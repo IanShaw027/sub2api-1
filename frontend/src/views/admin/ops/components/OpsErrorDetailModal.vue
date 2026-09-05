@@ -424,9 +424,9 @@ watch(
 )
 
 function statusBadgeClass(code: number): string {
-  if (code >= 500) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-red-600/20   '
-  if (code === 429) return 'bg-purple-500/15 text-purple-700 ring-purple-600/20   '
-  if (code >= 400) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text ring-amber-600/20   '
+  if (code >= 500) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-danger-600/20   '
+  if (code === 429) return 'bg-accent-500/15 text-accent-700 ring-accent-600/20   '
+  if (code >= 400) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text ring-warning-600/20   '
   return 'bg-surface-2 text-foreground ring-[color-mix(in_oklch,var(--foreground)_20%,transparent)]   '
 }
 

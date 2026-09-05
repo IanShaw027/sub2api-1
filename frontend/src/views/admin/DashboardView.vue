@@ -1340,15 +1340,14 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   left: 45%;
-  background: radial-gradient(color-mix(in oklch, var(--foreground) 7%, transparent) 1px, transparent 1.3px) 0 0 /
-    16px 16px;
+  background: radial-gradient(color-mix(in oklch, var(--foreground) 7%, transparent) 1px, transparent 1.3px) 0 0 / 16px 16px;
   mask-image: linear-gradient(90deg, transparent, black 45%);
   -webkit-mask-image: linear-gradient(90deg, transparent, black 45%);
 }
 
 .dash-hero-orb {
   position: absolute;
-  border-radius: 50%;
+  border-radius: var(--radius-circle);
 }
 
 .dash-hero-orb-accent {
@@ -1356,12 +1355,7 @@ onMounted(() => {
   top: -140px;
   width: 380px;
   height: 380px;
-  background: radial-gradient(
-    circle at 35% 35%,
-    color-mix(in oklch, var(--accent) 60%, white) 0%,
-    color-mix(in oklch, var(--accent) 30%, transparent) 42%,
-    transparent 70%
-  );
+  background: radial-gradient(circle at 35% 35%, color-mix(in oklch, var(--accent) 60%, white) 0%, color-mix(in oklch, var(--accent) 30%, transparent) 42%, transparent 70%);
 }
 
 .dash-hero-orb-success {
@@ -1379,14 +1373,8 @@ onMounted(() => {
   inset: 0;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklch, var(--accent) 55%, transparent),
-    transparent 35%,
-    transparent 65%,
-    color-mix(in oklch, var(--success) 45%, transparent)
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  background: linear-gradient(135deg, color-mix(in oklch, var(--accent) 55%, transparent), transparent 35%, transparent 65%, color-mix(in oklch, var(--success) 45%, transparent));
+  -webkit-mask: linear-gradient(white 0 0) content-box, linear-gradient(white 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   pointer-events: none;
@@ -1401,7 +1389,7 @@ onMounted(() => {
 }
 
 .dash-hero-kicker {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--muted);
   line-height: 1.3;
   margin-bottom: 3px;
@@ -1410,8 +1398,8 @@ onMounted(() => {
 .dash-hero-title {
   margin: 0;
   font-family: var(--display);
-  font-size: 30px;
-  font-weight: 800;
+  font-size: var(--fs-30);
+  font-weight: var(--fw-extrabold);
   letter-spacing: -0.03em;
   line-height: 1.15;
 }
@@ -1422,7 +1410,7 @@ onMounted(() => {
 
 .dash-hero-desc {
   margin: 0;
-  font-size: 13.5px;
+  font-size: var(--fs-13-5);
   color: var(--muted);
   max-width: 540px;
   line-height: 1.55;
@@ -1438,12 +1426,12 @@ onMounted(() => {
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--danger);
-  color: #fff;
-  font-size: 10.5px;
+  color: var(--on-tone);
+  font-size: var(--fs-10-5);
   line-height: 1.3;
-  font-weight: 700;
+  font-weight: var(--fw-bold);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1472,7 +1460,7 @@ onMounted(() => {
   height: 28px;
   padding: 0 10px;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .dash-granularity {
@@ -1483,13 +1471,13 @@ onMounted(() => {
   height: 28px;
   padding: 0 8px 0 10px;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .dash-hero-tools .dash-refresh {
   height: 28px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 .dash-hero-stats {
@@ -1508,9 +1496,9 @@ onMounted(() => {
 }
 
 .dash-mini-label {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--muted);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   line-height: 1.3;
 }
 
@@ -1518,40 +1506,40 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 17px;
-  font-weight: 700;
+  font-size: var(--fs-17);
+  font-weight: var(--fw-bold);
   line-height: 1.3;
 }
 
 .dash-mini-value {
   font-family: var(--display);
-  font-size: 24px;
-  font-weight: 800;
+  font-size: var(--fs-24);
+  font-weight: var(--fw-extrabold);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
 
 .dash-mini-sub {
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   color: var(--muted);
   line-height: 1.3;
 }
 
 .dash-delta-up {
   color: var(--success-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .dash-delta-down {
   color: var(--danger-text);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
 }
 
 .dash-pulse {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   flex: none;
   animation: dash-pulse 2s infinite;
 }
@@ -1601,10 +1589,10 @@ onMounted(() => {
   gap: 6px;
   height: 22px;
   padding: 0 8px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-11-5);
   line-height: 1.3;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   box-shadow: inset 0 0 0 1px color-mix(in oklch, currentColor 22%, transparent);
 }
 
@@ -1631,19 +1619,19 @@ onMounted(() => {
 
 .dash-hero-figure {
   font-family: var(--display);
-  font-size: 40px;
-  font-weight: 800;
+  font-size: var(--fs-40);
+  font-weight: var(--fw-extrabold);
   letter-spacing: -0.04em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
 .dash-hero-figure-delta {
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.3;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   padding: 3px 7px;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
   margin-bottom: 4px;
   background: var(--surface-secondary);
 }
@@ -1665,13 +1653,13 @@ onMounted(() => {
 
 .dash-hero-mobile-bars span {
   flex: 1;
-  border-radius: 3px 3px 1px 1px;
+  border-radius: var(--radius-bar-sm);
 }
 
 .dash-hero-mobile-axis {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: var(--fs-11);
   line-height: 1.3;
   color: var(--muted);
   font-family: var(--font-mono);
@@ -1728,22 +1716,22 @@ onMounted(() => {
 }
 
 .dash-panel-title {
-  font-size: 14px;
+  font-size: var(--fs-14);
   line-height: 1.3;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 
 .dash-panel-sub {
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.3;
   color: var(--muted);
 }
 
 .dash-panel-link {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   line-height: 1.3;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--accent);
   text-decoration: none;
   white-space: nowrap;
@@ -1801,11 +1789,11 @@ onMounted(() => {
 
 .dash-bar {
   width: 100%;
-  border-radius: 6px 6px 3px 3px;
+  border-radius: var(--radius-bar);
 }
 
 .dash-bar-label {
-  font-size: 10.5px;
+  font-size: var(--fs-10-5);
   line-height: 1.3;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
@@ -1849,7 +1837,7 @@ onMounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   line-height: 1.3;
 }
 
@@ -1859,15 +1847,15 @@ onMounted(() => {
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 7px;
-  color: #fff;
+  border-radius: var(--radius-7);
+  color: var(--on-tone);
   flex: none;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 1px var(--ring-on-tone);
 }
 
 .dash-dist-name {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1886,7 +1874,7 @@ onMounted(() => {
 .dash-dist-track {
   display: block;
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-tertiary);
   overflow: hidden;
 }
@@ -1894,7 +1882,7 @@ onMounted(() => {
 .dash-dist-fill {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: linear-gradient(90deg, color-mix(in oklch, var(--accent) 70%, white), var(--accent));
 }
 
@@ -1912,7 +1900,7 @@ onMounted(() => {
   grid-template-columns: 120px 1fr 150px;
   align-items: center;
   gap: 14px;
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   line-height: 1.3;
 }
 
@@ -1927,11 +1915,11 @@ onMounted(() => {
   display: inline-flex;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--radius-6);
 }
 
 .dash-health-label {
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1940,7 +1928,7 @@ onMounted(() => {
 .dash-health-bar {
   display: flex;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   overflow: hidden;
   background: var(--surface-tertiary);
   gap: 2px;
@@ -1971,13 +1959,13 @@ onMounted(() => {
   align-items: center;
   padding: 8px 0;
   border-top: 1px solid var(--border);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   line-height: 1.3;
 }
 
 .dash-event-time {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: var(--fs-11-5);
   line-height: 1.3;
   color: var(--muted);
 }
@@ -1985,7 +1973,7 @@ onMounted(() => {
 .dash-event-dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 
 .dash-event-dot-danger { background: var(--danger); }
@@ -2016,7 +2004,7 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border-radius: 12px;
+  border-radius: var(--radius-field);
   background: color-mix(in oklch, var(--surface-secondary) 70%, transparent);
   border: 1px solid color-mix(in oklch, var(--border) 60%, transparent);
   cursor: pointer;
@@ -2031,7 +2019,7 @@ onMounted(() => {
   width: 40px;
   height: 40px;
   flex: none;
-  border-radius: 10px;
+  border-radius: var(--radius-btn);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2046,15 +2034,15 @@ onMounted(() => {
 
 .dash-action-title {
   display: block;
-  font-size: 14px;
+  font-size: var(--fs-14);
   line-height: 1.3;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 
 .dash-action-desc {
   display: block;
-  font-size: 12px;
+  font-size: var(--fs-12);
   line-height: 1.3;
   color: var(--muted);
 }
@@ -2086,7 +2074,7 @@ onMounted(() => {
   }
   .dash-hero {
     padding: 18px 18px 16px;
-    border-radius: 18px;
+    border-radius: var(--radius-18);
     gap: 12px;
   }
   .dash-hero-copy,
@@ -2119,15 +2107,15 @@ onMounted(() => {
     gap: 10px;
   }
   .dash-stat-grid :deep(.ui-stat-card-value) {
-    font-size: 24px;
+    font-size: var(--fs-24);
   }
   .dash-stat-grid :deep(.ui-stat-card-label) {
-    font-size: 11.5px;
+    font-size: var(--fs-11-5);
   }
   .dash-stat-grid :deep(.ui-stat-card-delta) {
-    font-size: 10.5px;
+    font-size: var(--fs-10-5);
     padding: 2px 5px;
-    border-radius: 5px;
+    border-radius: var(--radius-5);
   }
   .dash-stat-grid :deep(.ui-stat-card-sub) {
     display: none;
@@ -2145,7 +2133,7 @@ onMounted(() => {
     border-bottom: 1px solid var(--border);
   }
   .dash-panel-title {
-    font-size: 13px;
+    font-size: var(--fs-13);
   }
   .dash-dist,
   .dash-health,
@@ -2162,7 +2150,7 @@ onMounted(() => {
     height: 160px;
   }
   .dash-bar-label {
-    font-size: 9.5px;
+    font-size: var(--fs-9-5);
   }
   .dash-dist {
     gap: 0;

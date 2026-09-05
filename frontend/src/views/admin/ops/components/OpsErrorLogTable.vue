@@ -57,7 +57,7 @@
         <template #cell-group="{ row }">
           <span
             v-if="row.group_id"
-            class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-indigo-500/15 text-indigo-800  "
+            class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium bg-accent-500/15 text-accent-800  "
             :title="t('admin.ops.errorLog.id') + ' ' + row.group_id"
           >
             {{ row.group_name || '#' + row.group_id }}
@@ -86,7 +86,7 @@
             <span class="text-foreground ">{{ row.api_key_name || '#' + row.api_key_id }}</span>
             <span
               v-if="row.api_key_deleted"
-              class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-inset ring-rose-200   "
+              class="ml-1 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-inset ring-danger-200   "
             >{{ t('admin.ops.errorLog.keyDeletedBadge') }}</span>
           </div>
           <span v-else class="text-sm text-muted ">-</span>
@@ -263,13 +263,13 @@ function getTypeBadge(log: OpsErrorLog): { label: string; className: string } {
     return { label: t('admin.ops.errorLog.typeRequest'), className: 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  ' }
   }
   if (phase === 'auth' && owner === 'client') {
-    return { label: t('admin.ops.errorLog.typeAuth'), className: 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-blue-800  ' }
+    return { label: t('admin.ops.errorLog.typeAuth'), className: 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent-800  ' }
   }
   if (phase === 'account_auth') {
-    return { label: t('admin.ops.errorLog.typeAccountAuth'), className: 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-orange-800  ' }
+    return { label: t('admin.ops.errorLog.typeAccountAuth'), className: 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-800  ' }
   }
   if (phase === 'routing' && owner === 'platform') {
-    return { label: t('admin.ops.errorLog.typeRouting'), className: 'bg-purple-500/15 text-purple-800  ' }
+    return { label: t('admin.ops.errorLog.typeRouting'), className: 'bg-accent-500/15 text-accent-800  ' }
   }
   if (phase === 'internal' && owner === 'platform') {
     return { label: t('admin.ops.errorLog.typeInternal'), className: 'bg-surface-2 text-foreground  ' }

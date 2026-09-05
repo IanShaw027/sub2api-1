@@ -547,12 +547,6 @@ onMounted(() => loadOrders())
      values already used by the accepted ListPage reference (AccountsView.vue)
      — see deviations.md for the systemic note about promoting them to
      shared tokens instead of re-declaring per view. */
-  --cell-fs-1: 11.5px;
-  --cell-fs-2: 12px;
-  --cell-fs-3: 12.5px;
-  --cell-fs-4: 13px;
-  --cell-fw-medium: 500;
-  --cell-fw-semibold: 600;
 }
 
 .list-page :deep(.ui-page-header) {
@@ -578,14 +572,14 @@ onMounted(() => loadOrders())
 
 .filter-count {
   margin-left: auto;
-  font-size: var(--cell-fs-3);
+  font-size: var(--fs-12-5);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
 
 .filter-count b {
   color: var(--foreground);
-  font-weight: var(--cell-fw-semibold);
+  font-weight: var(--fw-semibold);
 }
 
 /* ---------- Table card · radius 14, glass ---------- */
@@ -619,8 +613,8 @@ onMounted(() => loadOrders())
 }
 
 .cell-primary-name {
-  font-size: var(--cell-fs-4);
-  font-weight: var(--cell-fw-semibold);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -628,7 +622,7 @@ onMounted(() => loadOrders())
 
 .cell-primary-meta {
   font-family: var(--font-mono);
-  font-size: var(--cell-fs-1);
+  font-size: var(--fs-11-5);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -642,19 +636,19 @@ onMounted(() => loadOrders())
 }
 
 .cell-amount-value {
-  font-size: var(--cell-fs-4);
-  font-weight: var(--cell-fw-semibold);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 
 .cell-amount-meta {
-  font-size: var(--cell-fs-1);
+  font-size: var(--fs-11-5);
   color: var(--muted);
 }
 
 .cell-time {
   font-family: var(--font-mono);
-  font-size: var(--cell-fs-2);
+  font-size: var(--fs-12);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -696,26 +690,26 @@ onMounted(() => loadOrders())
 }
 
 .detail-label {
-  font-size: var(--cell-fs-2);
+  font-size: var(--fs-12);
   color: var(--muted);
 }
 
 .detail-value {
-  font-size: var(--cell-fs-4);
-  font-weight: var(--cell-fw-medium);
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
   color: var(--foreground);
   overflow-wrap: anywhere;
 }
 
 .detail-value-mono {
   font-family: var(--font-mono);
-  font-size: var(--cell-fs-3);
+  font-size: var(--fs-12-5);
   font-variant-numeric: tabular-nums;
 }
 
 .detail-value-danger {
   color: var(--danger-text);
-  font-weight: var(--cell-fw-semibold);
+  font-weight: var(--fw-semibold);
 }
 
 .detail-section {
@@ -727,8 +721,8 @@ onMounted(() => loadOrders())
 }
 
 .detail-section-title {
-  font-size: var(--cell-fs-2);
-  font-weight: var(--cell-fw-semibold);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
@@ -757,21 +751,21 @@ onMounted(() => loadOrders())
 }
 
 .audit-item-action {
-  font-size: var(--cell-fs-3);
-  font-weight: var(--cell-fw-semibold);
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-semibold);
   color: var(--foreground);
 }
 
 .audit-item-time {
   font-family: var(--font-mono);
-  font-size: var(--cell-fs-1);
+  font-size: var(--fs-11-5);
   color: var(--muted);
 }
 
 .audit-item-detail,
 .audit-item-operator {
   margin-top: 4px;
-  font-size: var(--cell-fs-2);
+  font-size: var(--fs-12);
   color: var(--muted);
   overflow-wrap: anywhere;
 }

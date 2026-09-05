@@ -106,7 +106,7 @@ const levelBadgeClass = (level: string) => {
   const v = String(level || '').toLowerCase()
   if (v === 'error' || v === 'fatal') return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text  '
   if (v === 'warn' || v === 'warning') return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  '
-  if (v === 'debug') return 'bg-slate-500/15 text-slate-700  '
+  if (v === 'debug') return 'bg-[color-mix(in_oklch,var(--muted)_15%,transparent)] text-[color-mix(in_oklch,var(--muted)_40%,var(--foreground))]  '
   return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent  '
 }
 
