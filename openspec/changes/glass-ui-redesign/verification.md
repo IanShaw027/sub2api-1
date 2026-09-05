@@ -545,3 +545,19 @@ lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrol
 | `usage` | 2 | 1 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | **19** | 图表+表格区块间距略密 |
 
 结果：73 条全部 ≥ 17，最低 18（`auth-callback`、`payment-stripe-popup`），原型出稿六屏（`/`、`/login`、`/admin/dashboard`、`/admin/accounts`、`/keys`、`/admin/settings`）= 20；无需回炉。密度扣分均来自 mock 空态或单卡中转页（数据/流程决定，非样式）；`/setup` 是上游代理页，不在 SPA 范围。
+
+## 15.8 终验门禁（lead）
+
+`vite.config.ts` 的 `TEMP(glass-redesign visual review) overlay: false` 已移除（`checker({ vueTsc: true })` 恢复默认覆盖层）。当前树（含本次改动）门禁：
+
+| 门禁 | 结果 |
+|---|---|
+| `vue-tsc --noEmit` | 0 错误 |
+| `eslint --ext .vue,.ts src` | 0 |
+| `vitest run` | 322 文件 / 2197 用例全部通过（63.7s） |
+| `npm run build` | 成功（41.3s；仅 >500 kB chunk 提示，与重构前相同） |
+| `npm run lint:ui`（`--scoped --palette` 全树） | scoped 0 / palette 0 / total 0 |
+| `scripts/i18n-diff.mjs` | zh 8956 = en 8956，zh-only 0 / en-only 0 / duplicates 0 |
+| `openspec validate glass-ui-redesign --strict` | valid |
+
+15 组遗留（不在本 change 范围，交后续健康清理）：超长文件拆分（`SecurityTab`、`useSettingsForm`、`GroupsView`、`Create/EditAccountModal`、`KeysView`、`RiskControlView`）；`ActionPage` 内容宽度说明。

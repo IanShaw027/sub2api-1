@@ -197,4 +197,4 @@
 - [x] 15.5 `scripts/keyname-leak.mjs`：CDP 抓取每条路由 `innerText` 检查原始 i18n 键名正则；验证 0 命中
 - [x] 15.6 观感评分：`verification.md` 登记 64 条路由 × 10 项分数，全部 ≥ 17，原型出稿 6 屏 = 20；不达标路由回到对应任务重做
 - [x] 15.7 `deviations.md` 完整（每条偏离有路由 / 原型区块 / 理由 / 截图）；`components/ui/README.md`、`components/common/README.md`、`frontend/README` 的设计系统章节更新；验证文档存在
-- [ ] 15.8 移除 `vite.config.ts` 中 `TEMP(glass-redesign visual review)` 的 `overlay: false`；`vue-tsc` 0 错误、`vitest run` 0 失败、`npm run build` 成功、`lint:ui` 0；提交 `feat(glass): quality gates and final verification (tasks 15.1–15.8)`；`openspec validate glass-ui-redesign --strict` 通过
+- [x] 15.8 移除 `vite.config.ts` 中 `TEMP(glass-redesign visual review)` 的 `overlay: false`；`vue-tsc` 0 错误、`vitest run` 0 失败、`npm run build` 成功、`lint:ui` 0；提交 `feat(glass): quality gates and final verification (tasks 15.1–15.8)`；`openspec validate glass-ui-redesign --strict` 通过
