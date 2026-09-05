@@ -206,3 +206,55 @@
 ## 13.2 对比度门禁（lead）
 
 `node scripts/check-contrast.js`：glass-light / glass-dark 各 5 tone × 3 底色徽章 + tooltip 全部 PASS（最低为亮色 warning-on-canvas 4.60、danger-on-canvas 4.61）；令牌调整后 `npx vitest run src/components/ui src/__tests__` 30 文件 110 用例通过。亮色残余 4 条非文字失败（border / accent-on-canvas）延至 15.x。
+
+## 13.1 暗色对等（B 半）
+
+方法：`node scripts/ui/shot.cjs 13b-<slug>-{dark,light} <path> 1440 900 <role> glass-{dark,light} zh 1` 生成 41 路由 × 2 主题共 82 张全页截图（`/custom/:id` 拆 `docs-guide`/`status-embed` 两个种子；`/studio` 另用 `studio-image-tab.cjs` 补切到"图像"标签页的暗色截图），逐张核对白底块、浅灰边、黑字、未令牌化图表/徽章/表格/弹层等缺陷；并用一次性 CDP 点击脚本（`click-shot.cjs`，`UI_SHOTS_CLICK` 支持 CSS 选择器与 `text:` 文案匹配）分别打开一个弹层（`/keys` 的 `UseKeyModal`）、一个下拉（`/redeem` 的 `UiSelect` 类型筛选）、一个 Toast（`/affiliate` 复制邀请链接触发的失败提示）截图核对。全部 41 条路由 + 3 个交互态截图均未发现暗色主题缺陷（背景/边框/文字/徽章/图表/弹层均正确读取 `--surface`/`--surface-2`/`--border`/`--foreground`/`--muted` 等令牌，随 `data-theme="glass-dark"` 正确切换），故本任务零代码改动。
+
+几何抽查（`/redeem`，glass-dark，与亮色基线比对确认暗色未引入布局偏移）：`.ui-page-header-title` top=74 left=244 h=35；`.ui-page-header` top=74 h=58；首个内容块（`.glass-card` StatCard）top=146 —— 与 `brief-common.md` 基线（h1 top74/h35/left244，首块 top146）逐项一致。
+
+| 路由 | 缺陷 | 处理 | 截图路径 | 得分 |
+|---|---|---|---|---|
+| `/`（root） | 无 | 无需修改 | `.shots/13b-root-{dark,light}.png` | 2 |
+| `/home` | 无 | 无需修改 | `.shots/13b-home-{dark,light}.png` | 2 |
+| `/login` | 无 | 无需修改 | `.shots/13b-login-{dark,light}.png` | 2 |
+| `/register` | 无 | 无需修改 | `.shots/13b-register-{dark,light}.png` | 2 |
+| `/forgot-password` | 无 | 无需修改 | `.shots/13b-forgot-password-{dark,light}.png` | 2 |
+| `/reset-password` | 无 | 无需修改 | `.shots/13b-reset-password-{dark,light}.png` | 2 |
+| `/email-verify` | 无 | 无需修改 | `.shots/13b-email-verify-{dark,light}.png` | 2 |
+| `/auth/callback` | 无 | 无需修改 | `.shots/13b-auth-callback-{dark,light}.png` | 2 |
+| `/auth/oidc/callback` | 无 | 无需修改 | `.shots/13b-auth-oidc-callback-{dark,light}.png` | 2 |
+| `/auth/linuxdo/callback` | 无 | 无需修改 | `.shots/13b-auth-linuxdo-callback-{dark,light}.png` | 2 |
+| `/auth/dingtalk/callback` | 无 | 无需修改 | `.shots/13b-auth-dingtalk-callback-{dark,light}.png` | 2 |
+| `/auth/dingtalk/email-completion` | 无 | 无需修改 | `.shots/13b-auth-dingtalk-email-completion-{dark,light}.png` | 2 |
+| `/auth/wechat/callback` | 无 | 无需修改 | `.shots/13b-auth-wechat-callback-{dark,light}.png` | 2 |
+| `/auth/wechat/payment/callback` | 无 | 无需修改 | `.shots/13b-auth-wechat-payment-callback-{dark,light}.png` | 2 |
+| `/model-plaza` | 无 | 无需修改 | `.shots/13b-model-plaza-{dark,light}.png` | 2 |
+| `/monitor` | 无 | 无需修改 | `.shots/13b-monitor-{dark,light}.png` | 2 |
+| `/dashboard` | 无 | 无需修改 | `.shots/13b-dashboard-{dark,light}.png` | 2 |
+| `/keys` | 无（`UseKeyModal` 弹层实测：代码块固定深色+浅色文字为既有设计，非缺陷） | 无需修改 | `.shots/13b-keys-{dark,light}.png`、`13b-keys-usemodal-dark.png` | 2 |
+| `/key-usage` | 无 | 无需修改 | `.shots/13b-key-usage-{dark,light}.png` | 2 |
+| `/usage` | 无 | 无需修改 | `.shots/13b-usage-{dark,light}.png` | 2 |
+| `/orders` | 无 | 无需修改 | `.shots/13b-orders-{dark,light}.png` | 2 |
+| `/invoices` | 无 | 无需修改 | `.shots/13b-invoices-{dark,light}.png` | 2 |
+| `/invoices/1` | 无 | 无需修改 | `.shots/13b-invoices-detail-{dark,light}.png` | 2 |
+| `/tickets` | 无 | 无需修改 | `.shots/13b-tickets-{dark,light}.png` | 2 |
+| `/tickets/new` | 无 | 无需修改 | `.shots/13b-tickets-new-{dark,light}.png` | 2 |
+| `/tickets/1` | 无 | 无需修改 | `.shots/13b-tickets-detail-{dark,light}.png` | 2 |
+| `/subscriptions` | 无 | 无需修改 | `.shots/13b-subscriptions-{dark,light}.png` | 2 |
+| `/available-channels` | 无 | 无需修改 | `.shots/13b-available-channels-{dark,light}.png` | 2 |
+| `/profile` | 无 | 无需修改 | `.shots/13b-profile-{dark,light}.png` | 2 |
+| `/redeem` | 无（`UiSelect` 下拉实测正常，见几何抽查） | 无需修改 | `.shots/13b-redeem-{dark,light}.png`、`13b-redeem-dropdown-dark.png` | 2 |
+| `/affiliate` | 无（Toast "复制失败" 实测：深红底白字，令牌化正确） | 无需修改 | `.shots/13b-affiliate-{dark,light}.png`、`13b-affiliate-toast-dark.png` | 2 |
+| `/batch-image` | 无 | 无需修改 | `.shots/13b-batch-image-{dark,light}.png` | 2 |
+| `/purchase` | 无 | 无需修改 | `.shots/13b-purchase-{dark,light}.png` | 2 |
+| `/payment/qrcode` | 无 | 无需修改 | `.shots/13b-payment-qrcode-{dark,light}.png` | 2 |
+| `/payment/stripe` | 无（种子参数不含 client_secret，呈现预期的"缺少订单ID或支付密钥"错误态，卡片本身令牌化正确） | 无需修改 | `.shots/13b-payment-stripe-{dark,light}.png` | 2 |
+| `/payment/airwallex` | 无（同上，"缺少 Airwallex 支付参数"预期错误态） | 无需修改 | `.shots/13b-payment-airwallex-{dark,light}.png` | 2 |
+| `/payment/stripe-popup` | 无 | 无需修改 | `.shots/13b-payment-stripe-popup-{dark,light}.png` | 2 |
+| `/payment/result` | 无 | 无需修改 | `.shots/13b-payment-result-{dark,light}.png` | 2 |
+| `/custom/docs-guide` | 无 | 无需修改 | `.shots/13b-custom-docs-guide-{dark,light}.png` | 2 |
+| `/custom/status-embed` | 无（内嵌 iframe 展示的是外部登录页原型，非本站主题范围） | 无需修改 | `.shots/13b-custom-status-embed-{dark,light}.png` | 2 |
+| `/studio`（聊天 + 图像 tab） | 无 | 无需修改 | `.shots/13b-studio-{dark,light}.png`、`13b-studio-image-dark.png` | 2 |
+
+门禁：`node_modules/.bin/vue-tsc --noEmit` 0 错误；`npx vitest run src/views/user src/components/user src/components/payment src/features` 46 文件 / 306 用例全过；`node scripts/i18n-diff.mjs` zh 8955 = en 8955，0 差异。因本任务零代码改动，未触发 `ui-lint.mjs`/`eslint` 的逐文件门禁（无所有权文件被修改）。

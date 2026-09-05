@@ -251,7 +251,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
 import type { ModelStat, UserSpendingRankingItem, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
-import { baseChartOptions, useChartTheme } from '@/utils/chartTheme'
+import { pieChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -431,7 +431,7 @@ const rankingDisplayItems = computed<RankingDisplayItem[]>(() => {
 })
 
 const doughnutOptions = computed(() => {
- const base = baseChartOptions(theme.value)
+ const base = pieChartOptions(theme.value)
  return {
  ...base,
  plugins: {
@@ -456,7 +456,7 @@ const doughnutOptions = computed(() => {
 })
 
 const rankingDoughnutOptions = computed(() => {
- const base = baseChartOptions(theme.value)
+ const base = pieChartOptions(theme.value)
  return {
  ...base,
  plugins: {

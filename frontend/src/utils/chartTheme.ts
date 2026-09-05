@@ -154,3 +154,9 @@ export function baseChartOptions(theme: ChartTheme) {
     }
   }
 }
+
+/** Legend + tooltip options for doughnut / pie charts (no cartesian scales). */
+export function pieChartOptions(theme: ChartTheme) {
+  const { scales: _scales, ...rest } = baseChartOptions(theme)
+  return rest
+}

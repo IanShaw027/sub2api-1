@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/composables/useTheme', () => ({ useTheme: () => ({ isDark: { value: false } }) }))
 
-import { alpha, baseChartOptions, chartTheme, cssVar } from '../chartTheme'
+import { alpha, baseChartOptions, chartTheme, cssVar, pieChartOptions } from '../chartTheme'
 
 describe('chartTheme', () => {
   it('alpha handles hex and oklch inputs', () => {
@@ -25,6 +25,14 @@ describe('chartTheme', () => {
     const o = baseChartOptions(t)
     expect(o.scales.y.grid.color).toBe(t.grid)
     expect(o.scales.x.ticks.color).toBe(t.text)
+    expect(o.plugins.legend.labels.color).toBe(t.text)
+    expect(o.plugins.tooltip.backgroundColor).toBe(t.surface)
+  })
+
+  it('pieChartOptions drops the cartesian scales but keeps legend/tooltip', () => {
+    const t = chartTheme()
+    const o = pieChartOptions(t)
+    expect('scales' in o).toBe(false)
     expect(o.plugins.legend.labels.color).toBe(t.text)
     expect(o.plugins.tooltip.backgroundColor).toBe(t.surface)
   })

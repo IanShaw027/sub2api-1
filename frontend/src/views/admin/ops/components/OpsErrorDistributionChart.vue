@@ -7,7 +7,7 @@ import type { OpsErrorDistributionResponse } from '@/api/admin/ops'
 import type { ChartState } from '../types'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { baseChartOptions, useChartTheme } from '@/utils/chartTheme'
+import { pieChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -95,7 +95,7 @@ const chartData = computed(() => {
 })
 
 const options = computed(() => {
-  const base = baseChartOptions(theme.value)
+  const base = pieChartOptions(theme.value)
   return {
     ...base,
     plugins: { ...base.plugins, legend: { display: false } }
