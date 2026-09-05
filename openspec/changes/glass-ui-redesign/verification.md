@@ -404,3 +404,7 @@ lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrol
 ## 15.5 键名泄漏
 
 `node scripts/keyname-leak.mjs`（1440 zh glass-light）：`/admin/orders/plans` 曾渲染 `payment.admin.day`，根因是 `AdminPaymentPlansView.vue` 用 `row.validity_unit` 直接拼键名，而后端 ent 默认值为单数 `day`（`subscription_plan.go`），locale 与编辑弹层只有 `days/weeks/months/years`。已加 `validityUnitLabel()` 单数→复数归一化后再 `t()`，兜底显示原值。复测 73 路由 `leaks: 0`。
+
+## 15.x 亮色非文字对比度收口（lead）
+
+`node scripts/check-contrast.js`：亮色 `--border-strong` vs canvas/background/surface = 3.24 / 3.77 / 4.11，`--focus-ring` vs canvas/background = 3.33 / 3.87；暗色 3.60 / 3.53 / 3.08 与 5.63 / 5.52。全部通过，13.2 的 4 条失败关闭。`--border` 保持原型值不变（像素优先），依据见 deviations。

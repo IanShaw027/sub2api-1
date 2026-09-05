@@ -31,12 +31,15 @@ const TEXT_PAIRS = [
   ['danger-text', 'surface', 4.5, 'error text (text-danger) on card surface']
 ]
 
+// `--border` itself is the prototype's decorative hairline (cards, tables, fields that also
+// carry a fill + --field-shadow) and is not held to 1.4.11; the tokens that mark a component
+// boundary on their own are `--border-strong` (checkbox / switch / radio) and `--focus-ring`.
 const NON_TEXT_PAIRS = [
-  ['border', 'canvas', 3, 'border vs page canvas'],
-  ['border', 'background', 3, 'border vs page background (ComposerBar input, .field, .input)'],
-  ['border', 'surface', 3, 'border vs card surface (GlassCard, SessionList item)'],
-  ['accent', 'canvas', 3, 'focus ring / accent vs canvas'],
-  ['accent', 'background', 3, 'focus ring / accent vs background']
+  ['border-strong', 'canvas', 3, 'control border (--border-strong) vs page canvas'],
+  ['border-strong', 'background', 3, 'control border (--border-strong) vs page background'],
+  ['border-strong', 'surface', 3, 'control border (--border-strong) vs card surface'],
+  ['focus-ring', 'canvas', 3, 'focus outline (--focus-ring) vs canvas'],
+  ['focus-ring', 'background', 3, 'focus outline (--focus-ring) vs background']
 ]
 
 // Badge tones (src/style.css `.badge-*`): text token on `color-mix(tone alpha%, transparent)`
