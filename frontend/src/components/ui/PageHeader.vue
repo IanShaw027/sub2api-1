@@ -96,4 +96,21 @@ const descriptionText = computed(() => props.description || props.subtitle)
   gap: 8px;
   flex: none;
 }
+
+/* <768px: a long description must not be squeezed into a narrow column beside the
+   actions — let the actions wrap under the title block when both cannot share the row. */
+@media (max-width: 767px) {
+  .ui-page-header {
+    flex-wrap: wrap;
+  }
+
+  .ui-page-header-main {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+
+  .ui-page-header-actions {
+    flex-wrap: wrap;
+  }
+}
 </style>

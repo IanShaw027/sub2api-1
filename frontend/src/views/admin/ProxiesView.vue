@@ -60,7 +60,11 @@
     </PageHeader>
     <TablePageLayout>
       <template #filters>
-        <FilterBar :search-placeholder="t('admin.proxies.searchProxies')">
+        <FilterBar
+          :search-placeholder="t('admin.proxies.searchProxies')"
+          :filter-label="t('common.filter')"
+          @open-filters="showMobileFilters = !showMobileFilters"
+        >
           <template #search>
             <div class="relative w-full">
               <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -90,6 +94,23 @@
             />
           </template>
         </FilterBar>
+
+        <div v-if="showMobileFilters" class="proxies-mobile-filters">
+          <Select
+            v-model="filters.protocol"
+            :options="protocolOptions"
+            :placeholder="t('admin.proxies.allProtocols')"
+            class="w-full"
+            @change="loadProxies"
+          />
+          <Select
+            v-model="filters.status"
+            :options="statusOptions"
+            :placeholder="t('admin.proxies.allStatus')"
+            class="w-full"
+            @change="loadProxies"
+          />
+        </div>
       </template>
 
       <template #table>
@@ -464,6 +485,7 @@ const copyMenuProxyId = ref<number | null>(null)
 const copyMenuSource = ref<Proxy | null>(null)
 const loading = ref(false)
 const searchQuery = ref('')
+const showMobileFilters = ref(false)
 const filters = reactive({
   protocol: '',
   status: ''
@@ -1270,6 +1292,13 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
+.proxies-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
 .proxies-fab {
   display: none;
 }

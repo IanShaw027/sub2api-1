@@ -14,7 +14,11 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <FilterBar :search-placeholder="t('admin.announcements.searchAnnouncements')">
+          <FilterBar
+            :search-placeholder="t('admin.announcements.searchAnnouncements')"
+            :filter-label="t('common.filter')"
+            @open-filters="showMobileFilters = !showMobileFilters"
+          >
             <template #search>
               <input
                 v-model="searchQuery"
@@ -33,6 +37,14 @@
               />
             </template>
           </FilterBar>
+          <div v-if="showMobileFilters" class="announcements-mobile-filters">
+            <Select
+              v-model="filters.status"
+              :options="statusFilterOptions"
+              class="w-full"
+              @change="handleStatusChange"
+            />
+          </div>
           <ChipScroller
             :model-value="String(filters.status || '')"
             :chips="announcementStatusChips"
@@ -351,6 +363,7 @@ const filters = reactive({
   status: '',
 })
 const searchQuery = ref('')
+const showMobileFilters = ref(false)
 
 const pagination = reactive({
   page: 1,
@@ -746,6 +759,11 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
+.announcements-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .announcements-fab { display: none; }
 @media (max-width: 767px) {
   .announcements-create-desktop { display: none; }

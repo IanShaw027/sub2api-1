@@ -9,7 +9,11 @@
     </PageHeader>
     <TablePageLayout>
       <template #filters>
-        <FilterBar :search-placeholder="t('admin.affiliates.records.searchPlaceholder')">
+        <FilterBar
+          :search-placeholder="t('admin.affiliates.records.searchPlaceholder')"
+          :filter-label="t('common.filter')"
+          @open-filters="showMobileFilters = !showMobileFilters"
+        >
           <template #search>
             <div class="relative w-full">
               <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -33,6 +37,22 @@
             />
           </template>
         </FilterBar>
+        <div v-if="showMobileFilters" class="affiliate-records-mobile-filters">
+          <TextInput
+            v-model="filters.start_at"
+            type="date"
+            class="w-full"
+            :title="t('admin.affiliates.records.startAt')"
+            @change="reloadFromFirstPage"
+          />
+          <TextInput
+            v-model="filters.end_at"
+            type="date"
+            class="w-full"
+            :title="t('admin.affiliates.records.endAt')"
+            @change="reloadFromFirstPage"
+          />
+        </div>
       </template>
 
       <template #table>
@@ -192,6 +212,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const loading = ref(false)
+const showMobileFilters = ref(false)
 const records = ref<AffiliateRecord[]>([])
 const filters = reactive({ search: '', start_at: '', end_at: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
@@ -440,3 +461,12 @@ onMounted(() => {
   void loadRecords()
 })
 </script>
+
+<style scoped>
+.affiliate-records-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+</style>

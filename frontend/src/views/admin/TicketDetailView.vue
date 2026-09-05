@@ -379,18 +379,25 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
 /* The conversation pane and side meta card both size themselves to 100% of
    their parent (with their own internal scroll areas), so the layout needs
    an explicit, viewport-relative height here — DetailPageLayout itself stays
-   height-agnostic for pages that just want natural page scroll. */
-.ticket-detail-layout :deep(.detail-page-layout-grid) {
-  height: calc(100vh - 10rem);
-  min-height: calc(100vh - 10rem);
-  align-items: stretch;
-}
+   height-agnostic for pages that just want natural page scroll. Scoped to
+   the >=1024px breakpoint where DetailPageLayout renders the two-column
+   grid (see its own `@media (max-width: 1023px)` rule): below that, the
+   grid is already a single column and forcing a fixed height + hidden
+   overflow here would clip the conversation pane and admin action panel
+   with no way to reach the rest of their content on mobile. */
+@media (min-width: 1024px) {
+  .ticket-detail-layout :deep(.detail-page-layout-grid) {
+    height: calc(100vh - 10rem);
+    min-height: calc(100vh - 10rem);
+    align-items: stretch;
+  }
 
-.ticket-detail-layout :deep(.detail-page-layout-main),
-.ticket-detail-layout :deep(.detail-page-layout-side) {
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
+  .ticket-detail-layout :deep(.detail-page-layout-main),
+  .ticket-detail-layout :deep(.detail-page-layout-side) {
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+  }
 }
 
 .status-block {

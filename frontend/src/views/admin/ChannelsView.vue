@@ -14,7 +14,11 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <FilterBar :search-placeholder="t('admin.channels.searchChannels', 'Search channels...')">
+          <FilterBar
+            :search-placeholder="t('admin.channels.searchChannels', 'Search channels...')"
+            :filter-label="t('common.filter')"
+            @open-filters="showMobileFilters = !showMobileFilters"
+          >
             <template #search>
               <div class="relative w-full">
                 <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -37,6 +41,15 @@
               />
             </template>
           </FilterBar>
+          <div v-if="showMobileFilters" class="channels-mobile-filters">
+            <Select
+              v-model="filters.status"
+              :options="statusFilterOptions"
+              :placeholder="t('admin.channels.allStatus', 'All Status')"
+              class="w-full"
+              @change="loadChannels"
+            />
+          </div>
           <ChipScroller
             :model-value="String(filters.status || '')"
             :chips="channelStatusChips"
@@ -206,6 +219,7 @@ const onChannelStatusChip = (value: string) => {
 const channels = ref<Channel[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
+const showMobileFilters = ref(false)
 const filters = reactive({ status: '' })
 const pagination = reactive({
   page: 1,
@@ -362,6 +376,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.channels-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .channels-fab {
   display: none;
 }

@@ -486,6 +486,7 @@ export default {
         actionMeta: 'Action',
         latency: 'Latency',
         input: 'Input Summary',
+        scrollHint: 'Swipe left or right to see the full table',
       },
       result: {
         all: 'All Results',

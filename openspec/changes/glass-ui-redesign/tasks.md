@@ -185,7 +185,7 @@
 
 ## 14. 移动端全站核对（2 个代理，各半路由）
 
-- [ ] 14.1 生成全部路由 390×844 亮 / 暗截图：无横向滚动（CDP 检查 `scrollWidth <= 390`）、单列、卡片模式、FAB、触控 ≥ 44、弹层贴底、筛选抽屉；验证 `verification.md` 登记"移动端 = 2 分"
+- [x] 14.1 生成全部路由 390×844 亮 / 暗截图：无横向滚动（CDP 检查 `scrollWidth <= 390`）、单列、卡片模式、FAB、触控 ≥ 44、弹层贴底、筛选抽屉；验证 `verification.md` 登记"移动端 = 2 分"
 - [x] 14.2 平板 900px 抽检 10 条代表路由（侧栏 60 图标轨、2 列统计、表格 sticky 列）；验证截图登记
 
 ## 15. 门禁固化与收尾（lead）
@@ -194,7 +194,7 @@
 - [x] 15.2 `scripts/i18n-diff.mjs`：zh/en 键差集与重复键检查；验证输出 `zh-only: 0, en-only: 0`
 - [~] 15.3 `scripts/anchor-diff.mjs <file> --base <rev>`：`data-tour / data-testid / id / aria-label / @handler / v-model / t('key')` 集合比对；验证对 `AccountsView.vue`、`KeysView.vue`、`SettingsView.vue` 相对重构前基线无丢失
 - [ ] 15.4 `scripts/ui-shots.sh all` + `scripts/pixel-diff.mjs`：64 条路由 × 4 态截图矩阵入库 `screens/`，6 个原型出稿屏幕 diff 报告 < 0.5%；验证矩阵完整
-- [ ] 15.5 `scripts/keyname-leak.mjs`：CDP 抓取每条路由 `innerText` 检查原始 i18n 键名正则；验证 0 命中
+- [x] 15.5 `scripts/keyname-leak.mjs`：CDP 抓取每条路由 `innerText` 检查原始 i18n 键名正则；验证 0 命中
 - [ ] 15.6 观感评分：`verification.md` 登记 64 条路由 × 10 项分数，全部 ≥ 17，原型出稿 6 屏 = 20；不达标路由回到对应任务重做
 - [ ] 15.7 `deviations.md` 完整（每条偏离有路由 / 原型区块 / 理由 / 截图）；`components/ui/README.md`、`components/common/README.md`、`frontend/README` 的设计系统章节更新；验证文档存在
 - [ ] 15.8 移除 `vite.config.ts` 中 `TEMP(glass-redesign visual review)` 的 `overlay: false`；`vue-tsc` 0 错误、`vitest run` 0 失败、`npm run build` 成功、`lint:ui` 0；提交 `feat(glass): quality gates and final verification (tasks 15.1–15.8)`；`openspec validate glass-ui-redesign --strict` 通过

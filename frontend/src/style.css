@@ -1421,6 +1421,24 @@
     }
   }
 
+  /* <768px: icon-only controls keep their visual size but get a 44×44 hit-slop
+     (Apple HIG / Material guidance; WCAG 2.5.8 24px minimum is met at any width). */
+  @media (max-width: 767px) {
+    .icon-btn,
+    .header-icon-btn,
+    .btn-icon {
+      position: relative;
+    }
+
+    .icon-btn::after,
+    .header-icon-btn::after,
+    .btn-icon::after {
+      content: '';
+      position: absolute;
+      inset: -8px;
+    }
+  }
+
   /* <768px: modals/dialogs dock to the bottom as a sheet (top radius only) */
   @media (max-width: 767px) {
     .modal-overlay,

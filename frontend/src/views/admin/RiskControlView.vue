@@ -257,6 +257,11 @@
             </div>
           </div>
 
+          <p class="mb-2 flex items-center gap-1 text-xs text-muted md:hidden">
+            <Icon name="chevronRight" size="xs" class="flex-shrink-0" />
+            {{ t('admin.riskControl.table.scrollHint') }}
+          </p>
+
           <div class="overflow-x-auto">
             <table class="w-full table-fixed divide-y divide-line">
               <thead class="bg-surface-2">

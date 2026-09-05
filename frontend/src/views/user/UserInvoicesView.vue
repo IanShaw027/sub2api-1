@@ -10,7 +10,11 @@
     </PageHeader>
     <div class="invoices-page">
       <div class="flex flex-col gap-3">
-        <FilterBar :search-placeholder="t('payment.invoices.search')">
+        <FilterBar
+          :search-placeholder="t('payment.invoices.search')"
+          :filter-label="t('common.filter')"
+          @open-filters="showMobileFilters = !showMobileFilters"
+        >
           <template #search>
             <input v-model="keyword" type="search" class="input" :placeholder="t('payment.invoices.search')" @keyup.enter="applyFilters" />
           </template>
@@ -18,6 +22,9 @@
             <Select v-model="currentFilter" :options="statusFilters" class="w-36" @change="applyFilters" />
           </template>
         </FilterBar>
+        <div v-if="showMobileFilters" class="invoices-mobile-filters">
+          <Select v-model="currentFilter" :options="statusFilters" class="w-full" @change="applyFilters" />
+        </div>
         <ChipScroller
           :model-value="String(currentFilter || '')"
           :chips="statusFilters.map((opt) => ({ value: String(opt.value), label: opt.label }))"
@@ -95,6 +102,7 @@ const loading = ref(false)
 const invoices = ref<Invoice[]>([])
 const currentFilter = ref('')
 const keyword = ref('')
+const showMobileFilters = ref(false)
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
 const statusFilters = computed(() => [
@@ -180,5 +188,15 @@ onMounted(fetchInvoices)
 
 .invoices-table :deep(.table-wrapper tbody td) {
   height: 61px;
+}
+
+.invoices-mobile-filters {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .invoices-mobile-filters {
+    display: block;
+  }
 }
 </style>

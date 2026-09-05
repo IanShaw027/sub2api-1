@@ -14,7 +14,11 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <FilterBar :search-placeholder="t('admin.promo.searchCodes')">
+          <FilterBar
+            :search-placeholder="t('admin.promo.searchCodes')"
+            :filter-label="t('common.filter')"
+            @open-filters="showMobileFilters = !showMobileFilters"
+          >
             <template #search>
               <input
                 v-model="searchQuery"
@@ -33,6 +37,14 @@
               />
             </template>
           </FilterBar>
+          <div v-if="showMobileFilters" class="promo-mobile-filters">
+            <Select
+              v-model="filters.status"
+              :options="filterStatusOptions"
+              class="w-full"
+              @change="loadCodes"
+            />
+          </div>
           <ChipScroller
             :model-value="String(filters.status || '')"
             :chips="promoStatusChips"
@@ -426,6 +438,7 @@ const loading = ref(false)
 const creating = ref(false)
 const updating = ref(false)
 const searchQuery = ref('')
+const showMobileFilters = ref(false)
 const copiedCode = ref<string | null>(null)
 
 const filters = reactive({
@@ -767,6 +780,11 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
+.promo-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .promo-fab { display: none; }
 @media (max-width: 767px) {
   .promo-create-desktop { display: none; }

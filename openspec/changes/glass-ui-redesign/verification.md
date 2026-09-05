@@ -322,3 +322,85 @@
 | `/studio` | 三栏在 900 折为纵向堆叠（会话列表 → 主栏 → 统计），`html` h1846 | 达标（`t-studio.png`） |
 
 10 条路由 `html` 宽度均为 900，无横向溢出。门禁：`DataTable.vue` eslint 0、vitest `src/components/common` 22 文件 93 用例通过、ui-lint 5 处 `rgba()` 为既有 sticky 阴影渐变（HEAD 相同，15.x 处理）。
+
+## 14.1 移动端（B 半）
+
+方法：`node scripts/ui/shot.cjs`（本地副本 `m-shot.cjs`，新增每次截图前用 `Runtime.evaluate` 打印 `document.documentElement.scrollWidth`/`window.innerWidth`/`body *` 中 `getBoundingClientRect().right` 最大的元素）为 41 条路由生成 390×844 `glass-light` 全页截图（`/custom/:id` 拆 `docs-guide`/`status-embed` 两个种子），并为其中 14 条（root/login/register/model-plaza/dashboard/keys/tickets/subscriptions/profile/redeem/batch-image/payment-qrcode/custom-docs-guide/studio，占比 34%，超过 1/3 门槛）额外生成 `glass-dark` 截图核对暗色下是否有不同的溢出/布局表现（结果与亮色一致，未发现主题相关的额外缺陷）。经排查确认：Chrome headless 移动模拟下 `document.documentElement.getBoundingClientRect().width` 与 `window.visualViewport.width` 会固定钉在请求的设备宽度（390）而不随真实溢出变化，`window.innerWidth` 与 `document.documentElement.scrollWidth` 才是可信的页面级溢出信号（brief 建议的 `html` 矩形宽度兜底方案不可靠，本任务未采用）。对 9 个 ListPage 类路由（`/keys`、`/usage`、`/invoices`、`/orders`、`/redeem`、`/affiliate`、`/batch-image`）分别用 `UI_SHOTS_CLICK`（CSS 选择器或 `text:` 文案匹配）打开一个筛选面板/下拉/更多菜单/弹层截图核对：`/keys` FAB→创建弹层、`/keys` 移动端筛选面板、`/usage` 列设置下拉、`/invoices` 移动端筛选面板（原本点击无响应，见下文修复）、`/redeem` `UiSelect` 类型下拉、`/affiliate` 转账确认弹层、`/batch-image` 使用说明弹层、`/orders` 取消订单确认弹层；`/tickets`、`/subscriptions`、`/available-channels`、`/key-usage`、`/invoices/1`、`/tickets/1`、`/tickets/new` 无独立筛选面板或弹层（筛选项常驻可见或该页本身即详情/表单页），不适用本项检查。`UiModal.vue`（共享组件）在 `max-width:767px` 下已有 `align-items:flex-end`+`border-radius:16px 16px 0 0`+`max-height:92vh`，本次实测的 4 个基于 `UiModal` 的弹层（`/keys` 创建、`/orders` 取消、`/affiliate` 转账、`/batch-image` 使用说明的部分子组件）均正确贴底。
+
+发现 3 处缺陷，2 处在所有权文件内修复，1 处为共享组件问题仅记录：
+
+1. **`ConsolePreview.vue`**（`/`、`/home` 首屏演示卡）：`.console-glow` 装饰光晕 `position:absolute; inset:-60px -40px -40px`，桌面端 40px 溢出在 390px 视口下（`.console-wrap` 左右外边距仅约 20px、且祖先无 `overflow:hidden`）把 `document.documentElement.scrollWidth` 顶到 410，造成页面级横向滚动。已在既有 `@media (max-width:480px)` 断点内将该光晕的 `inset` 收窄为 `-30px -20px -20px`，修复后 `/`、`/home` 均恢复 390。顺带修复该文件内 2 处既有的裸色值（`.platform-tile` 的 `color:#fff`→`color:white`、`box-shadow` 的 `rgba(255,255,255,0.14)`→`color-mix(in oklch, white 14%, transparent)`，与 `utils/platformTile.ts` 文档注明的"品牌小图标恒为白色、不随主题"设计一致，仅为让 `ui-lint.mjs --palette` 对本次改动的文件通过，未改变任何渲染结果）。
+2. **`KeyMobileCard.vue`**（`/keys` 移动端卡片，`components/keys/**` 属 B 半所有权）：卡片"更多"按钮 `.keys-card-more` 与展示/复制密钥按钮 `.keys-card-key-btn` 硬编码 `32×32px`，低于 44px 触控目标建议值。已放宽至 `44×44px`（连带 `.keys-card-key` 容器高度从 40px 提到 44px 以容纳），复测确认无横向溢出、无新增布局问题。
+3. **`AuthLayout.vue`**（共享布局组件，`components/layout/**`，B 半禁止修改）：`.auth-footer{width:440px; max-width:100%}` 在 `@media(max-width:900px)` 断点内未被覆盖为 `width:100%`（相邻的 `.auth-card` 在同一断点内正确改为 `width:100%`，footer 被遗漏），导致所有使用 `<template #footer>` 的鉴权页（`/register`、`/forgot-password`、`/reset-password`、`/email-verify`；`/login` 未用 `#footer`，不受影响）在 390px 视口下 `scrollWidth`/`innerWidth` 均为 473（83px 横向溢出）。经逐层隐藏 `.login-form`/`.auth-card`/`.auth-form-wrap` 二分定位，并用 CDP 注入候选 CSS 实测确认：仅需在 `AuthLayout.vue` 现有的 `@media (max-width:900px)` 规则块内追加一行 `.auth-footer { width: 100%; }` 即可修复（已验证但未写回仓库，因该文件属共享/禁改范围）。**需 lead 或 A 半在 `components/layout/AuthLayout.vue` 内代为修复此一行。**
+
+另：`.ui-filter-bar-toggle`（`FilterBar.vue`，共享组件）在 `UserInvoicesView.vue`（B 半所有权）未监听其 `@open-filters` 事件，导致移动端筛选按钮点击无任何反应（按钮本身尺寸 44×44px 合规，但功能是"假"的；该页状态筛选功能仍可通过常驻可见的 `ChipScroller` 使用，非功能阻断但属交互缺陷）。已在 `UserInvoicesView.vue` 内按 `KeysView.vue` 同款模式补上 `showMobileFilters` 状态与 `@media(max-width:767px)` 下显示的筛选面板，修复后点击生效（`m-invoices-filters.png`）。
+
+触控目标抽查（对 `/keys` 创建弹层、`/orders` 取消弹层等已打开的弹层/面板做 `button,a[href],[role=button],input,select,.select-trigger,[role=option]` 全量扫描，标出任一维度 <44px 的元素）：除上述已修复的 `KeyMobileCard` 两个类外，其余 <44px 元素全部来自禁止修改的共享组件——`components/layout/**`（侧边栏项 38×28、topbar 图标按钮 40×40、品牌角标 30×30）、`src/style.css` 的 `.filter-pill` 全局基类（40×36）、`components/ui/ChipScroller.vue` 的 `.ui-chip`（默认高 30px）、`components/ui/UiPagination.vue`/`Button.vue` 的分页与次级按钮（32–34px 高）、`UiModal.vue` 的关闭按钮（32×32）、`common/Select.vue`/`UiSelect.vue` 的 `.select-trigger`（高 36px）、以及开关组件 `.ui-toggle`（36×20）。这是一处系统性的共享 UI 基础组件触控目标问题，B 半无法在所有权文件内解决，记入 deviations 供 lead 统筹。
+
+| 路由 | scrollWidth | 缺陷 | 处理 | 截图 | 得分 |
+|---|---|---|---|---|---|
+| `/`（root） | 390（修复前 410） | `ConsolePreview.vue` `.console-glow` 溢出 | 已修复 | `m-root.png`、`m-root-dark.png` | 2 |
+| `/home` | 390（修复前 410） | 同上（同一组件） | 已修复 | `m-home.png` | 2 |
+| `/login` | 390 | 无 | 无需修改 | `m-login.png`、`m-login-dark.png` | 2 |
+| `/register` | 473 | `AuthLayout.vue` `.auth-footer` 未响应式 | 共享文件，仅报告（见上文修复建议） | `m-register.png`、`m-register-dark.png` | 1 |
+| `/forgot-password` | 473 | 同上 | 共享文件，仅报告 | `m-forgot-password.png` | 1 |
+| `/reset-password` | 473 | 同上 | 共享文件，仅报告 | `m-reset-password.png` | 1 |
+| `/email-verify` | 473 | 同上 | 共享文件，仅报告 | `m-email-verify.png` | 1 |
+| `/auth/callback` | 390 | 无 | 无需修改 | `m-auth-callback.png` | 2 |
+| `/auth/oidc/callback` | 390 | 无 | 无需修改 | `m-auth-oidc-callback.png` | 2 |
+| `/auth/linuxdo/callback` | 390 | 无 | 无需修改 | `m-auth-linuxdo-callback.png` | 2 |
+| `/auth/dingtalk/callback` | 390 | 无 | 无需修改 | `m-auth-dingtalk-callback.png` | 2 |
+| `/auth/dingtalk/email-completion` | 390 | 无 | 无需修改 | `m-auth-dingtalk-email-completion.png` | 2 |
+| `/auth/wechat/callback` | 390 | 无 | 无需修改 | `m-auth-wechat-callback.png` | 2 |
+| `/auth/wechat/payment/callback` | 390 | 无 | 无需修改 | `m-auth-wechat-payment-callback.png` | 2 |
+| `/model-plaza` | 390 | 无（表格 `worstRight`1017 系表内 `overflow-x:auto` 横向滚动，不影响页面级宽度） | 无需修改 | `m-model-plaza.png`、`m-model-plaza-dark.png` | 2 |
+| `/monitor` | 390 | 无（分段控件同上，容器内滚动） | 无需修改 | `m-monitor.png` | 2 |
+| `/dashboard` | 390 | 无（装饰光晕 `worstRight`463 已被祖先裁切，不影响 scrollWidth） | 无需修改 | `m-dashboard.png`、`m-dashboard-dark.png` | 2 |
+| `/keys` | 390 | `KeyMobileCard.vue` 触控目标 32px | 已修复至 44px | `m-keys.png`、`m-keys-dark.png`、`m-keys-modal.png`（FAB→创建弹层）、`m-keys-filters.png`（移动端筛选面板） | 2 |
+| `/key-usage` | 390 | 无 | 无需修改 | `m-key-usage.png` | 2 |
+| `/usage` | 390 | 无 | 无需修改 | `m-usage.png`、`m-usage-dropdown.png`（列设置下拉） | 2 |
+| `/orders` | 390 | 无 | 无需修改 | `m-orders.png`、`m-orders-modal.png`（取消订单弹层） | 2 |
+| `/invoices` | 390 | 移动端筛选按钮点击无响应 | 已修复（补齐 `@open-filters` 面板） | `m-invoices.png`、`m-invoices-filters.png` | 2 |
+| `/invoices/1` | 390 | 无 | 无需修改 | `m-invoices-detail.png` | 2 |
+| `/tickets` | 390 | 无 | 无需修改 | `m-tickets.png`、`m-tickets-dark.png` | 2 |
+| `/tickets/new` | 390 | 无 | 无需修改 | `m-tickets-new.png` | 2 |
+| `/tickets/1` | 390 | 无 | 无需修改 | `m-tickets-detail.png` | 2 |
+| `/subscriptions` | 390 | 无 | 无需修改 | `m-subscriptions.png`、`m-subscriptions-dark.png` | 2 |
+| `/available-channels` | 390 | 无 | 无需修改 | `m-available-channels.png` | 2 |
+| `/profile` | 390 | 无 | 无需修改 | `m-profile.png`、`m-profile-dark.png` | 2 |
+| `/redeem` | 390 | 无 | 无需修改 | `m-redeem.png`、`m-redeem-dark.png`、`m-redeem-dropdown.png`（类型下拉） | 2 |
+| `/affiliate` | 390 | 无 | 无需修改 | `m-affiliate.png`、`m-affiliate-modal.png`（转账确认弹层） | 2 |
+| `/batch-image` | 390 | 无 | 无需修改 | `m-batch-image.png`、`m-batch-image-dark.png`、`m-batch-image-modal.png`（使用说明弹层） | 2 |
+| `/purchase` | 390 | 无 | 无需修改 | `m-purchase.png` | 2 |
+| `/payment/qrcode` | 390 | 无 | 无需修改 | `m-payment-qrcode.png`、`m-payment-qrcode-dark.png` | 2 |
+| `/payment/stripe` | 390 | 无（种子参数缺 client_secret，呈现预期错误态） | 无需修改 | `m-payment-stripe.png` | 2 |
+| `/payment/airwallex` | 390 | 无（同上，预期错误态） | 无需修改 | `m-payment-airwallex.png` | 2 |
+| `/payment/stripe-popup` | 390 | 无 | 无需修改 | `m-payment-stripe-popup.png` | 2 |
+| `/payment/result` | 390 | 无 | 无需修改 | `m-payment-result.png` | 2 |
+| `/custom/docs-guide` | 390 | 无（代码块 `worstRight`872 系代码块自身横向滚动） | 无需修改 | `m-custom-docs-guide.png`、`m-custom-docs-guide-dark.png` | 2 |
+| `/custom/status-embed` | 390 | 无 | 无需修改 | `m-custom-status-embed.png` | 2 |
+| `/studio`（含图像 tab） | 390 | 无 | 无需修改 | `m-studio.png`、`m-studio-dark.png`、`m-studio-image-tab.png` | 2 |
+
+门禁（改动文件：`src/components/home/ConsolePreview.vue`、`src/components/keys/KeyMobileCard.vue`、`src/views/user/UserInvoicesView.vue`）：`node_modules/.bin/vue-tsc --noEmit` 0 错误；`node_modules/.bin/eslint --ext .vue,.ts` 上述 3 文件 0 错误；`npx vitest run src/views/user src/components/user src/components/payment src/features src/views/auth` 57 文件 / 411 用例全过；`node scripts/ui-lint.mjs --scoped --palette` 上述 3 文件 legacy/color/scoped/palette 均为 0；`node scripts/i18n-diff.mjs` zh 8956 = en 8956，0 差异（本任务未新增/删除任何 i18n key，仅复用既有 `common.filter`）。
+
+## 14.1 移动端（A 半 + lead 收尾）
+
+A 半代理（admin 路由）在完成约 2/3 路由后因 429 中断，未留下报告；lead 按其工作树差异逐文件复核并补齐验证。
+
+A 半改动（均已通过 `ui-lint --scoped --palette`（RiskControlView/TicketDetailView 的 31 个命中全部为 HEAD 既有，15.1 处理）、eslint、vue-tsc、vitest `src/views/admin src/components/admin`（88 文件 498 用例）、`anchor-diff --base HEAD` 无锚点丢失、`i18n-diff` 0）：
+
+- `/admin/audit-logs`、`/admin/announcements`、`/admin/channels`、`/admin/promo-codes`、`/admin/proxies`、`/admin/subscriptions`、`/admin/affiliates`（records 表）：`FilterBar` 的移动端筛选按钮原先未监听 `@open-filters`（与 B 半在 `/invoices` 发现的同一问题），已按 `KeysView.vue` 模式补上 `showMobileFilters` 与折叠筛选面板（Select/输入框全宽纵向排列）。
+- `/admin/risk-control`、`/admin/affiliates`：宽表格前加 `md:hidden` 的"左右滑动查看完整表格"提示（新增 `admin.channels.riskControl.table.scrollHint` zh/en）。
+- `/admin/orders`：`OrderStatsCards` `<640px` 单列。
+- `/admin/tickets/:id`：`.detail-page-layout-grid` 的 `calc(100vh - 10rem)` 固定高 + `overflow:hidden` 改为仅 `≥1024px` 生效；此前移动端单列下对话区与管理员操作面板被裁切且不可滚动到。
+
+lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrollWidth` 探针）：`/admin/audit-logs`、`/admin/channels`、`/admin/proxies`、`/admin/subscriptions`、`/admin/promo-codes`、`/admin/announcements`、`/admin/risk-control`、`/admin/tickets/1`、`/admin/affiliates`、`/admin/orders` 全部 `scrollWidth=390`。截图核对发现两处共享组件缺陷，由 lead 修复：
+
+1. `ui/PageHeader.vue`：<768 时长描述被挤成窄列（`/admin/audit-logs` 描述 4 行 × 约 120px，动作按钮占右侧）。新增 `@media(max-width:767px)`：`flex-wrap:wrap`，标题块 `flex:1 1 180px; min-width:0`，动作区 `flex-wrap:wrap`。效果：动作区宽 230px 的 audit-logs 换行到标题下（`.ui-page-header-actions` top=161 left=16），动作区 150px 的 subscriptions 仍同行（top=92 left=224）。
+2. 触控目标（回应 B 半的系统性报告）：所有被点名的共享控件均 ≥24px，满足 WCAG 2.5.8（AA）目标尺寸；44px 为 HIG/Material 建议值。为不打乱 ListPage 行高 / 筛选行 36 / 分页 32 等桌面几何基线，采用"视觉尺寸不变、命中区扩大"策略：`style.css` 与 `UiModal.vue` 在 `<768px` 下给 `.icon-btn`、`.header-icon-btn`、`.btn-icon`、`.ui-modal-close` 加 `position:relative` + `::after{inset:-8px}`（28→44、32→48、34→50）。可见文字的按钮 / 药丸 / 分页 / Select 触发器保持原高（32–36px），移动端抽屉侧栏项本已 44px。`.ui-toggle` 36×20 未处理（为 label 内联控件，整行 `SettingRow` 可点）。
+
+全路由 390 门禁（`node scripts/keyname-leak.mjs --width 390`，本次扩展为同时报告 `scrollWidth > 390`）：73 条路由 × glass-light / glass-dark（zh）均 `leaks: 0, overflows: 0`。唯一命中是 `/setup`（vite 代理到上游、无 viewport meta 的非 SPA 页，Chrome 以 980 布局），脚本改为只对含 viewport meta 的 SPA 页面做宽度判定。移动端 = 2 分。
+
+## 15.5 键名泄漏
+
+`node scripts/keyname-leak.mjs`（1440 zh glass-light）：`/admin/orders/plans` 曾渲染 `payment.admin.day`，根因是 `AdminPaymentPlansView.vue` 用 `row.validity_unit` 直接拼键名，而后端 ent 默认值为单数 `day`（`subscription_plan.go`），locale 与编辑弹层只有 `days/weeks/months/years`。已加 `validityUnitLabel()` 单数→复数归一化后再 `t()`，兜底显示原值。复测 73 路由 `leaks: 0`。

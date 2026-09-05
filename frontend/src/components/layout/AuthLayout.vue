@@ -69,8 +69,12 @@ import AuthBrandPanel from './AuthBrandPanel.vue'
     padding: 24px 16px;
   }
 
-  .auth-card {
+  .auth-card,
+  .auth-footer {
     width: 100%;
+  }
+
+  .auth-card {
     padding: 24px;
   }
 

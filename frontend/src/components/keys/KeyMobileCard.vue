@@ -132,16 +132,17 @@ const { t } = useI18n()
 }
 
 .keys-card-more {
-  width: 32px;
-  height: 32px;
+  /* touch target: keep the icon compact but ensure a >=44px hit area on mobile */
+  width: 44px;
+  height: 44px;
 }
 
 .keys-card-key {
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 40px;
-  padding: 0 6px 0 12px;
+  height: 44px;
+  padding: 0 4px 0 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: color-mix(in oklch, var(--foreground) 4%, transparent);
@@ -162,8 +163,8 @@ const { t } = useI18n()
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   flex: none;
   border: 0;
   border-radius: 8px;

@@ -48,7 +48,11 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <FilterBar :search-placeholder="t('admin.users.searchUsers')">
+          <FilterBar
+            :search-placeholder="t('admin.users.searchUsers')"
+            :filter-label="t('common.filter')"
+            @open-filters="showMobileFilters = !showMobileFilters"
+          >
             <template #search>
               <div class="relative w-full" data-filter-user-search>
                 <Icon name="search" size="md" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -116,6 +120,29 @@
               />
             </template>
           </FilterBar>
+          <div v-if="showMobileFilters" class="subs-mobile-filters">
+            <Select
+              v-model="filters.status"
+              :options="statusOptions"
+              :placeholder="t('admin.subscriptions.allStatus')"
+              class="w-full"
+              @change="applyFilters"
+            />
+            <Select
+              v-model="filters.group_id"
+              :options="groupOptions"
+              :placeholder="t('admin.subscriptions.allGroups')"
+              class="w-full"
+              @change="applyFilters"
+            />
+            <Select
+              v-model="filters.platform"
+              :options="platformFilterOptions"
+              :placeholder="t('admin.subscriptions.allPlatforms')"
+              class="w-full"
+              @change="applyFilters"
+            />
+          </div>
         </div>
       </template>
 
@@ -649,6 +676,7 @@ const loading = ref(false)
 let abortController: AbortController | null = null
 
 // Toolbar user filter (fuzzy search -> select user_id)
+const showMobileFilters = ref(false)
 const filterUserKeyword = ref('')
 const filterUserResults = ref<SimpleUser[]>([])
 const filterUserLoading = ref(false)
@@ -1033,6 +1061,11 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.subs-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .subs-fab {
   display: none;
 }

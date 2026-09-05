@@ -198,6 +198,18 @@ onBeforeUnmount(releaseOverlay)
   cursor: pointer;
 }
 
+@media (max-width: 767px) {
+  .ui-modal-close {
+    position: relative;
+  }
+
+  .ui-modal-close::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+  }
+}
+
 .ui-modal-close:hover {
   background: color-mix(in oklch, var(--foreground) 6%, transparent);
   color: var(--foreground);

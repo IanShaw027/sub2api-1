@@ -486,6 +486,7 @@ export default {
         actionMeta: '处置',
         latency: '上游耗时',
         input: '输入摘要',
+        scrollHint: '左右滑动查看完整表格',
       },
       result: {
         all: '全部结果',

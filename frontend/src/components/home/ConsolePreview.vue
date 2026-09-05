@@ -308,8 +308,8 @@ const logs = [
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+  color: white;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, white 14%, transparent);
   flex: none;
 }
 
@@ -456,6 +456,13 @@ const logs = [
 
   .console-uptime-value {
     font-size: 30px;
+  }
+
+  .console-glow {
+    /* narrow viewports have ~20px horizontal margin around .console-wrap;
+       the desktop -40px bleed pushes the decorative glow past the
+       viewport edge and forces page-level horizontal scroll. */
+    inset: -30px -20px -20px;
   }
 }
 </style>

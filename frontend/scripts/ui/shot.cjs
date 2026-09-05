@@ -61,7 +61,7 @@ async function getTarget() {
   // Optional probe: UI_SHOTS_PROBE='sel1|sel2' prints top/left/height of the first match of each selector.
   if (process.env.UI_SHOTS_PROBE) {
     const sels = JSON.stringify(process.env.UI_SHOTS_PROBE.split('|'))
-    const pr = await send('Runtime.evaluate', { returnByValue: true, expression: `(${sels}).map(s=>{const e=document.querySelector(s);if(!e)return s+': (none)';const r=e.getBoundingClientRect();return s+': top='+Math.round(r.top)+' left='+Math.round(r.left)+' h='+Math.round(r.height)+' w='+Math.round(r.width)}).join(' ; ')` })
+    const pr = await send('Runtime.evaluate', { returnByValue: true, expression: `(${sels}).map(s=>{const e=document.querySelector(s);if(!e)return s+': (none)';const r=e.getBoundingClientRect();return s+': top='+Math.round(r.top)+' left='+Math.round(r.left)+' h='+Math.round(r.height)+' w='+Math.round(r.width)}).join(' ; ') + ' ; scrollWidth=' + document.documentElement.scrollWidth` })
     const v = pr.result && pr.result.result && pr.result.result.value; console.log(v !== undefined ? v : JSON.stringify(pr).slice(0, 600))
   }
   const params = { format: 'png' }

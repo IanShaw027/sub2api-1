@@ -13,7 +13,11 @@
     <TablePageLayout>
       <!-- Filters -->
       <template #filters>
-        <FilterBar :search-placeholder="t('admin.audit.filters.qPlaceholder')">
+        <FilterBar
+          :search-placeholder="t('admin.audit.filters.qPlaceholder')"
+          :filter-label="t('common.filter')"
+          @open-filters="showMobileFilters = !showMobileFilters"
+        >
           <template #search>
             <div class="relative">
               <Icon
@@ -63,6 +67,39 @@
             />
           </template>
         </FilterBar>
+
+        <div v-if="showMobileFilters" class="audit-mobile-filters">
+          <input
+            v-model.trim="filters.actor_email"
+            type="text"
+            class="input w-full"
+            :placeholder="t('admin.audit.filters.actorEmail')"
+            @keyup.enter="search"
+          />
+          <input
+            v-model.trim="filters.action"
+            type="text"
+            class="input w-full"
+            :placeholder="t('admin.audit.filters.action')"
+            @keyup.enter="search"
+          />
+          <input
+            v-model.trim="filters.client_ip"
+            type="text"
+            class="input w-full"
+            :placeholder="t('admin.audit.filters.clientIp')"
+            @keyup.enter="search"
+          />
+          <Select v-model="filters.method" :options="methodOptions" class="w-full" @change="search" />
+          <Select v-model="filters.auth_method" :options="authMethodOptions" class="w-full" @change="search" />
+          <Select v-model="filters.success" :options="resultOptions" class="w-full" @change="search" />
+          <Select
+            :model-value="timeRange"
+            :options="timeRangeOptions"
+            class="w-full"
+            @update:model-value="handleTimeRangeChange"
+          />
+        </div>
       </template>
 
       <!-- Table -->
@@ -361,6 +398,7 @@ const logs = ref<AuditLog[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = ref(20)
+const showMobileFilters = ref(false)
 
 const filters = reactive({
   q: '',
@@ -669,3 +707,12 @@ function statusDotColor(status: number): string {
 
 onMounted(fetchLogs)
 </script>
+
+<style scoped>
+.audit-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+</style>
