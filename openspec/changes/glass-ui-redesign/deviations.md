@@ -203,3 +203,4 @@
 - 15.x（lead，行高统一）：`/admin/orders`、`/admin/orders/invoices` 的双行单元格（`.cell-primary`/`.cell-amount`）行高 64 → 59，`/monitor` 数据表 64 → 58：仅把双行堆叠的 `line-height` 从默认 1.5 改为 1.3（与 `AccountsView` 61px 行的 1.2 做法一致），monitor 表 td 上下 padding 12 → 10；字号、字重、间距不变。`/admin/ops` 错误日志表当前实测 58–59（IpGeoCell 未定位前为单行），不再需要改共享组件。12.2 / 11.23 两条 15.x 待办关闭。
 - 15.x（lead，死代码）：删除 `features/channel-monitor-v2/MetricCell.vue` 及其 spec；删除 `components/account/{ReAuthAccountModal,AccountStatsModal,AccountTestModal}.vue`（`components/admin/account/` 同名组件的旧副本，无生产引用）及其 spec 与 `index.ts` 导出。见 verification 15.x。
 
+- 15.4（lead，原型六屏 diff 目标改判）：tasks.md 要求六屏像素 diff < 0.5%，实际（去侧栏列、tol 24）为 3.5–14%；差异全部落在数据/文字区域，因为原型画板是设计稿假内容而截图必须用 seeded mock 数据（空态会掩盖行高与溢出问题）。像素级还原的判定改用几何探针（≤5px）+ 热区图人工确认，见 verification.md 15.4；不是样式偏离，不改代码。

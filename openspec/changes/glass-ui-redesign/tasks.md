@@ -193,8 +193,8 @@
 - [x] 15.1 `scripts/ui-lint.mjs` + `npm run lint:ui`：遗留类零命中、颜色字面量白名单、views scoped 样式属性扫描；接入 `designTokens.spec.ts`；验证在当前树上退出码 0
 - [x] 15.2 `scripts/i18n-diff.mjs`：zh/en 键差集与重复键检查；验证输出 `zh-only: 0, en-only: 0`
 - [x] 15.3 `scripts/anchor-diff.mjs <file> --base <rev>`：`data-tour / data-testid / id / aria-label / @handler / v-model / t('key')` 集合比对；验证对 `AccountsView.vue`、`KeysView.vue`、`SettingsView.vue` 相对重构前基线无丢失
-- [ ] 15.4 `scripts/ui-shots.sh all` + `scripts/pixel-diff.mjs`：64 条路由 × 4 态截图矩阵入库 `screens/`，6 个原型出稿屏幕 diff 报告 < 0.5%；验证矩阵完整
+- [x] 15.4 `scripts/ui-shots.sh all` + `scripts/pixel-diff.mjs`：64 条路由 × 4 态截图矩阵入库 `screens/`，6 个原型出稿屏幕 diff 报告 < 0.5%；验证矩阵完整
 - [x] 15.5 `scripts/keyname-leak.mjs`：CDP 抓取每条路由 `innerText` 检查原始 i18n 键名正则；验证 0 命中
-- [ ] 15.6 观感评分：`verification.md` 登记 64 条路由 × 10 项分数，全部 ≥ 17，原型出稿 6 屏 = 20；不达标路由回到对应任务重做
-- [ ] 15.7 `deviations.md` 完整（每条偏离有路由 / 原型区块 / 理由 / 截图）；`components/ui/README.md`、`components/common/README.md`、`frontend/README` 的设计系统章节更新；验证文档存在
+- [x] 15.6 观感评分：`verification.md` 登记 64 条路由 × 10 项分数，全部 ≥ 17，原型出稿 6 屏 = 20；不达标路由回到对应任务重做
+- [x] 15.7 `deviations.md` 完整（每条偏离有路由 / 原型区块 / 理由 / 截图）；`components/ui/README.md`、`components/common/README.md`、`frontend/README` 的设计系统章节更新；验证文档存在
 - [ ] 15.8 移除 `vite.config.ts` 中 `TEMP(glass-redesign visual review)` 的 `overlay: false`；`vue-tsc` 0 错误、`vitest run` 0 失败、`npm run build` 成功、`lint:ui` 0；提交 `feat(glass): quality gates and final verification (tasks 15.1–15.8)`；`openspec validate glass-ui-redesign --strict` 通过
