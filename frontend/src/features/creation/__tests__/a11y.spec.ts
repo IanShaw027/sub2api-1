@@ -94,7 +94,7 @@ describe('creation studio accessibility', () => {
       const wrapper = mount(ComposerBar, { global: { stubs } })
       await nextTick()
 
-      const button = wrapper.get('button')
+      const button = wrapper.get('.studio-composer-send')
       expect(button.attributes('aria-busy')).toBe('true')
     })
 

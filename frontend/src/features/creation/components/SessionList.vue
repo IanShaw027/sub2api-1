@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/ui/Button.vue'
-import GlassCard from '@/components/ui/GlassCard.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { useCreationStore } from '../stores/creation'
 import type { CreationSessionMode } from '../types'
@@ -19,7 +18,10 @@ const modeOptions = computed(() => [
 
 async function switchMode(mode: CreationSessionMode) {
   store.sessionModeFilter = mode
-  const next = store.sessions.find((session) => session.mode === mode)
+  const sameMode = store.sessions.filter((session) => session.mode === mode)
+  // Prefer a session that already belongs to the active group so switching modes never
+  // silently swaps the selected group (selectSession adopts the session's group_id).
+  const next = sameMode.find((session) => session.group_id === store.groupId) ?? sameMode[0]
   if (next) {
     await store.selectSession(next.id)
     return
@@ -46,7 +48,7 @@ async function removeSession(id: number) {
 </script>
 
 <template>
-  <GlassCard class="studio-session-list" padding="sm">
+  <div class="glass-card studio-session-list">
     <div class="studio-session-list-header">
       <h2 class="text-sm font-semibold text-foreground">{{ t('studio.sessions') }}</h2>
       <SegmentedControl
@@ -57,7 +59,7 @@ async function removeSession(id: number) {
     </div>
 
     <div class="studio-session-actions">
-      <Button variant="secondary" size="sm" @click="createForMode">
+      <Button variant="secondary" @click="createForMode">
         {{ store.sessionModeFilter === 'image' ? t('studio.newImage') : t('studio.newChat') }}
       </Button>
     </div>
@@ -99,7 +101,7 @@ async function removeSession(id: number) {
         </button>
       </li>
     </ul>
-  </GlassCard>
+  </div>
 </template>
 
 <style scoped>
@@ -108,6 +110,7 @@ async function removeSession(id: number) {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  padding: 12px;
 }
 
 .studio-session-list-header {
@@ -131,6 +134,22 @@ async function removeSession(id: number) {
   max-height: min(52vh, 560px);
 }
 
+/* Desktop 3-column layout: match the main/controls columns' locked height
+   (viewport minus header + page padding) and scroll the session list
+   internally instead of clamping to a vh fraction. */
+@media (min-width: 1101px) {
+  .studio-session-list {
+    height: calc(100vh - 146px - 24px);
+    overflow-y: auto;
+  }
+
+  .studio-session-items {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
 .studio-session-item {
   display: flex;
   align-items: center;
@@ -145,9 +164,7 @@ async function removeSession(id: number) {
 
 .studio-session-item-active,
 .studio-session-item-active:hover {
-  background: color-mix(in oklch, var(--surface) 92%, transparent);
-  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 3px rgba(16, 24, 40, 0.1),
-    0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
+  background: var(--surface-secondary);
 }
 
 .studio-session-button {

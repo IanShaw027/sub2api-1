@@ -172,11 +172,11 @@
 
 批次 3（操作 / 支付 / 嵌入 / 创作）
 - [x] 12.11 `/redeem`、`/affiliate`（ActionPage 配方；邀请链接 `EndpointCard`、返利统计 `StatCard`、记录表格；修复 `AffiliateView.spec` 移动端断言）；验证截图 + spec
-- [ ] 12.12 `/batch-image`（`BatchImageGuideView.vue`）；验证截图
+- [x] 12.12 `/batch-image`（`BatchImageGuideView.vue`）；验证截图
 - [x] 12.13 `/purchase`（`PaymentView.vue` + `components/payment/*`：套餐卡 r16 + `.glass-ring`、金额 40 字段 `$` 前缀、品牌按钮 32、iframe 模式无壳；修复 `PaymentMethodSelector.spec` 两条）；验证截图 + spec
 - [x] 12.14 `/payment/{qrcode,stripe,airwallex,stripe-popup,result}`（440 卡、220 二维码盒、轮询徽章、结果页 `CallbackStatusCard`）；验证截图
-- [ ] 12.15 `/custom/:id`（`CustomPageView.vue`：EmbedPage 配方）；验证截图
-- [ ] 12.16 `/studio`（`features/creation/**`：三栏保留、会话项 36 侧栏配方、`ComposerBar` `.field`、消息气泡 DetailPage 配方、`TaskCard` 内边距、图片历史网格）；验证截图 + `creation` spec；提交 `feat(glass): user pages batch 3 (tasks 12.11–12.16)`
+- [x] 12.15 `/custom/:id`（`CustomPageView.vue`：EmbedPage 配方）；验证截图
+- [x] 12.16 `/studio`（`features/creation/**`：三栏保留、会话项 36 侧栏配方、`ComposerBar` `.field`、消息气泡 DetailPage 配方、`TaskCard` 内边距、图片历史网格）；验证截图 + `creation` spec；提交 `feat(glass): user pages batch 3 (tasks 12.11–12.16)`
 
 ## 13. 暗色主题全站核对（2 个代理，各半路由）
 

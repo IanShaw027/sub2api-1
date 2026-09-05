@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/ui/Button.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import ModelMenu from './ModelMenu.vue'
 import { useCreationStore } from '../stores/creation'
 
 const { t } = useI18n()
@@ -9,11 +11,21 @@ const store = useCreationStore()
 
 const draft = ref('')
 
+const groupOptions = computed(() =>
+  store.groups.map((group) => ({ value: group.id, label: group.name })),
+)
+
 const canSubmit = computed(() => {
   if (!draft.value.trim() || store.streaming) return false
   if (store.isImageSession && !store.hasImageModels) return false
   return true
 })
+
+async function onGroupChange(value: string | number | boolean | null) {
+  if (typeof value === 'number') {
+    await store.setGroupId(value)
+  }
+}
 
 async function submit() {
   const text = draft.value.trim()
@@ -30,6 +42,18 @@ async function submit() {
 
 <template>
   <div class="studio-composer">
+    <div class="studio-composer-toolbar">
+      <UiSelect
+        class="studio-composer-group"
+        :model-value="store.groupId"
+        :options="groupOptions"
+        :placeholder="t('studio.selectGroup')"
+        :aria-label="t('studio.groups')"
+        searchable="auto"
+        @update:model-value="onGroupChange"
+      />
+      <ModelMenu compact class="studio-composer-model" />
+    </div>
     <textarea
       v-model="draft"
       class="field studio-composer-input"
@@ -41,6 +65,7 @@ async function submit() {
     />
     <div class="studio-composer-actions">
       <Button
+        class="studio-composer-send"
         variant="primary"
         :loading="store.streaming"
         :aria-busy="store.streaming"
@@ -72,6 +97,19 @@ async function submit() {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+.studio-composer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.studio-composer-group,
+.studio-composer-model {
+  flex: 1;
+  min-width: 140px;
 }
 
 .studio-composer-input {

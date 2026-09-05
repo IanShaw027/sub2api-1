@@ -186,3 +186,19 @@
 - 几何：`/purchase` h1 74；tab 切换器 146 / h 48；充值账户卡 219，宽 896 居中。`/payment/qrcode`、`/payment/stripe`、`/payment/airwallex` 440 宽卡自 74/106 起；`/payment/result`、`/payment/stripe-popup` 居中 440 卡。
 - 门禁：vue-tsc 0；eslint 0；`vitest run src/components/payment + PaymentView/stripeLazyLoading/paymentWechatResume spec` 12 文件 / 100 用例全过；ui-lint 12G 触及文件 palette 0（`PaymentProviderDialog/PaymentStatusPanel/ProviderCard` 未触及文件仍余 28 处，列入 15.x）；`PaymentQRCodeView.vue:122` 二维码 `#FFFFFF` 与 TotpSetupModal 同理保留；anchor-diff `PaymentView/StripePaymentView/PaymentResultView` 无丢失。
 - 截图：`.shots/g12-purchase-light.png`、`g12-payment-{result,qrcode,stripe,airwallex,stripe-popup}-light.png`。
+
+
+## 12.12 / 12.15 / 12.16 批量生图 / 自定义页 / 创作中心（组 12F-resume、12H-resume，含 lead 复核）
+
+| 路由 | 视口 | 探针 | 结果 |
+|---|---|---|---|
+| `/batch-image`（种子 8 条） | 1440 亮 | h1 74/35/244；`.layout-section-fixed` 146 h36；`thead th` h42；`tbody tr` h61；`table` w1166 ≤ 容器 1172；页脚 h51 | 达标（`.shots/12f-batch-seeded.png`） |
+| `/batch-image` | 1440 暗 | 同上几何；徽章 / 成功 / 失败色令牌化 | 达标（`12f-batch-seeded-dark.png`） |
+| `/batch-image` | 390 亮 | `html` w390 无横向滚动，表格切卡片模式，筛选单列 | 达标（`12f-batch-seeded-390.png`） |
+| `/custom/docs-guide` | 1440 亮 | `.glass-card.embed-card` top74 h772 w1172（EmbedPage 无 PageHeader） | 达标（`12f-custom-docs-guide-light.png`） |
+| `/custom/status-embed` | 1440 亮 | `.custom-embed-frame` top166 h770 w1170，无双滚动条 | 达标（`12f-custom-status-embed-light.png`） |
+| `/studio` 聊天 | 1440 亮 / 暗 | h1 74/35；三栏 `.studio-layout` 146 h730 w1172；会话 280 / 主栏 544 / 右栏 320，全部视口内滚动 | 达标（`12h-chat.png`、`12h-dark.png`） |
+| `/studio` 图像（种子 4 任务） | 1440 亮 / 暗 | 主栏 `TaskGrid` 2 列卡 h332；右栏 `TokenStats` 常驻 `4 个任务` | 达标（`12h-image-seeded.png`、`-dark.png`） |
+| `/studio` | 390 亮 | `html` h844 无纵向溢出（三段式面板切换） | 达标（`12h-390.png`） |
+
+门禁：`vue-tsc` 0；eslint 0；vitest `src/views/user src/components/user` 20 文件 109 用例 + `src/features/creation` 7 文件 56 用例通过；ui-lint `--scoped --palette` 所有权文件 0；i18n zh/en 8955 = 8955；anchor-diff 无丢失（两处迁移见 deviations）。

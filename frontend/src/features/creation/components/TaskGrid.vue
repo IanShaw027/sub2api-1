@@ -53,6 +53,12 @@ const store = useCreationStore()
   max-height: min(62vh, 680px);
 }
 
+@media (min-width: 1101px) {
+  .studio-task-grid {
+    max-height: none;
+  }
+}
+
 .studio-task-grid-inner {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));

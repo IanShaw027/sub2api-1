@@ -157,7 +157,7 @@ const GROUPS = [
   makeGroup({ id: 1, name: '默认分组', description: '所有用户可用的标准 Claude 分组', platform: 'anthropic', rate_multiplier: 1, account_count: 31, active_account_count: 29, rate_limited_account_count: 2, sort_order: 0 }),
   makeGroup({ id: 2, name: 'Claude Max', description: 'Claude Max 订阅池，高并发 / 长上下文', platform: 'anthropic', rate_multiplier: 1.2, is_exclusive: true, subscription_type: 'subscription', daily_limit_usd: 40, weekly_limit_usd: 200, monthly_limit_usd: 600, long_context_pricing_enabled: true, claude_code_only: true, account_count: 24, active_account_count: 23, rate_limited_account_count: 1, sort_order: 1 }),
   makeGroup({ id: 3, name: 'OpenAI Codex', description: 'ChatGPT Codex OAuth 账号池', platform: 'openai', rate_multiplier: 0.9, max_reasoning_effort: 'high', allow_messages_dispatch: true, default_mapped_model: 'gpt-5-codex', web_search_price_per_call: 0.01, account_count: 18, active_account_count: 17, rate_limited_account_count: 0, sort_order: 2 }),
-  makeGroup({ id: 4, name: 'Gemini', description: 'Gemini 2.5 Pro / Flash，支持图片生成', platform: 'gemini', rate_multiplier: 0.8, allow_image_generation: true, image_price_1k: 0.04, image_price_2k: 0.08, image_price_4k: 0.16, account_count: 13, active_account_count: 10, rate_limited_account_count: 0, sort_order: 3 })
+  makeGroup({ id: 4, name: 'Gemini', description: 'Gemini 2.5 Pro / Flash，支持图片生成', platform: 'gemini', rate_multiplier: 0.8, allow_image_generation: true, allow_batch_image_generation: true, image_price_1k: 0.04, image_price_2k: 0.08, image_price_4k: 0.16, account_count: 13, active_account_count: 10, rate_limited_account_count: 0, sort_order: 3 })
 ]
 const groupById = (id) => GROUPS.find((g) => g.id === id) || null
 // The non-admin Group shape (strip admin-only keys)
@@ -411,6 +411,23 @@ function makeKey(o) {
     ...o
   }
 }
+// --- 批量图片任务（/batch-image，gateway 原始 JSON，非 {code,data} 包装） ---
+function batchJob(o) {
+  const created = +NOW() - (o.hoursAgo || 1) * 3600000
+  return Object.assign({ object: 'image.batch', parent_batch_id: null, provider: 'gemini_api', model: 'gemini-2.5-flash-image', item_count: 24, success_count: 24, fail_count: 0,
+    estimated_cost: 0.96, hold_amount: 0, actual_cost: 0.94, created_at: Math.floor(created / 1000), submitted_at: Math.floor(created / 1000) + 5, settled_at: Math.floor(created / 1000) + 620, downloaded_at: null, output_deleted_at: null }, o)
+}
+const BATCH_IMAGE_JOBS = [
+  batchJob({ id: 'batch_01J9KX7A2Q', task_name: '秋季新品主视觉', status: 'running', hoursAgo: 0.4, success_count: 9, fail_count: 0, settled_at: null, actual_cost: null, hold_amount: 0.96 }),
+  batchJob({ id: 'batch_01J9KW3B8R', task_name: '社媒配图 · 九月', status: 'queued', hoursAgo: 0.7, success_count: 0, fail_count: 0, settled_at: null, actual_cost: null, hold_amount: 0.96, submitted_at: null }),
+  batchJob({ id: 'batch_01J9KT1C4S', task_name: '产品白底图重绘', status: 'completed', hoursAgo: 3, item_count: 40, success_count: 38, fail_count: 2, estimated_cost: 1.6, actual_cost: 1.52, downloaded_at: Math.floor(+NOW() / 1000) - 7200, model: 'gemini-3-pro-image-preview' }),
+  batchJob({ id: 'batch_01J9KT1C4S-r1', task_name: '产品白底图重绘', parent_batch_id: 'batch_01J9KT1C4S', status: 'completed', hoursAgo: 2, item_count: 2, success_count: 2, fail_count: 0, estimated_cost: 0.08, actual_cost: 0.08, model: 'gemini-3-pro-image-preview' }),
+  batchJob({ id: 'batch_01J9KR9D6T', task_name: '', status: 'settling', hoursAgo: 26, item_count: 12, success_count: 10, fail_count: 2, estimated_cost: 0.48, actual_cost: 0.4 }),
+  batchJob({ id: 'batch_01J9KP5E1U', task_name: '海报底图 · 4K', status: 'failed', hoursAgo: 30, item_count: 6, success_count: 0, fail_count: 6, estimated_cost: 0.96, actual_cost: 0, provider: 'vertex', model: 'imagen-4.0-generate-001' }),
+  batchJob({ id: 'batch_01J9KM2F7V', task_name: '电商详情页插图', status: 'cancelled', hoursAgo: 50, item_count: 18, success_count: 4, fail_count: 0, estimated_cost: 0.72, actual_cost: 0.16 }),
+  batchJob({ id: 'batch_01J9KJ8G3W', task_name: '品牌吉祥物草图', status: 'output_deleted', hoursAgo: 200, item_count: 8, success_count: 8, fail_count: 0, estimated_cost: 0.32, actual_cost: 0.32, downloaded_at: Math.floor(+NOW() / 1000) - 86400 * 7, output_deleted_at: Math.floor(+NOW() / 1000) - 86400 }),
+]
+
 const API_KEYS = [
   makeKey({ id: 501, name: 'production', key: 'sk-s2a-a91f3b7c0d2e4f6a8b1c3d5e7f9a0b2c3f2a', group_id: 2, group: publicGroup(GROUPS[1]), quota: 500, quota_used: 212.35, current_concurrency: 2,
     rate_limit_5h: 20, rate_limit_1d: 80, rate_limit_7d: 400, usage_5h: 8.42, usage_1d: 31.7, usage_7d: 186.2,
@@ -422,6 +439,7 @@ const API_KEYS = [
     last_used_at: minutesAgo(3), created_at: daysAgo(80), expires_at: inDays(40) }),
   makeKey({ id: 504, name: 'ci-runner', key: 'sk-s2a-e5a1c7f3b9d2e8a4c6f0b1d3e5a7c9f2b4d6', group_id: 4, group: publicGroup(GROUPS[3]), status: 'expired', quota: 50, quota_used: 49.96,
     last_used_at: daysAgo(9), last_used_ip: '198.51.100.7', created_at: daysAgo(200), expires_at: daysAgo(7) }),
+  makeKey({ id: 506, name: 'gemini-batch', key: 'sk-s2a-9e1f3a5c7b2d4f6a8c0e2b4d6f8a1c3e5b7d', group_id: 4, group: publicGroup(GROUPS[3]), quota: 200, quota_used: 61.3, current_concurrency: 0 }),
   makeKey({ id: 505, name: 'temp-demo', key: 'sk-s2a-1b3d5f7a9c2e4a6c8e0b2d4f6a8c1e3b5d7f', group_id: null, group: undefined, status: 'disabled', quota: 10, quota_used: 2.4,
     last_used_at: daysAgo(3), last_used_ip: null, created_at: daysAgo(12), expires_at: inDays(2) })
 ]
@@ -1739,10 +1757,10 @@ curl https://api.example.com/v1/messages \\
 const MOCK_SVG = (label, hue) => `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue} 70% 62%)"/><stop offset="1" stop-color="hsl(${(hue + 60) % 360} 70% 45%)"/></linearGradient></defs><rect width="640" height="400" fill="url(#g)"/><circle cx="480" cy="120" r="70" fill="rgba(255,255,255,.35)"/><text x="32" y="360" font-family="Inter,system-ui" font-size="28" fill="#fff">${label}</text></svg>`
 const STUDIO_SESSIONS = [
   { id: 71, user_id: 12, group_id: 2, title: '重构登录页文案', model: 'claude-sonnet-4-5', mode: 'chat', status: 'active', created_at: iso(+NOW() - 2 * 36e5), updated_at: iso(+NOW() - 12 * 6e4) },
-  { id: 72, user_id: 12, group_id: 2, title: '海报概念图 · 玻璃质感', model: 'gpt-image-1', mode: 'image', status: 'active', created_at: iso(+NOW() - 26 * 36e5), updated_at: iso(+NOW() - 3 * 36e5) },
+  { id: 72, user_id: 12, group_id: 3, title: '海报概念图 · 玻璃质感', model: 'gpt-image-1', mode: 'image', status: 'active', created_at: iso(+NOW() - 26 * 36e5), updated_at: iso(+NOW() - 3 * 36e5) },
   { id: 73, user_id: 12, group_id: 3, title: 'SQL 索引优化建议', model: 'gpt-5-codex', mode: 'chat', status: 'active', created_at: iso(+NOW() - 3 * 864e5), updated_at: iso(+NOW() - 2 * 864e5) },
   { id: 74, user_id: 12, group_id: 2, title: '周报摘要生成', model: 'claude-haiku-4-5', mode: 'chat', status: 'active', created_at: iso(+NOW() - 6 * 864e5), updated_at: iso(+NOW() - 5 * 864e5) },
-  { id: 75, user_id: 12, group_id: 2, title: '产品图 · 白底电商', model: 'gpt-image-1', mode: 'image', status: 'archived', created_at: iso(+NOW() - 12 * 864e5), updated_at: iso(+NOW() - 11 * 864e5) }
+  { id: 75, user_id: 12, group_id: 3, title: '产品图 · 白底电商', model: 'gpt-image-1', mode: 'image', status: 'archived', created_at: iso(+NOW() - 12 * 864e5), updated_at: iso(+NOW() - 11 * 864e5) }
 ]
 const studioMsg = (id, session_id, role, text, i, model) => ({ id, session_id, role, content: JSON.stringify([{ type: 'text', text }]), model: role === 'assistant' ? model : null, input_tokens: role === 'assistant' ? 420 + i * 37 : null, output_tokens: role === 'assistant' ? 180 + i * 22 : null, created_at: iso(+NOW() - (10 - i) * 6e4) })
 const STUDIO_MESSAGES = {
@@ -1827,6 +1845,19 @@ const routes = {
   'POST /api/v1/user/aff/transfer': () => ({ transferred_quota: 6.2, balance: 44.45 }),
 
   // ---- keys / groups / subscriptions ----
+  'GET /v1/images/batches/models': () => ({ __raw: JSON.stringify({ object: 'list', data: [
+    { id: 'gemini-2.5-flash-image', object: 'model', provider: 'gemini_api' },
+    { id: 'gemini-3-pro-image-preview', object: 'model', provider: 'gemini_api' },
+    { id: 'imagen-4.0-generate-001', object: 'model', provider: 'vertex' },
+  ] }), __type: 'application/json' }),
+  'GET /v1/images/batches': (ctx) => {
+    let rows = BATCH_IMAGE_JOBS
+    if (ctx.query.get('status')) rows = rows.filter((j) => j.status === ctx.query.get('status'))
+    if (ctx.query.get('task_name')) rows = rows.filter((j) => j.task_name.includes(ctx.query.get('task_name')))
+    if (ctx.query.get('downloaded') === 'true') rows = rows.filter((j) => j.downloaded_at)
+    if (ctx.query.get('downloaded') === 'false') rows = rows.filter((j) => !j.downloaded_at)
+    return { __raw: JSON.stringify({ object: 'list', data: rows, has_more: false }), __type: 'application/json' }
+  },
   'GET /api/v1/keys': (ctx) => paginate(API_KEYS, ctx.query, 10),
   'POST /api/v1/keys': (ctx) => makeKey({ id: 599, name: (ctx.body && ctx.body.name) || 'new-key', key: 'sk-s2a-new0000000000000000000000000000000' }),
   'GET /api/v1/groups/available': () => GROUPS.filter((g) => !g.is_exclusive || g.id === 2).map(publicGroup),
@@ -2141,6 +2172,10 @@ const patternRoutes = [
   [/^GET \/api\/v1\/creation\/sessions\/(\d+)\/messages$/, (ctx, m) => STUDIO_MESSAGES[m[1]] || []],
   [/^POST \/api\/v1\/creation\/sessions\/(\d+)\/messages$/, (ctx, m) => studioMsg(Date.now() % 1e7, Number(m[1]), 'user', (ctx.body && ctx.body.content) || '', 10)],
   [/^(PATCH|DELETE) \/api\/v1\/creation\/sessions\/(\d+)$/, (ctx, m) => ({ ...(STUDIO_SESSIONS.find((x) => x.id === Number(m[2])) || STUDIO_SESSIONS[0]), ...(ctx.body || {}) })],
+  [/^GET \/v1\/images\/batches\/([^/]+)\/items$/, (ctx, m) => ({ __raw: JSON.stringify({ object: 'list', has_more: false, data: Array.from({ length: 6 }, (_, i) => ({
+    batch_id: m[1], custom_id: `item-${i + 1}`, status: i === 4 ? 'failed' : 'succeeded', prompt_preview: `赛博朋克风格的城市夜景，霓虹灯，雨天街道 #${i + 1}`,
+    mime_type: 'image/png', file_extension: 'png', image_count: i === 4 ? 0 : 2, error: i === 4 ? { code: 'SAFETY_BLOCKED', message: '内容被安全策略拦截', source: 'provider' } : null })) }), __type: 'application/json' })],
+  [/^GET \/v1\/images\/batches\/([^/]+)$/, (ctx, m) => ({ __raw: JSON.stringify(BATCH_IMAGE_JOBS.find((j) => j.id === m[1]) || BATCH_IMAGE_JOBS[0]), __type: 'application/json' })],
   [/^GET \/api\/v1\/media\/public\/(\d+)$/, (ctx, m) => ({ __raw: MOCK_SVG(['海报 A', '海报 B', '产品图 1', '产品图 2'][Number(m[1]) - 9001] || 'asset', 200 + (Number(m[1]) % 4) * 45), __type: 'image/svg+xml' })],
   [/^GET \/api\/v1\/pages\/[^/]+\/images\/.+$/, () => ({ __raw: MOCK_SVG('示例图', 260), __type: 'image/svg+xml' })],
   [/^GET \/api\/v1\/subscriptions\/(\d+)\/progress$/, (ctx, m) => subProgress(USER_SUBS.find((x) => x.id === Number(m[1])) || USER_SUBS[0])],

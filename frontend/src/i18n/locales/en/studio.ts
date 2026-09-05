@@ -53,6 +53,14 @@ export default {
       total: 'Total: {total} tokens',
       detail: '📊 Input: {input} | Output: {output}',
       ariaLabel: 'This message used {total} tokens in total: {input} input and {output} output',
+      cardLabel: 'Session tokens',
+      cardSub: '{input} in · {output} out',
+      cardSubWithCount: '{count} tasks · {input} in · {output} out',
+    },
+    mobileTabs: {
+      sessions: 'Sessions',
+      main: 'Content',
+      controls: 'Stats & tasks',
     },
     a11y: {
       messageLog: 'Conversation messages',
@@ -66,6 +74,7 @@ export default {
       previewImage: 'Generated image preview',
       loadingSessions: 'Loading sessions',
       loadingTasks: 'Loading image tasks',
+      tokenStatsCard: 'Token usage for this session',
     },
   },
 }

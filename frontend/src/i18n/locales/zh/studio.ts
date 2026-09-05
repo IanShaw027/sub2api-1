@@ -51,6 +51,14 @@ export default {
       total: '总计：{total} tokens',
       detail: '📊 输入：{input} ｜ 输出：{output}',
       ariaLabel: '本条消息共使用 {total} tokens，其中输入 {input}，输出 {output}',
+      cardLabel: '会话 Token 用量',
+      cardSub: '输入 {input} · 输出 {output}',
+      cardSubWithCount: '{count} 个任务 · 输入 {input} · 输出 {output}',
+    },
+    mobileTabs: {
+      sessions: '会话',
+      main: '内容',
+      controls: '统计与任务',
     },
     a11y: {
       messageLog: '对话消息',
@@ -64,6 +72,7 @@ export default {
       previewImage: '生成的图像预览',
       loadingSessions: '正在加载会话',
       loadingTasks: '正在加载图像任务',
+      tokenStatsCard: '当前会话的 Token 用量',
     },
   },
 }

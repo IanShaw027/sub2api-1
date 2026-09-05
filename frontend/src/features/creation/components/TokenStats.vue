@@ -1,21 +1,41 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import StatCard from '@/components/ui/StatCard.vue'
 
-const props = defineProps<{
-  inputTokens?: number | null
-  outputTokens?: number | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    inputTokens?: number | null
+    outputTokens?: number | null
+    variant?: 'inline' | 'card'
+    /** Optional task/run count shown alongside tokens (e.g. image generation sessions). */
+    taskCount?: number | null
+  }>(),
+  {
+    variant: 'inline',
+  },
+)
 
 const { t } = useI18n()
 
 const hasInput = computed(() => typeof props.inputTokens === 'number')
 const hasOutput = computed(() => typeof props.outputTokens === 'number')
-const hasData = computed(() => hasInput.value || hasOutput.value)
+const hasCount = computed(() => typeof props.taskCount === 'number')
+const hasData = computed(() => hasInput.value || hasOutput.value || hasCount.value)
 
 const inputValue = computed(() => props.inputTokens ?? 0)
 const outputValue = computed(() => props.outputTokens ?? 0)
 const totalTokens = computed(() => inputValue.value + outputValue.value)
+
+const cardSubText = computed(() =>
+  hasCount.value
+    ? t('studio.tokens.cardSubWithCount', {
+        input: inputValue.value,
+        output: outputValue.value,
+        count: props.taskCount ?? 0,
+      })
+    : t('studio.tokens.cardSub', { input: inputValue.value, output: outputValue.value }),
+)
 
 const hovering = ref(false)
 const pinned = ref(false)
@@ -40,8 +60,17 @@ function onBlur() {
 </script>
 
 <template>
+  <StatCard
+    v-if="variant === 'card' && hasData"
+    class="studio-token-stats-card"
+    :label="t('studio.tokens.cardLabel')"
+    :value="totalTokens"
+    :sub="cardSubText"
+    :aria-label="t('studio.a11y.tokenStatsCard')"
+    padding="sm"
+  />
   <span
-    v-if="hasData"
+    v-else-if="hasData"
     class="studio-token-stats text-xs text-muted"
     :class="{ 'is-expanded': expanded }"
     role="button"
