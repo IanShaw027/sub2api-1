@@ -1106,9 +1106,11 @@ defineExpose({
  right: 0;
 }
 
-/* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index */
+/* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index，且背景必须不透明
+   （普通表头是 45% 半透明染色，横向滚动时会让被盖住的表头文字透出来） */
 .sticky-header-cell.sticky-col {
  z-index: 220; /* 高于普通表头单元格和表体固定列 */
+ background: color-mix(in oklch, var(--surface-secondary) 45%, var(--surface));
 }
 
 /* 表体 sticky 列背景 */

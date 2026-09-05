@@ -309,3 +309,16 @@
 | 404（NotFoundView） | 无（`router.ts` 通配路由缺 `requiresAuth: false` 导致访客被拦截到 `/login`，为共享路由配置问题，非页面自身暗色缺陷，见 deviations） | 无需修改 | `.shots/13a-notfound-admin-{dark,light}.png` | 2 |
 
 门禁：`node_modules/.bin/vue-tsc --noEmit` 0 错误；`npx vitest run src/views/admin src/components/admin src/features/prompt-audit` 73 文件 / 416 用例，1 个预置失败（`ChannelMonitorView.grok.spec.ts` 断言按钮 class 应含字面量 `zinc`，但被测组件早已改用 `border-[var(--muted)]` 等令牌类，与本任务改动的三个文件无关，attributable 于既有基线，非本次引入）；`node scripts/i18n-diff.mjs` zh 8955 = en 8955，0 差异；逐文件 `ui-lint.mjs --scoped --palette` 与 `eslint --ext .vue,.ts`：`AccountActionMenu.vue`、`AccountStatsModal.vue`、`PlatformCapacityDialog.vue` 均为 0/0/0/0 与 0 error。
+
+## 14.2 平板 900px 抽检（lead）
+
+| 路由 | 探针（900×900 亮） | 结论 |
+|---|---|---|
+| `/admin/dashboard` `/dashboard` | `aside` 12/60 图标轨；`html` w900；统计卡 2 列 | 达标（`t-admin-dashboard.png`、`t-dashboard.png`） |
+| `/admin/accounts` `/admin/users` `/keys` | 内容区 left92 w784；`.table-page-layout` top146；表格横向滚动、首列/操作列 sticky | 修复后达标（`t-admin-users-fix.png`、`-dark.png`、`t-keys-fix.png`）；修复前操作列表头半透明，被盖表头文字透出（`t-admin-accounts.png`） |
+| `/admin/usage` `/usage` | 统计卡 2 列、环图 + 表格同卡单列堆叠 | 达标（`t-admin-usage.png`、`t-usage.png`） |
+| `/admin/settings` | 设置导航 + 分区两栏保持 | 达标（`t-admin-settings.png`） |
+| `/purchase` | 单列 ActionPage 全宽 784 | 达标（`t-purchase.png`） |
+| `/studio` | 三栏在 900 折为纵向堆叠（会话列表 → 主栏 → 统计），`html` h1846 | 达标（`t-studio.png`） |
+
+10 条路由 `html` 宽度均为 900，无横向溢出。门禁：`DataTable.vue` eslint 0、vitest `src/components/common` 22 文件 93 用例通过、ui-lint 5 处 `rgba()` 为既有 sticky 阴影渐变（HEAD 相同，15.x 处理）。
