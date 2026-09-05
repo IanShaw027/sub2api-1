@@ -12,6 +12,11 @@ const grokPanelSource = readFileSync(
   'utf8'
 )
 
+const grokCustomBaseUrlSectionSource = readFileSync(
+  resolve(process.cwd(), 'src/components/account/shared/GrokCustomBaseUrlSection.vue'),
+  'utf8'
+)
+
 describe('CreateAccountModal Grok account types', () => {
   it('offers API-key setup alongside OAuth with the official xAI default', () => {
     // Account-type selector markup was extracted into GrokPanel.vue during the
@@ -27,8 +32,11 @@ describe('CreateAccountModal Grok account types', () => {
   })
 
   it('exposes custom upstream URL and header override for the OAuth create flow', () => {
-    expect(source).toContain('data-testid="grok-custom-base-url-toggle"')
-    expect(source).toContain('data-testid="grok-custom-base-url-input"')
+    // The custom-base-url toggle/input markup was extracted into the shared
+    // GrokCustomBaseUrlSection.vue component (same pattern as GrokPanel.vue
+    // above); the outer v-if gating condition stays in this file.
+    expect(grokCustomBaseUrlSectionSource).toContain('data-testid="grok-custom-base-url-toggle"')
+    expect(grokCustomBaseUrlSectionSource).toContain('data-testid="grok-custom-base-url-input"')
     expect(source).toContain('form.platform === \'grok\' && isOAuthFlow')
   })
 

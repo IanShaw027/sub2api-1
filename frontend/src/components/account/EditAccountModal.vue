@@ -283,166 +283,18 @@
         </div>
 
         <!-- Pool Mode Section -->
-        <div class="border-t border-line pt-4">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.poolModeHint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="poolModeEnabled = !poolModeEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- poolModeEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  poolModeEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <div v-if="poolModeEnabled" class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-            <p class="text-xs text-accent">
-              <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
-              {{ t('admin.accounts.poolModeInfo') }}
-            </p>
-          </div>
-          <div v-if="poolModeEnabled" class="mt-3">
-            <label class="input-label">{{ t('admin.accounts.poolModeRetryCount') }}</label>
-            <input
-              v-model.number="poolModeRetryCount"
-              type="number"
-              min="0"
-              :max="MAX_POOL_MODE_RETRY_COUNT"
-              step="1"
-              class="input"
-            />
-            <p class="mt-1 text-xs text-muted">
-              {{
-                t('admin.accounts.poolModeRetryCountHint', {
-                  default: DEFAULT_POOL_MODE_RETRY_COUNT,
-                  max: MAX_POOL_MODE_RETRY_COUNT
-                })
-              }}
-            </p>
-          </div>
-          <div v-if="poolModeEnabled" class="mt-3">
-            <label class="input-label">{{ t('admin.accounts.poolModeRetryStatusCodes') }}</label>
-            <input
-              v-model="poolModeRetryStatusCodesInput"
-              type="text"
-              class="input"
-              :placeholder="DEFAULT_POOL_MODE_RETRY_STATUS_CODES.join(', ')"
-            />
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.poolModeRetryStatusCodesHint', { default: DEFAULT_POOL_MODE_RETRY_STATUS_CODES.join(', ') }) }}
-            </p>
-          </div>
-        </div>
+        <PoolModeSection
+          v-model:pool-mode-enabled="poolModeEnabled"
+          v-model:pool-mode-retry-count="poolModeRetryCount"
+          v-model:pool-mode-retry-status-codes-input="poolModeRetryStatusCodesInput"
+        />
 
         <!-- Custom Error Codes Section -->
-        <div class="border-t border-line pt-4">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.customErrorCodes') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.customErrorCodesHint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="customErrorCodesEnabled = !customErrorCodesEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- customErrorCodesEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  customErrorCodesEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-
-          <div v-if="customErrorCodesEnabled" class="space-y-3">
-            <div class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3">
-              <p class="text-xs text-warning-text">
-                <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
-                {{ t('admin.accounts.customErrorCodesWarning') }}
-              </p>
-            </div>
-
-            <!-- Error Code Buttons -->
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="code in commonErrorCodes"
-                :key="code.value"
-                type="button"
-                @click="toggleErrorCode(code.value)"
-                :class="[
- 'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
- selectedErrorCodes.includes(code.value)
- ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-danger-text'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-              >
-                {{ code.value }} {{ code.label }}
-              </button>
-            </div>
-
-            <!-- Manual input -->
-            <div class="flex items-center gap-2">
-              <input
-                v-model.number="customErrorCodeInput"
-                type="number"
-                min="100"
-                max="599"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.enterErrorCode')"
-                @keyup.enter="addCustomErrorCode"
-              />
-              <button type="button" @click="addCustomErrorCode" class="btn btn-secondary px-3">
-                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-              </button>
-            </div>
-
-            <!-- Selected codes summary -->
-            <div class="flex flex-wrap gap-1.5">
-              <span
-                v-for="code in selectedErrorCodes.sort((a, b) => a - b)"
-                :key="code"
-                class="inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] px-2.5 py-0.5 text-sm font-medium text-danger-text"
-              >
-                {{ code }}
-                <button
-                  type="button"
-                  @click="removeErrorCode(code)"
-                  class="hover:text-danger-text"
-                >
-                  <Icon name="x" size="sm" :stroke-width="2" />
-                </button>
-              </span>
-              <span v-if="selectedErrorCodes.length === 0" class="text-xs text-muted">
-                {{ t('admin.accounts.noneSelectedUsesDefault') }}
-              </span>
-            </div>
-          </div>
-        </div>
+        <CustomErrorCodesSection
+          v-model:custom-error-codes-enabled="customErrorCodesEnabled"
+          v-model:selected-error-codes="selectedErrorCodes"
+          v-model:custom-error-code-input="customErrorCodeInput"
+        />
 
       </div>
 
@@ -467,86 +319,18 @@
       </div>
 
       <!-- Grok OAuth Custom Upstream URL (仅改写转发端点，OAuth 授权/刷新不受影响) -->
-      <div
+      <GrokCustomBaseUrlSection
         v-if="account.platform === 'grok' && account.type === 'oauth'"
-        class="border-t border-line pt-4"
-      >
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.grokCustomBaseUrl.title') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.grokCustomBaseUrl.hint') }}
-            </p>
-          </div>
-          <button
-            type="button"
-            data-testid="grok-custom-base-url-toggle"
-            @click="grokOAuthCustomBaseUrlEnabled = !grokOAuthCustomBaseUrlEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- grokOAuthCustomBaseUrlEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                grokOAuthCustomBaseUrlEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-        <div v-if="grokOAuthCustomBaseUrlEnabled" class="space-y-2">
-          <input
-            v-model="grokOAuthBaseUrl"
-            type="text"
-            class="input"
-            data-testid="grok-custom-base-url-input"
-            :placeholder="t('admin.accounts.grokCustomBaseUrl.placeholder')"
-          />
-          <GrokBaseUrlPresets @select="grokOAuthBaseUrl = $event" />
-        </div>
-      </div>
+        v-model:grokOAuthCustomBaseUrlEnabled="grokOAuthCustomBaseUrlEnabled"
+        v-model:grokOAuthBaseUrl="grokOAuthBaseUrl"
+      />
 
       <!-- Header Override Section (eligible API-key platforms + grok OAuth) -->
-      <div v-if="headerOverrideCapable" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.headerOverride.title') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.headerOverride.hint') }}
-            </p>
-          </div>
-          <button
-            type="button"
-            @click="headerOverrideEnabled = !headerOverrideEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- headerOverrideEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                headerOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-
-        <div v-if="headerOverrideEnabled" class="space-y-3">
-          <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-            <p class="text-xs text-accent">
-              <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
-              {{ t('admin.accounts.headerOverride.info') }}
-            </p>
-          </div>
-
-          <HeaderOverrideEditor
-            :rows="headerOverrideRows"
-            @update:rows="headerOverrideRows = $event"
-          />
-        </div>
-      </div>
+      <HeaderOverrideSection
+        v-if="headerOverrideCapable"
+        v-model:headerOverrideEnabled="headerOverrideEnabled"
+        v-model:headerOverrideRows="headerOverrideRows"
+      />
 
       <!-- OpenAI/Grok OAuth Model Mapping (OAuth 类型没有 apikey 容器，需要独立的模型映射区域) -->
       <div
@@ -782,68 +566,11 @@
         </div>
 
         <!-- Pool Mode Section for Bedrock -->
-        <div class="border-t border-line pt-4">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.poolMode') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.poolModeHint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="poolModeEnabled = !poolModeEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- poolModeEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  poolModeEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <div v-if="poolModeEnabled" class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-            <p class="text-xs text-accent">
-              <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
-              {{ t('admin.accounts.poolModeInfo') }}
-            </p>
-          </div>
-          <div v-if="poolModeEnabled" class="mt-3">
-            <label class="input-label">{{ t('admin.accounts.poolModeRetryCount') }}</label>
-            <input
-              v-model.number="poolModeRetryCount"
-              type="number"
-              min="0"
-              :max="MAX_POOL_MODE_RETRY_COUNT"
-              step="1"
-              class="input"
-            />
-            <p class="mt-1 text-xs text-muted">
-              {{
-                t('admin.accounts.poolModeRetryCountHint', {
-                  default: DEFAULT_POOL_MODE_RETRY_COUNT,
-                  max: MAX_POOL_MODE_RETRY_COUNT
-                })
-              }}
-            </p>
-          </div>
-          <div v-if="poolModeEnabled" class="mt-3">
-            <label class="input-label">{{ t('admin.accounts.poolModeRetryStatusCodes') }}</label>
-            <input
-              v-model="poolModeRetryStatusCodesInput"
-              type="text"
-              class="input"
-              :placeholder="DEFAULT_POOL_MODE_RETRY_STATUS_CODES.join(', ')"
-            />
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.poolModeRetryStatusCodesHint', { default: DEFAULT_POOL_MODE_RETRY_STATUS_CODES.join(', ') }) }}
-            </p>
-          </div>
-        </div>
+        <PoolModeSection
+          v-model:pool-mode-enabled="poolModeEnabled"
+          v-model:pool-mode-retry-count="poolModeRetryCount"
+          v-model:pool-mode-retry-status-codes-input="poolModeRetryStatusCodesInput"
+        />
       </div>
 
       <div
@@ -962,153 +689,15 @@
         </div>
       </div>
 
-      <!-- Temp Unschedulable Rules -->
-      <div class="border-t border-line pt-4 space-y-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.tempUnschedulable.hint') }}
-            </p>
-          </div>
-          <button
-            type="button"
-            @click="tempUnschedEnabled = !tempUnschedEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- tempUnschedEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                tempUnschedEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-
-        <div v-if="tempUnschedEnabled" class="space-y-3">
-          <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-            <p class="text-xs text-accent">
-              <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
-              {{ t('admin.accounts.tempUnschedulable.notice') }}
-            </p>
-          </div>
-
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="preset in tempUnschedPresets"
-              :key="preset.label"
-              type="button"
-              @click="addTempUnschedRule(preset.rule)"
-              class="rounded-lg bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:bg-surface-3"
-            >
-              + {{ preset.label }}
-            </button>
-          </div>
-
-          <div v-if="tempUnschedRules.length > 0" class="space-y-3">
-            <div
-              v-for="(rule, index) in tempUnschedRules"
-              :key="getTempUnschedRuleKey(rule)"
-              class="rounded-lg border border-line p-3"
-            >
-              <div class="mb-2 flex items-center justify-between">
-                <span class="text-xs font-medium text-muted">
-                  {{ t('admin.accounts.tempUnschedulable.ruleIndex', { index: index + 1 }) }}
-                </span>
-                <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    :disabled="index === 0"
-                    @click="moveTempUnschedRule(index, -1)"
-                    class="rounded p-1 text-muted transition-colors hover:text-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <Icon name="chevronUp" size="sm" :stroke-width="2" />
-                  </button>
-                  <button
-                    type="button"
-                    :disabled="index === tempUnschedRules.length - 1"
-                    @click="moveTempUnschedRule(index, 1)"
-                    class="rounded p-1 text-muted transition-colors hover:text-muted disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    @click="removeTempUnschedRule(index)"
-                    class="rounded p-1 text-danger-text transition-colors hover:text-danger-text"
-                  >
-                    <Icon name="x" size="sm" :stroke-width="2" />
-                  </button>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.errorCode') }}</label>
-                  <input
-                    v-model.number="rule.error_code"
-                    type="number"
-                    min="100"
-                    max="599"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.errorCodePlaceholder')"
-                  />
-                </div>
-                <div>
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.durationMinutes') }}</label>
-                  <input
-                    v-model.number="rule.duration_minutes"
-                    type="number"
-                    min="1"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.durationPlaceholder')"
-                  />
-                </div>
-                <div class="sm:col-span-2">
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.keywords') }}</label>
-                  <input
-                    v-model="rule.keywords"
-                    type="text"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.keywordsPlaceholder')"
-                  />
-                  <p class="input-hint">{{ t('admin.accounts.tempUnschedulable.keywordsHint') }}</p>
-                </div>
-                <div class="sm:col-span-2">
-                  <label class="input-label">{{ t('admin.accounts.tempUnschedulable.description') }}</label>
-                  <input
-                    v-model="rule.description"
-                    type="text"
-                    class="input"
-                    :placeholder="t('admin.accounts.tempUnschedulable.descriptionPlaceholder')"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            @click="addTempUnschedRule()"
-            class="w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-sm text-muted transition-colors hover:border-line hover:text-foreground"
-          >
-            <svg
-              class="mr-1 inline h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            {{ t('admin.accounts.tempUnschedulable.addRule') }}
-          </button>
-        </div>
-      </div>
+      <TempUnschedulableRulesSection
+        v-model:tempUnschedEnabled="tempUnschedEnabled"
+        v-model:tempUnschedRules="tempUnschedRules"
+        :temp-unsched-presets="tempUnschedPresets"
+        :get-temp-unsched-rule-key="getTempUnschedRuleKey"
+        :add-temp-unsched-rule="addTempUnschedRule"
+        :remove-temp-unsched-rule="removeTempUnschedRule"
+        :move-temp-unsched-rule="moveTempUnschedRule"
+      />
 
 
       <div
@@ -1144,37 +733,10 @@
         </div>
       </div>
 
-      <!-- Intercept Warmup Requests (Anthropic/Antigravity) -->
-      <div
-        v-if="account?.platform === 'anthropic' || account?.platform === 'antigravity'"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{
-              t('admin.accounts.interceptWarmupRequests')
-            }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.interceptWarmupRequestsDesc') }}
-            </p>
-          </div>
-          <button
-            type="button"
-            @click="interceptWarmupRequests = !interceptWarmupRequests"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- interceptWarmupRequests ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                interceptWarmupRequests ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-      </div>
+      <InterceptWarmupRequestsSection
+        :show="account?.platform === 'anthropic' || account?.platform === 'antigravity'"
+        v-model:interceptWarmupRequests="interceptWarmupRequests"
+      />
 
       <div v-if="!isSparkShadow">
         <div class="mb-1 flex items-center gap-2">
@@ -1270,21 +832,7 @@
               {{ t('admin.accounts.openai.oauthPassthroughDesc') }}
             </p>
           </div>
-          <button
-            type="button"
-            @click="openaiPassthroughEnabled = !openaiPassthroughEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- openaiPassthroughEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                openaiPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <InlineToggleSwitch v-model="openaiPassthroughEnabled" />
         </div>
       </div>
 
@@ -1300,22 +848,7 @@
               {{ t('admin.accounts.openai.flattenNamespacesDesc') }}
             </p>
           </div>
-          <button
-            type="button"
-            data-testid="edit-openai-flatten-namespaces-toggle"
-            @click="openaiFlattenNamespacesEnabled = !openaiFlattenNamespacesEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- openaiFlattenNamespacesEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                openaiFlattenNamespacesEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <InlineToggleSwitch v-model="openaiFlattenNamespacesEnabled" data-testid="edit-openai-flatten-namespaces-toggle" />
         </div>
       </div>
 
@@ -1492,21 +1025,7 @@
               {{ t('admin.accounts.anthropic.apiKeyPassthroughDesc') }}
             </p>
           </div>
-          <button
-            type="button"
-            @click="anthropicPassthroughEnabled = !anthropicPassthroughEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- anthropicPassthroughEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                anthropicPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <InlineToggleSwitch v-model="anthropicPassthroughEnabled" />
         </div>
       </div>
 
@@ -1549,107 +1068,53 @@
       </div>
 
       <!-- 配额控制 (Anthropic apikey/bedrock: 配额限制 + 亲和) -->
-      <div
+      <QuotaLimitCardSection
         v-if="account?.platform === 'anthropic' && (account?.type === 'apikey' || account?.type === 'bedrock')"
-        class="border-t border-line pt-4 space-y-4"
-      >
-        <div class="mb-3">
-          <h3 class="input-label mb-0 text-base font-semibold">{{ t('admin.accounts.quotaControl.title') }}</h3>
-          <p class="mt-1 text-xs text-muted">
-            {{ t('admin.accounts.quotaControl.hint') }}
-          </p>
-        </div>
-        <QuotaLimitCard
-          :totalLimit="editQuotaLimit"
-          :dailyLimit="editQuotaDailyLimit"
-          :weeklyLimit="editQuotaWeeklyLimit"
-          :dailyResetMode="editDailyResetMode"
-          :dailyResetHour="editDailyResetHour"
-          :weeklyResetMode="editWeeklyResetMode"
-          :weeklyResetDay="editWeeklyResetDay"
-          :weeklyResetHour="editWeeklyResetHour"
-          :resetTimezone="editResetTimezone"
-          :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
-          :quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
-          :quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
-          :quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType"
-          :quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled"
-          :quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold"
-          :quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType"
-          :quotaNotifyTotalEnabled="quotaNotifyState.total.enabled"
-          :quotaNotifyTotalThreshold="quotaNotifyState.total.threshold"
-          :quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType"
-          @update:totalLimit="editQuotaLimit = $event"
-          @update:dailyLimit="editQuotaDailyLimit = $event"
-          @update:weeklyLimit="editQuotaWeeklyLimit = $event"
-          @update:dailyResetMode="editDailyResetMode = $event"
-          @update:dailyResetHour="editDailyResetHour = $event"
-          @update:weeklyResetMode="editWeeklyResetMode = $event"
-          @update:weeklyResetDay="editWeeklyResetDay = $event"
-          @update:weeklyResetHour="editWeeklyResetHour = $event"
-          @update:resetTimezone="editResetTimezone = $event"
-          @update:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled = $event"
-          @update:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold = $event"
-          @update:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType = $event"
-          @update:quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled = $event"
-          @update:quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold = $event"
-          @update:quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType = $event"
-          @update:quotaNotifyTotalEnabled="quotaNotifyState.total.enabled = $event"
-          @update:quotaNotifyTotalThreshold="quotaNotifyState.total.threshold = $event"
-          @update:quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType = $event"
-        />
-      </div>
+        :hint="t('admin.accounts.quotaControl.hint')"
+        :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
+        v-model:editQuotaLimit="editQuotaLimit"
+        v-model:editQuotaDailyLimit="editQuotaDailyLimit"
+        v-model:editQuotaWeeklyLimit="editQuotaWeeklyLimit"
+        v-model:editDailyResetMode="editDailyResetMode"
+        v-model:editDailyResetHour="editDailyResetHour"
+        v-model:editWeeklyResetMode="editWeeklyResetMode"
+        v-model:editWeeklyResetDay="editWeeklyResetDay"
+        v-model:editWeeklyResetHour="editWeeklyResetHour"
+        v-model:editResetTimezone="editResetTimezone"
+        v-model:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
+        v-model:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
+        v-model:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType"
+        v-model:quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled"
+        v-model:quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold"
+        v-model:quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType"
+        v-model:quotaNotifyTotalEnabled="quotaNotifyState.total.enabled"
+        v-model:quotaNotifyTotalThreshold="quotaNotifyState.total.threshold"
+        v-model:quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType"
+      />
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
-      <div
+      <QuotaLimitCardSection
         v-else-if="account?.type === 'apikey' || account?.type === 'bedrock'"
-        class="border-t border-line pt-4 space-y-4"
-      >
-        <div class="mb-3">
-          <h3 class="input-label mb-0 text-base font-semibold">{{ t('admin.accounts.quotaControl.title') }}</h3>
-          <p class="mt-1 text-xs text-muted">
-            {{ t('admin.accounts.quotaLimitHint') }}
-          </p>
-        </div>
-        <QuotaLimitCard
-          :totalLimit="editQuotaLimit"
-          :dailyLimit="editQuotaDailyLimit"
-          :weeklyLimit="editQuotaWeeklyLimit"
-          :dailyResetMode="editDailyResetMode"
-          :dailyResetHour="editDailyResetHour"
-          :weeklyResetMode="editWeeklyResetMode"
-          :weeklyResetDay="editWeeklyResetDay"
-          :weeklyResetHour="editWeeklyResetHour"
-          :resetTimezone="editResetTimezone"
-          :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
-          :quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
-          :quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
-          :quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType"
-          :quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled"
-          :quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold"
-          :quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType"
-          :quotaNotifyTotalEnabled="quotaNotifyState.total.enabled"
-          :quotaNotifyTotalThreshold="quotaNotifyState.total.threshold"
-          :quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType"
-          @update:totalLimit="editQuotaLimit = $event"
-          @update:dailyLimit="editQuotaDailyLimit = $event"
-          @update:weeklyLimit="editQuotaWeeklyLimit = $event"
-          @update:dailyResetMode="editDailyResetMode = $event"
-          @update:dailyResetHour="editDailyResetHour = $event"
-          @update:weeklyResetMode="editWeeklyResetMode = $event"
-          @update:weeklyResetDay="editWeeklyResetDay = $event"
-          @update:weeklyResetHour="editWeeklyResetHour = $event"
-          @update:resetTimezone="editResetTimezone = $event"
-          @update:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled = $event"
-          @update:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold = $event"
-          @update:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType = $event"
-          @update:quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled = $event"
-          @update:quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold = $event"
-          @update:quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType = $event"
-          @update:quotaNotifyTotalEnabled="quotaNotifyState.total.enabled = $event"
-          @update:quotaNotifyTotalThreshold="quotaNotifyState.total.threshold = $event"
-          @update:quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType = $event"
-        />
-      </div>
+        :hint="t('admin.accounts.quotaLimitHint')"
+        :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
+        v-model:editQuotaLimit="editQuotaLimit"
+        v-model:editQuotaDailyLimit="editQuotaDailyLimit"
+        v-model:editQuotaWeeklyLimit="editQuotaWeeklyLimit"
+        v-model:editDailyResetMode="editDailyResetMode"
+        v-model:editDailyResetHour="editDailyResetHour"
+        v-model:editWeeklyResetMode="editWeeklyResetMode"
+        v-model:editWeeklyResetDay="editWeeklyResetDay"
+        v-model:editWeeklyResetHour="editWeeklyResetHour"
+        v-model:editResetTimezone="editResetTimezone"
+        v-model:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
+        v-model:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
+        v-model:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType"
+        v-model:quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled"
+        v-model:quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold"
+        v-model:quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType"
+        v-model:quotaNotifyTotalEnabled="quotaNotifyState.total.enabled"
+        v-model:quotaNotifyTotalThreshold="quotaNotifyState.total.threshold"
+        v-model:quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType"
+      />
 
       <!-- OpenAI API 长上下文计费开关 -->
       <div
@@ -1663,24 +1128,11 @@
               {{ t('admin.accounts.openai.longContextBillingDesc') }}
             </p>
           </div>
-          <button
-            type="button"
+          <InlineToggleSwitch
+            v-model="openAILongContextBillingEnabled"
             data-testid="openai-long-context-billing-toggle"
-            role="switch"
-            :aria-checked="openAILongContextBillingEnabled"
-            @click="openAILongContextBillingEnabled = !openAILongContextBillingEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- openAILongContextBillingEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                openAILongContextBillingEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+            switch-role
+          />
         </div>
       </div>
 
@@ -1695,21 +1147,7 @@
               {{ t('admin.accounts.openai.codexCLIOnlyDesc') }}
             </p>
           </div>
-          <button
-            type="button"
-            @click="codexCLIOnlyEnabled = !codexCLIOnlyEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- codexCLIOnlyEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                codexCLIOnlyEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <InlineToggleSwitch v-model="codexCLIOnlyEnabled" />
         </div>
         <div
           v-if="codexCLIOnlyEnabled"
@@ -1721,21 +1159,7 @@
               {{ t('admin.accounts.openai.codexCLIOnlyAppServerDesc') }}
             </p>
           </div>
-          <button
-            type="button"
-            @click="codexCLIOnlyAppServerEnabled = !codexCLIOnlyAppServerEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- codexCLIOnlyAppServerEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                codexCLIOnlyAppServerEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <InlineToggleSwitch v-model="codexCLIOnlyAppServerEnabled" />
         </div>
       </div>
 
@@ -1843,21 +1267,7 @@
               {{ t('admin.accounts.autoPauseOnExpiredDesc') }}
             </p>
           </div>
-          <button
-            type="button"
-            @click="autoPauseOnExpired = !autoPauseOnExpired"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- autoPauseOnExpired ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                autoPauseOnExpired ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <InlineToggleSwitch v-model="autoPauseOnExpired" />
         </div>
       </div>
 
@@ -1868,22 +1278,7 @@
         <div class="space-y-2">
           <div class="flex items-center justify-between">
             <label class="input-label mb-0">{{ t('admin.accounts.autoPause5hDisabled') }}</label>
-            <button
-              type="button"
-              @click="autoPause5hDisabled = !autoPause5hDisabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- autoPause5hDisabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-              data-testid="auto-pause-5h-disabled"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  autoPause5hDisabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
+            <InlineToggleSwitch v-model="autoPause5hDisabled" data-testid="auto-pause-5h-disabled" />
           </div>
           <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
         </div>
@@ -1904,22 +1299,7 @@
         <div class="space-y-2">
           <div class="flex items-center justify-between">
             <label class="input-label mb-0">{{ t('admin.accounts.autoPause7dDisabled') }}</label>
-            <button
-              type="button"
-              @click="autoPause7dDisabled = !autoPause7dDisabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- autoPause7dDisabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-              data-testid="auto-pause-7d-disabled"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  autoPause7dDisabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
+            <InlineToggleSwitch v-model="autoPause7dDisabled" data-testid="auto-pause-7d-disabled" />
           </div>
           <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
         </div>
@@ -1951,22 +1331,7 @@
               {{ t('admin.accounts.autoResetCredit.hint') }}
             </p>
           </div>
-          <button
-            type="button"
-            data-testid="auto-reset-credit-enabled"
-            @click="autoResetCreditEnabled = !autoResetCreditEnabled"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- autoResetCreditEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                autoResetCreditEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <InlineToggleSwitch v-model="autoResetCreditEnabled" data-testid="auto-reset-credit-enabled" />
         </div>
         <div class="grid gap-4 sm:grid-cols-2">
           <div>
@@ -2000,415 +1365,36 @@
       </div>
 
       <!-- 配额控制 (Anthropic OAuth/SetupToken: 亲和 + 窗口费用 + 会话 + RPM 等) -->
-      <div
+      <QuotaControlPanel
         v-if="account?.platform === 'anthropic' && (account?.type === 'oauth' || account?.type === 'setup-token')"
-        class="border-t border-line pt-4 space-y-4"
-      >
-        <div class="mb-3">
-          <h3 class="input-label mb-0 text-base font-semibold">{{ t('admin.accounts.quotaControl.title') }}</h3>
-          <p class="mt-1 text-xs text-muted">
-            {{ t('admin.accounts.quotaControl.hint') }}
-          </p>
-        </div>
+        v-model:window-cost-enabled="windowCostEnabled"
+        v-model:window-cost-limit="windowCostLimit"
+        v-model:window-cost-sticky-reserve="windowCostStickyReserve"
+        v-model:session-limit-enabled="sessionLimitEnabled"
+        v-model:max-sessions="maxSessions"
+        v-model:session-idle-timeout="sessionIdleTimeout"
+        v-model:rpm-limit-enabled="rpmLimitEnabled"
+        v-model:base-rpm="baseRpm"
+        v-model:rpm-strategy="rpmStrategy"
+        v-model:rpm-sticky-buffer="rpmStickyBuffer"
+        v-model:user-msg-queue-mode="userMsgQueueMode"
+        v-model:session-id-masking-enabled="sessionIdMaskingEnabled"
+        v-model:cache-t-t-l-override-enabled="cacheTTLOverrideEnabled"
+        v-model:cache-t-t-l-override-target="cacheTTLOverrideTarget"
+        v-model:custom-base-url-enabled="customBaseUrlEnabled"
+        v-model:custom-base-url="customBaseUrl"
+      />
 
-        <!-- Window Cost Limit -->
-        <div class="rounded-lg border border-line p-4">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.windowCost.label') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.quotaControl.windowCost.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="windowCostEnabled = !windowCostEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- windowCostEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  windowCostEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-
-          <div v-if="windowCostEnabled" class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="input-label">{{ t('admin.accounts.quotaControl.windowCost.limit') }}</label>
-              <div class="relative">
-                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
-                <input
-                  v-model.number="windowCostLimit"
-                  type="number"
-                  min="0"
-                  step="1"
-                  class="input pl-7"
-                  :placeholder="t('admin.accounts.quotaControl.windowCost.limitPlaceholder')"
-                />
-              </div>
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.windowCost.limitHint') }}</p>
-            </div>
-            <div>
-              <label class="input-label">{{ t('admin.accounts.quotaControl.windowCost.stickyReserve') }}</label>
-              <div class="relative">
-                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted">$</span>
-                <input
-                  v-model.number="windowCostStickyReserve"
-                  type="number"
-                  min="0"
-                  step="1"
-                  class="input pl-7"
-                  :placeholder="t('admin.accounts.quotaControl.windowCost.stickyReservePlaceholder')"
-                />
-              </div>
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.windowCost.stickyReserveHint') }}</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Session Limit -->
-        <div class="rounded-lg border border-line p-4">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.sessionLimit.label') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.quotaControl.sessionLimit.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="sessionLimitEnabled = !sessionLimitEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- sessionLimitEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  sessionLimitEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-
-          <div v-if="sessionLimitEnabled" class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="input-label">{{ t('admin.accounts.quotaControl.sessionLimit.maxSessions') }}</label>
-              <input
-                v-model.number="maxSessions"
-                type="number"
-                min="1"
-                step="1"
-                class="input"
-                :placeholder="t('admin.accounts.quotaControl.sessionLimit.maxSessionsPlaceholder')"
-              />
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.sessionLimit.maxSessionsHint') }}</p>
-            </div>
-            <div>
-              <label class="input-label">{{ t('admin.accounts.quotaControl.sessionLimit.idleTimeout') }}</label>
-              <div class="relative">
-                <input
-                  v-model.number="sessionIdleTimeout"
-                  type="number"
-                  min="1"
-                  step="1"
-                  class="input pr-12"
-                  :placeholder="t('admin.accounts.quotaControl.sessionLimit.idleTimeoutPlaceholder')"
-                />
-                <span class="absolute right-3 top-1/2 -translate-y-1/2 text-muted">{{ t('common.minutes') }}</span>
-              </div>
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.sessionLimit.idleTimeoutHint') }}</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- RPM Limit -->
-        <div class="rounded-lg border border-line p-4">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.rpmLimit.label') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.quotaControl.rpmLimit.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="rpmLimitEnabled = !rpmLimitEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- rpmLimitEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  rpmLimitEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-
-          <div v-if="rpmLimitEnabled" class="space-y-4">
-            <div>
-              <label class="input-label">{{ t('admin.accounts.quotaControl.rpmLimit.baseRpm') }}</label>
-              <input
-                v-model.number="baseRpm"
-                type="number"
-                min="1"
-                max="1000"
-                step="1"
-                class="input"
-                :placeholder="t('admin.accounts.quotaControl.rpmLimit.baseRpmPlaceholder')"
-              />
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.rpmLimit.baseRpmHint') }}</p>
-            </div>
-
-            <div>
-              <label class="input-label">{{ t('admin.accounts.quotaControl.rpmLimit.strategy') }}</label>
-              <div class="flex gap-2">
-                <button
-                  type="button"
-                  @click="rpmStrategy = 'tiered'"
-                  :class="[
- 'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
- rpmStrategy === 'tiered'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-                >
-                  <div class="text-center">
-                    <div>{{ t('admin.accounts.quotaControl.rpmLimit.strategyTiered') }}</div>
-                    <div class="mt-0.5 text-[10px] opacity-70">{{ t('admin.accounts.quotaControl.rpmLimit.strategyTieredHint') }}</div>
-                  </div>
-                </button>
-                <button
-                  type="button"
-                  @click="rpmStrategy = 'sticky_exempt'"
-                  :class="[
- 'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
- rpmStrategy === 'sticky_exempt'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-                >
-                  <div class="text-center">
-                    <div>{{ t('admin.accounts.quotaControl.rpmLimit.strategyStickyExempt') }}</div>
-                    <div class="mt-0.5 text-[10px] opacity-70">{{ t('admin.accounts.quotaControl.rpmLimit.strategyStickyExemptHint') }}</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <div v-if="rpmStrategy === 'tiered'">
-              <label class="input-label">{{ t('admin.accounts.quotaControl.rpmLimit.stickyBuffer') }}</label>
-              <input
-                v-model.number="rpmStickyBuffer"
-                type="number"
-                min="1"
-                step="1"
-                class="input"
-                :placeholder="t('admin.accounts.quotaControl.rpmLimit.stickyBufferPlaceholder')"
-              />
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.rpmLimit.stickyBufferHint') }}</p>
-            </div>
-
-          </div>
-
-          <!-- 用户消息限速模式（独立于 RPM 开关，始终可见） -->
-          <div class="mt-4">
-            <label class="input-label">{{ t('admin.accounts.quotaControl.rpmLimit.userMsgQueue') }}</label>
-            <p class="mt-1 text-xs text-muted mb-2">
-              {{ t('admin.accounts.quotaControl.rpmLimit.userMsgQueueHint') }}
-            </p>
-            <div class="flex space-x-2">
-              <button type="button" v-for="opt in umqModeOptions" :key="opt.value"
-                @click="userMsgQueueMode = opt.value"
-                :class="[
- 'px-3 py-1.5 text-sm rounded-md border transition-colors',
- userMsgQueueMode === opt.value
- ? 'bg-accent text-white border-accent'
- : 'bg-surface text-foreground border-line hover:bg-surface-2'
- ]">
-                {{ opt.label }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Session ID Masking -->
-        <div class="rounded-lg border border-line p-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.sessionIdMasking.label') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.quotaControl.sessionIdMasking.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="sessionIdMaskingEnabled = !sessionIdMaskingEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- sessionIdMaskingEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  sessionIdMaskingEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-        </div>
-
-        <!-- Cache TTL Override -->
-        <div class="rounded-lg border border-line p-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.cacheTTLOverride.label') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.quotaControl.cacheTTLOverride.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="cacheTTLOverrideEnabled = !cacheTTLOverrideEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- cacheTTLOverrideEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  cacheTTLOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <div v-if="cacheTTLOverrideEnabled" class="mt-3">
-            <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.cacheTTLOverride.target') }}</label>
-            <select
-              v-model="cacheTTLOverrideTarget"
-              class="mt-1 block w-full rounded-md border border-line bg-surface px-3 py-2 text-sm shadow-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            >
-              <option value="5m">5m</option>
-              <option value="1h">1h</option>
-            </select>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.quotaControl.cacheTTLOverride.targetHint') }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Custom Base URL Relay -->
-        <div class="rounded-lg border border-line p-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.customBaseUrl.label') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.quotaControl.customBaseUrl.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="customBaseUrlEnabled = !customBaseUrlEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- customBaseUrlEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  customBaseUrlEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <div v-if="customBaseUrlEnabled" class="mt-3">
-            <input
-              v-model="customBaseUrl"
-              type="text"
-              class="input"
-              :placeholder="t('admin.accounts.quotaControl.customBaseUrl.urlHint')"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div
+      <TlsFingerprintPanel
         v-if="supportsTLSFingerprint(account?.platform)"
-        class="border-t border-line pt-4 space-y-4"
-      >
-        <div class="rounded-lg border border-line p-4">
-          <div class="flex items-center justify-between">
-            <div>
-              <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
-              </p>
-            </div>
-            <button
-              type="button"
-              @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- tlsFingerprintEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
-                  tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-          <div v-if="tlsFingerprintEnabled" class="mt-3 space-y-3">
-            <select v-model="tlsFingerprintProfileId" class="input">
-              <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.defaultProfile') }}</option>
-              <option v-if="tlsFingerprintProfiles.length > 0" :value="-1">{{ t('admin.accounts.quotaControl.tlsFingerprint.randomProfile') }}</option>
-              <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
-            </select>
-            <select v-model="tlsFingerprintRouterId" class="input">
-              <option :value="null">{{ t('admin.accounts.quotaControl.tlsFingerprint.noRouter') }}</option>
-              <option v-for="router in tlsFingerprintRouters" :key="router.id" :value="router.id">{{ router.name }}</option>
-            </select>
-            <select v-model="tlsFingerprintDefaultOS" class="input">
-              <option value="">{{ t('admin.accounts.quotaControl.tlsFingerprint.anyDefaultOS') }}</option>
-              <option v-for="os in tlsFingerprintOSOptions" :key="os" :value="os">{{ os }}</option>
-            </select>
-            <div class="space-y-2">
-              <div v-for="(row, index) in tlsFingerprintBindingRows" :key="index" class="grid grid-cols-4 gap-2">
-                <select v-model="row.os" class="input">
-                  <option value="">os</option>
-                  <option v-for="os in tlsFingerprintOSOptions" :key="os" :value="os">{{ os }}</option>
-                </select>
-                <input v-model="row.client" class="input" placeholder="client" />
-                <select v-model="row.protocol" class="input">
-                  <option value="">protocol</option>
-                  <option v-for="protocol in tlsFingerprintProtocolOptions" :key="protocol" :value="protocol">{{ protocol }}</option>
-                </select>
-                <select v-model.number="row.profileId" class="input">
-                  <option :value="0">—</option>
-                  <option v-for="p in tlsFingerprintProfiles" :key="p.id" :value="p.id">{{ p.name }}</option>
-                </select>
-              </div>
-              <button type="button" class="btn btn-secondary btn-sm" @click="addTLSFingerprintBindingRow">
-                {{ t('admin.accounts.quotaControl.tlsFingerprint.addBinding') }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+        v-model:tls-fingerprint-enabled="tlsFingerprintEnabled"
+        v-model:tls-fingerprint-profile-id="tlsFingerprintProfileId"
+        v-model:tls-fingerprint-router-id="tlsFingerprintRouterId"
+        v-model:tls-fingerprint-default-o-s="tlsFingerprintDefaultOS"
+        v-model:tls-fingerprint-binding-rows="tlsFingerprintBindingRows"
+        :tls-fingerprint-profiles="tlsFingerprintProfiles"
+        :tls-fingerprint-routers="tlsFingerprintRouters"
+      />
 
       <div
         v-if="!isSparkShadow"
@@ -2599,16 +1585,25 @@ import Select from '@/components/common/Select.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import InlineToggleSwitch from '@/components/account/shared/InlineToggleSwitch.vue'
+import QuotaControlPanel from '@/components/account/shared/QuotaControlPanel.vue'
+import TlsFingerprintPanel from '@/components/account/shared/TlsFingerprintPanel.vue'
+import PoolModeSection from '@/components/account/shared/PoolModeSection.vue'
+import CustomErrorCodesSection from '@/components/account/shared/CustomErrorCodesSection.vue'
+import QuotaLimitCardSection from '@/components/account/shared/QuotaLimitCardSection.vue'
+import HeaderOverrideSection from '@/components/account/shared/HeaderOverrideSection.vue'
+import GrokCustomBaseUrlSection from '@/components/account/shared/GrokCustomBaseUrlSection.vue'
+import { useTempUnschedRules } from '@/components/account/shared/useTempUnschedRules'
+import TempUnschedulableRulesSection from '@/components/account/shared/TempUnschedulableRulesSection.vue'
+import InterceptWarmupRequestsSection from '@/components/account/shared/InterceptWarmupRequestsSection.vue'
 import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import ModelRestrictionEditor from '@/components/account/ModelRestrictionEditor.vue'
 import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
-import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
-import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
   applyAntigravityProjectID,
@@ -2652,7 +1647,6 @@ import {
 } from '@/utils/openaiWsMode'
 import {
   getPresetMappingsByPlatform,
-  commonErrorCodes,
   buildModelMappingObject,
   splitModelMappingObject,
   isValidWildcardPattern
@@ -2705,13 +1699,6 @@ const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
 interface ModelMapping {
   from: string
   to: string
-}
-
-interface TempUnschedRuleForm {
-  error_code: number | null
-  keywords: string
-  duration_minutes: number | null
-  description: string
 }
 
 // State
@@ -2908,7 +1895,6 @@ const kiroProfileSelectOptions = computed(() => {
 })
 const DEFAULT_POOL_MODE_RETRY_COUNT = 3
 const MAX_POOL_MODE_RETRY_COUNT = 10
-const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
 const GROK_CLIENT_TOOL_CACHE_EXTRA_KEY = 'grok_client_tool_cache_enabled'
 const poolModeEnabled = ref(false)
 const poolModeRetryCount = ref(DEFAULT_POOL_MODE_RETRY_COUNT)
@@ -2980,18 +1966,25 @@ const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist'
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
 const isSyncingAntigravityUpstream = ref(false)
-const tempUnschedEnabled = ref(false)
+const {
+  tempUnschedEnabled,
+  tempUnschedRules,
+  getTempUnschedRuleKey,
+  tempUnschedPresets,
+  addTempUnschedRule,
+  removeTempUnschedRule,
+  moveTempUnschedRule,
+  applyTempUnschedConfig
+} = useTempUnschedRules('edit-temp-unsched-rule')
 const accountSchedulingThresholdOverrideEnabled = ref(false)
 const accountSchedulingThresholdOverrideValue = ref(100)
 const ACCOUNT_SCHEDULING_THRESHOLD_CREDENTIAL_KEY = 'account_scheduling_threshold'
 const supportsAccountSchedulingThresholdOverride = computed(() =>
   supportsAccountSchedulingThresholdOverridePlatform(props.account?.platform)
 )
-const tempUnschedRules = ref<TempUnschedRuleForm[]>([])
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
 const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
 const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
-const getTempUnschedRuleKey = createStableObjectKeyResolver<TempUnschedRuleForm>('edit-temp-unsched-rule')
 
 const showMixedChannelWarning = ref(false)
 const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(
@@ -3013,19 +2006,12 @@ const baseRpm = ref<number | null>(null)
 const rpmStrategy = ref<'tiered' | 'sticky_exempt'>('tiered')
 const rpmStickyBuffer = ref<number | null>(null)
 const userMsgQueueMode = ref('')
-const umqModeOptions = computed(() => [
-  { value: '', label: t('admin.accounts.quotaControl.rpmLimit.umqModeOff') },
-  { value: 'throttle', label: t('admin.accounts.quotaControl.rpmLimit.umqModeThrottle') },
-  { value: 'serialize', label: t('admin.accounts.quotaControl.rpmLimit.umqModeSerialize') },
-])
 const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
 const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
 const tlsFingerprintRouterId = ref<number | null>(null)
 const tlsFingerprintDefaultOS = ref('')
-const tlsFingerprintOSOptions = ['windows', 'macos', 'linux', 'ios', 'android']
-const tlsFingerprintProtocolOptions = ['messages', 'responses', 'chat_completions', 'images', 'embeddings', 'gemini', 'antigravity', 'kiro']
 const tlsFingerprintBindingRows = ref<{ os: string; client: string; protocol: string; profileId: number }[]>([])
 const deviceLearningEnabled = ref(false)
 const deviceTLSProfileId = ref<number | null>(null)
@@ -3056,10 +2042,6 @@ function readDeviceTLSProfileId(value: unknown): number | null {
 
 function supportsTLSFingerprint(platform?: string | null) {
   return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro'].includes(platform || '')
-}
-
-function addTLSFingerprintBindingRow() {
-  tlsFingerprintBindingRows.value.push({ os: '', client: '', protocol: '', profileId: 0 })
 }
 
 function applyTLSFingerprintToExtra(extra: Record<string, unknown>) {
@@ -3394,35 +2376,6 @@ const openAICompactStatusKey = computed(() => {
 
 // Computed: current preset mappings based on platform
 const presetMappings = computed(() => getPresetMappingsByPlatform(props.account?.platform || 'anthropic'))
-const tempUnschedPresets = computed(() => [
-  {
-    label: t('admin.accounts.tempUnschedulable.presets.overloadLabel'),
-    rule: {
-      error_code: 529,
-      keywords: 'overloaded, too many',
-      duration_minutes: 60,
-      description: t('admin.accounts.tempUnschedulable.presets.overloadDesc')
-    }
-  },
-  {
-    label: t('admin.accounts.tempUnschedulable.presets.rateLimitLabel'),
-    rule: {
-      error_code: 429,
-      keywords: 'rate limit, too many requests',
-      duration_minutes: 10,
-      description: t('admin.accounts.tempUnschedulable.presets.rateLimitDesc')
-    }
-  },
-  {
-    label: t('admin.accounts.tempUnschedulable.presets.unavailableLabel'),
-    rule: {
-      error_code: 503,
-      keywords: 'unavailable, maintenance',
-      duration_minutes: 30,
-      description: t('admin.accounts.tempUnschedulable.presets.unavailableDesc')
-    }
-  }
-])
 
 // Computed: default base URL based on platform
 const defaultBaseUrl = computed(() => {
@@ -4116,135 +3069,6 @@ const syncAntigravityUpstreamModels = async () => {
   }
 }
 
-// Error code toggle helper
-const toggleErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index === -1) {
-    // Adding code - check for 429/529 warning
-    if (code === 429) {
-      if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-        return
-      }
-    } else if (code === 529) {
-      if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-        return
-      }
-    }
-    selectedErrorCodes.value.push(code)
-  } else {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
-
-// Add custom error code from input
-const addCustomErrorCode = () => {
-  const code = customErrorCodeInput.value
-  if (code === null || code < 100 || code > 599) {
-    appStore.showError(t('admin.accounts.invalidErrorCode'))
-    return
-  }
-  if (selectedErrorCodes.value.includes(code)) {
-    appStore.showInfo(t('admin.accounts.errorCodeExists'))
-    return
-  }
-  // Check for 429/529 warning
-  if (code === 429) {
-    if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-      return
-    }
-  } else if (code === 529) {
-    if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-      return
-    }
-  }
-  selectedErrorCodes.value.push(code)
-  customErrorCodeInput.value = null
-}
-
-// Remove error code
-const removeErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index !== -1) {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
-
-const addTempUnschedRule = (preset?: TempUnschedRuleForm) => {
-  if (preset) {
-    tempUnschedRules.value.push({ ...preset })
-    return
-  }
-  tempUnschedRules.value.push({
-    error_code: null,
-    keywords: '',
-    duration_minutes: 30,
-    description: ''
-  })
-}
-
-const removeTempUnschedRule = (index: number) => {
-  tempUnschedRules.value.splice(index, 1)
-}
-
-const moveTempUnschedRule = (index: number, direction: number) => {
-  const target = index + direction
-  if (target < 0 || target >= tempUnschedRules.value.length) return
-  const rules = tempUnschedRules.value
-  const current = rules[index]
-  rules[index] = rules[target]
-  rules[target] = current
-}
-
-const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
-  const out: Array<{
-    error_code: number
-    keywords: string[]
-    duration_minutes: number
-    description: string
-  }> = []
-
-  for (const rule of rules) {
-    const errorCode = Number(rule.error_code)
-    const duration = Number(rule.duration_minutes)
-    const keywords = splitTempUnschedKeywords(rule.keywords)
-    if (!Number.isFinite(errorCode) || errorCode < 100 || errorCode > 599) {
-      continue
-    }
-    if (!Number.isFinite(duration) || duration <= 0) {
-      continue
-    }
-    if (keywords.length === 0) {
-      continue
-    }
-    out.push({
-      error_code: Math.trunc(errorCode),
-      keywords,
-      duration_minutes: Math.trunc(duration),
-      description: rule.description.trim()
-    })
-  }
-
-  return out
-}
-
-const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
-  if (!tempUnschedEnabled.value) {
-    delete credentials.temp_unschedulable_enabled
-    delete credentials.temp_unschedulable_rules
-    return true
-  }
-
-  const rules = buildTempUnschedRules(tempUnschedRules.value)
-  if (rules.length === 0) {
-    appStore.showError(t('admin.accounts.tempUnschedulable.rulesInvalid'))
-    return false
-  }
-
-  credentials.temp_unschedulable_enabled = true
-  credentials.temp_unschedulable_rules = rules
-  return true
-}
-
 
 function supportsAccountSchedulingThresholdOverridePlatform(platform: Account['platform'] | undefined) {
   return platform === 'openai' || platform === 'anthropic' || platform === 'grok'
@@ -4436,13 +3260,6 @@ function formatTempUnschedKeywords(value: unknown) {
     return value
   }
   return ''
-}
-
-const splitTempUnschedKeywords = (value: string) => {
-  return value
-    .split(/[,;]/)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
 }
 
 function toPositiveNumber(value: unknown) {
