@@ -48,7 +48,7 @@
             </div>
           </template>
           <template #cell-validity_days="{ value, row }">
-            <span class="cell-time">{{ value }} {{ t('payment.admin.' + (row.validity_unit || 'days')) }}</span>
+            <span class="cell-time">{{ value }} {{ validityUnitLabel(row.validity_unit) }}</span>
           </template>
           <template #cell-for_sale="{ value, row }">
             <ToggleSwitch size="compact" :model-value="!!value" @update:model-value="toggleForSale(row)" />
@@ -115,6 +115,13 @@ import { currencySymbol } from '@/components/payment/currency'
 import { platformTextClass } from '@/utils/platformColors'
 
 const { t } = useI18n()
+
+/** Backend default is the singular `day` (ent schema) while the locale + edit dialog use plurals. */
+function validityUnitLabel(unit: string | undefined): string {
+  const u = unit || 'days'
+  const key = u.endsWith('s') ? u : u + 's'
+  return t('payment.admin.' + key, u)
+}
 const appStore = useAppStore()
 
 function planCurrencySymbol(currency?: string): string {

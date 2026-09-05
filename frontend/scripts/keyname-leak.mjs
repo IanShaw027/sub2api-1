@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // keyname-leak.mjs — task 15.5: walk every route in a headless Chrome and flag raw i18n key
 // names that leaked into rendered text (e.g. "dashboard.stats.title" showing instead of a label).
+// Also flags horizontal overflow (documentElement.scrollWidth > --width), so `--width 390` doubles as
+// the task 14.1 mobile no-horizontal-scroll gate.
 //
 // Usage: node scripts/keyname-leak.mjs [--routes scripts/ui/routes.txt] [--theme glass-light]
 //        [--locale zh] [--width 1440] [--only slug,slug] [--base http://127.0.0.1:3777]
@@ -119,6 +121,7 @@ async function main() {
   await send('Emulation.setDeviceMetricsOverride', { width: WIDTH, height: 900, deviceScaleFactor: 1, mobile: WIDTH < 500 })
 
   let leaks = 0
+  let overflows = 0
   let lastRole = null
   for (const r of routes) {
     if (r.role !== lastRole) {
@@ -136,7 +139,7 @@ async function main() {
         for (const el of document.querySelectorAll('[title],[placeholder],[aria-label]')) {
           for (const a of ['title','placeholder','aria-label']) { const v = el.getAttribute(a); if (v) attrs.push(v) }
         }
-        return { text: document.body.innerText, attrs: attrs.join('\\n'), title: document.title }
+        return { text: document.body.innerText, attrs: attrs.join('\\n'), title: document.title, scrollWidth: document.documentElement.scrollWidth, spa: !!document.querySelector('meta[name="viewport"]') }
       })()`
     })
     const v = ev.result && ev.result.result && ev.result.result.value
@@ -146,16 +149,21 @@ async function main() {
     }
     const hits = new Set()
     for (const src of [v.text, v.attrs, v.title]) for (const m of src.matchAll(keyRe)) hits.add(m[0])
-    if (hits.size) {
+    // horizontal overflow is a mobile-parity defect (task 14.1): report it as a leak too
+    // pages without a viewport meta are not the SPA (e.g. /setup is proxied upstream) → Chrome lays
+    // them out at 980px; that is not a frontend defect, so only the SPA is held to the width.
+    const overflow = v.spa && v.scrollWidth > WIDTH ? `scrollWidth=${v.scrollWidth}>${WIDTH}` : ''
+    if (overflow) overflows++
+    if (hits.size || overflow) {
       leaks += hits.size
-      console.log(`  ✗  ${r.path}  ${[...hits].join(', ')}`)
+      console.log(`  ✗  ${r.path}  ${[...hits, overflow].filter(Boolean).join(', ')}`)
     } else {
       console.log(`  ✓  ${r.path}`)
     }
   }
   close()
-  console.log(`\nleaks: ${leaks}`)
-  process.exit(leaks ? 1 : 0)
+  console.log(`\nleaks: ${leaks}, overflows: ${overflows}`)
+  process.exit(leaks || overflows ? 1 : 0)
 }
 
 main().catch(e => {
