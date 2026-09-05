@@ -412,3 +412,35 @@ lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrol
 ## 15.1 调色板归零（A/B1/B2/C 子代理 + D lead）
 
 提交 `a71624a1d`（B1 components/account）、`8093b3650`（A views/admin + 全局排版令牌）、`beb22ae4a`（B2 components/admin）、`eede14586`（C 用户视图与共享组件）、本次（D `.ts`/`.css` 映射表 + 门禁接入）。方法：每桶用 `git diff` 的类名多重集校验（移除的原始调色板类 ↔ 新增的语义类按 `tailwind.config.js` 的 toneScale/neutralScale 逐一等值），再用 HEAD worktree（:3778）与工作树（:3777）在 1440×900 与 390×844 光/暗四态下逐路由 `pixel-diff --tol 8`：A 12 条管理路由、B2 7 条、C 13 条用户/公共路由、D 14 条（平台/工单/计费/延迟色表所及）——除记录在 deviations 的三类有意变化（Checkbox/ToggleSwitch `--border-strong`、`shadow-glass` 归一、平台 hex accent → tone）与活数据噪声（图表入场动画、倒计时、推广链接端口号，均以 after-vs-after 重拍证明）外全部 0 px。门禁：`node scripts/ui-lint.mjs --scoped --palette`（默认全树）`total: 0`，`.vue` 显式全集同为 0；`vue-tsc` 0；eslint 0；`vitest run` 324 文件 2202 用例通过（含新增的 ui-lint 用例）；`i18n-diff` 0/0；`anchor-diff --base HEAD` 无锚点丢失。
+
+## 15.3 锚点比对（lead）
+
+`node scripts/anchor-diff.mjs <view> --base f1c8ab7da --scope src`（基线 = 与 `personal-main` 的 merge-base，即重构前；`--scope src` 因为锚点大量随子组件抽离而迁移，只按文件目录比对会误报 97 / 591 条）：
+
+| 视图 | 报告丢失 | 结论 |
+|---|---|---|
+| `views/admin/AccountsView.vue` | 5 | 全部迁移/改名：`openSyncFromCrs`/`openImportData`/`openExportDataDialogFromMenu` → `open…FromMenu`（导入/导出下拉，`SyncFromCrsModal`/`ImportDataModal` 仍挂载）；`admin.accounts.moreActions` → `admin.accounts.importExport` + `dataActions`（原型的"导入/导出"按钮文案）；`admin.accounts.columns.name` → `columns.nameId`（名称与 ID 合并列，见 11.x 记录）。 |
+| `views/user/KeysView.vue` | 15 | 全部迁移/改名：额度重置（`showResetQuotaDialog`/`resetQuotaUsed`）与编辑弹层内的速率限制重置迁入 `components/keys/KeyFormModal.vue`（改用 `useConfirm`，无独立 `ConfirmDialog` 状态）；表格行内重置迁入 `KeyRowActionsMenu.vue` 的 `reset-rate-limit` 事件 → `confirmResetRateLimitFromTable`；分组搜索 `groupSearchQuery` → `KeyGroupPicker.vue` 的 `searchQuery`（同一 `keys.searchGroup` 占位）；`keys.usage` → `keys.usageColumnHeader`（"用量 今日 · 累计"），`keys.total`/`keys.today` 文字标签改为列头 + 单元格 `title` 数值；`keys.quotaUsed` 标签由 `keys.quotaLimit` 字段 + 已用/上限读数替代；`keys.rateLimit5h/1d/7d` 在 `KeyFormModal.vue` 由三元表达式选键（脚本按字面量匹配不到）。 |
+| `views/admin/SettingsView.vue` | 2 | 脚本误报：`gatewayForwarding.systemBlockHide` 与 `grant_on_first_bind` 都在被抽离的 `GatewayForwardingBehaviorSection.vue` / `UserDefaultsTab.vue` 内以多行三元 / 多行成员访问书写，锚点存在。 |
+
+无功能丢失，15.3 关闭。
+
+## 15.x 死代码清理（lead，前端健康清理范围）
+
+- 删除 `features/channel-monitor-v2/MetricCell.vue` 与 `__tests__/MetricCell.spec.ts`、`designSystem.structure.spec.ts` 中仅断言其源码的用例（12.2 记录：生产代码无引用）。
+- 删除 `components/account/{ReAuthAccountModal,AccountStatsModal,AccountTestModal}.vue` 与 `components/account/__tests__/AccountTestModal.spec.ts`，并从 `components/account/index.ts` 移除导出：三者是 `components/admin/account/` 同名组件的旧副本（542/742/573 行 vs 1083/752/1065 行），`AccountsView.vue` 直接从 `admin/account` 导入，旧副本无任何生产引用。
+- 门禁：`vue-tsc` 0；eslint 0；`vitest run` channel-monitor-v2 + components/account + views/admin/__tests__ 61 文件 570 用例通过。
+
+## 15.x 行高统一（lead）
+
+`scripts/ui/shot.cjs` 新增 `UI_SHOTS_PROBE_ALL=1`（对选择器全部匹配输出高度直方图），1440×900 admin/user glass-light zh：
+
+| 路由 | 改前 `tbody tr` | 改后 | 改动 |
+|---|---|---|---|
+| `/admin/orders` | 63×1 64×17 | 58×1 59×17 | `.cell-primary`/`.cell-amount` `line-height: 1.3` |
+| `/admin/orders/invoices` | 63×1 64×6 | 58×1 59×6 | `.cell-primary` `line-height: 1.3` |
+| `/monitor` | 64×10 | 58×10 | `.monitor-table td` padding 10/10 + `line-height: 1.3` |
+| `/admin/ops` | 37×5 58×20 59×10 | — | 已在 ≤61 内，未改 |
+| `/orders`、`/invoices` | 58 | — | 已在 ≤61 内 |
+
+截图核对 `/admin/orders` 与 `/monitor` 表格区域：两行文字未裁切，徽章/标签垂直居中。`ui-lint --scoped --palette` 三个文件 0。

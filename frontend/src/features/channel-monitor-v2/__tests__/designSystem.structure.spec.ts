@@ -70,14 +70,6 @@ describe('channel-monitor-v2 design system structure', () => {
     expect(src).not.toContain('modal-content')
   })
 
-  it('MetricCell uses summary-chip utility', () => {
-    const src = read('features/channel-monitor-v2/MetricCell.vue')
-    expect(src).toContain('summary-chip')
-    expect(src).toContain('summary-chip-label')
-    expect(src).toContain('summary-chip-value')
-    expect(src).toContain('summary-chip-dot')
-  })
-
   it('MonitorTrendChart uses Ops chart shell tokens', () => {
     const src = read('features/channel-monitor-v2/MonitorTrendChart.vue')
     expect(src).toContain('class="glass-card')

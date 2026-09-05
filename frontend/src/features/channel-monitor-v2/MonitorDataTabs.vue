@@ -216,6 +216,10 @@ const { t } = useI18n()
 <style scoped>
 .monitor-table td {
   height: 58px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  /* two-line "value + detail" cells fit the ≤61px ListPage row */
+  line-height: 1.3;
 }
 .status-dot {
   display: inline-block;

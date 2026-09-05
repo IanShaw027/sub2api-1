@@ -417,6 +417,8 @@ onMounted(load)
 }
 
 .cell-primary {
+  /* 61px row (glass-04): two lines at 1.3 instead of the 1.5 default */
+  line-height: 1.3;
   display: flex;
   flex-direction: column;
   gap: 2px;

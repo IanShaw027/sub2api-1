@@ -59,7 +59,12 @@ async function getTarget() {
   ` })
   await sleep(600)
   // Optional probe: UI_SHOTS_PROBE='sel1|sel2' prints top/left/height of the first match of each selector.
-  if (process.env.UI_SHOTS_PROBE) {
+  // UI_SHOTS_PROBE_ALL=1 prints a height histogram over every match instead (row-height gates).
+  if (process.env.UI_SHOTS_PROBE && process.env.UI_SHOTS_PROBE_ALL) {
+    const sels = JSON.stringify(process.env.UI_SHOTS_PROBE.split('|'))
+    const pr = await send('Runtime.evaluate', { returnByValue: true, expression: `(${sels}).map(s=>{const hs={};document.querySelectorAll(s).forEach(e=>{const h=Math.round(e.getBoundingClientRect().height);hs[h]=(hs[h]||0)+1});return s+': '+Object.entries(hs).sort((a,b)=>a[0]-b[0]).map(([h,n])=>h+'x'+n).join(' ')}).join(' ; ')` })
+    console.log(pr.result.result.value)
+  } else if (process.env.UI_SHOTS_PROBE) {
     const sels = JSON.stringify(process.env.UI_SHOTS_PROBE.split('|'))
     const pr = await send('Runtime.evaluate', { returnByValue: true, expression: `(${sels}).map(s=>{const e=document.querySelector(s);if(!e)return s+': (none)';const r=e.getBoundingClientRect();return s+': top='+Math.round(r.top)+' left='+Math.round(r.left)+' h='+Math.round(r.height)+' w='+Math.round(r.width)}).join(' ; ') + ' ; scrollWidth=' + document.documentElement.scrollWidth` })
     const v = pr.result && pr.result.result && pr.result.result.value; console.log(v !== undefined ? v : JSON.stringify(pr).slice(0, 600))

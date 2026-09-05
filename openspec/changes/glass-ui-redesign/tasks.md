@@ -192,7 +192,7 @@
 
 - [x] 15.1 `scripts/ui-lint.mjs` + `npm run lint:ui`：遗留类零命中、颜色字面量白名单、views scoped 样式属性扫描；接入 `designTokens.spec.ts`；验证在当前树上退出码 0
 - [x] 15.2 `scripts/i18n-diff.mjs`：zh/en 键差集与重复键检查；验证输出 `zh-only: 0, en-only: 0`
-- [~] 15.3 `scripts/anchor-diff.mjs <file> --base <rev>`：`data-tour / data-testid / id / aria-label / @handler / v-model / t('key')` 集合比对；验证对 `AccountsView.vue`、`KeysView.vue`、`SettingsView.vue` 相对重构前基线无丢失
+- [x] 15.3 `scripts/anchor-diff.mjs <file> --base <rev>`：`data-tour / data-testid / id / aria-label / @handler / v-model / t('key')` 集合比对；验证对 `AccountsView.vue`、`KeysView.vue`、`SettingsView.vue` 相对重构前基线无丢失
 - [ ] 15.4 `scripts/ui-shots.sh all` + `scripts/pixel-diff.mjs`：64 条路由 × 4 态截图矩阵入库 `screens/`，6 个原型出稿屏幕 diff 报告 < 0.5%；验证矩阵完整
 - [x] 15.5 `scripts/keyname-leak.mjs`：CDP 抓取每条路由 `innerText` 检查原始 i18n 键名正则；验证 0 命中
 - [ ] 15.6 观感评分：`verification.md` 登记 64 条路由 × 10 项分数，全部 ≥ 17，原型出稿 6 屏 = 20；不达标路由回到对应任务重做
