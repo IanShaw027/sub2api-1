@@ -17,7 +17,7 @@
 }
 
 .markdown-body h4 {
-  @apply mb-2 mt-5 text-lg font-semibold text-foreground;
+  @apply mb-2 mt-5 text-[18px] font-semibold text-foreground;
 }
 
 .markdown-body p {

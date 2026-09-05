@@ -408,3 +408,7 @@ lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrol
 ## 15.x 亮色非文字对比度收口（lead）
 
 `node scripts/check-contrast.js`：亮色 `--border-strong` vs canvas/background/surface = 3.24 / 3.77 / 4.11，`--focus-ring` vs canvas/background = 3.33 / 3.87；暗色 3.60 / 3.53 / 3.08 与 5.63 / 5.52。全部通过，13.2 的 4 条失败关闭。`--border` 保持原型值不变（像素优先），依据见 deviations。
+
+## 15.1 调色板归零（A/B1/B2/C 子代理 + D lead）
+
+提交 `a71624a1d`（B1 components/account）、`8093b3650`（A views/admin + 全局排版令牌）、`beb22ae4a`（B2 components/admin）、`eede14586`（C 用户视图与共享组件）、本次（D `.ts`/`.css` 映射表 + 门禁接入）。方法：每桶用 `git diff` 的类名多重集校验（移除的原始调色板类 ↔ 新增的语义类按 `tailwind.config.js` 的 toneScale/neutralScale 逐一等值），再用 HEAD worktree（:3778）与工作树（:3777）在 1440×900 与 390×844 光/暗四态下逐路由 `pixel-diff --tol 8`：A 12 条管理路由、B2 7 条、C 13 条用户/公共路由、D 14 条（平台/工单/计费/延迟色表所及）——除记录在 deviations 的三类有意变化（Checkbox/ToggleSwitch `--border-strong`、`shadow-glass` 归一、平台 hex accent → tone）与活数据噪声（图表入场动画、倒计时、推广链接端口号，均以 after-vs-after 重拍证明）外全部 0 px。门禁：`node scripts/ui-lint.mjs --scoped --palette`（默认全树）`total: 0`，`.vue` 显式全集同为 0；`vue-tsc` 0；eslint 0；`vitest run` 324 文件 2202 用例通过（含新增的 ui-lint 用例）；`i18n-diff` 0/0；`anchor-diff --base HEAD` 无锚点丢失。

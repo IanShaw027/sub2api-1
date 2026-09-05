@@ -183,7 +183,7 @@
 
 .theme-tour-popover .driver-popover-next-btn {
   background-color: var(--accent) !important;
-  color: #fff !important;
+  color: var(--on-tone) !important;
   box-shadow: 0 8px 20px -10px var(--accent) !important;
 }
 
@@ -195,7 +195,7 @@
   background-color: color-mix(in oklch, var(--surface) 80%, transparent) !important;
   color: var(--foreground) !important;
   border: 1px solid var(--border) !important;
-  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px rgba(16, 24, 40, 0.06) !important;
+  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px color-mix(in oklch, black 6%, transparent) !important;
 }
 
 .theme-tour-popover .driver-popover-prev-btn:hover {

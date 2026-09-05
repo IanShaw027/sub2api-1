@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -211,5 +212,17 @@ describe('design tokens', () => {
         /@apply[^;\n]*\b(?:bg|text|border|ring|shadow)-(?:surface(?:-2|-3)?|muted|foreground|background|line|accent)\//,
       )
     }
+  })
+
+  it('passes scripts/ui-lint.mjs --scoped --palette on the whole tree (task 15.1)', () => {
+    // legacy classes, raw colour literals, raw Tailwind palette classes and non-layout declarations
+    // in views/** scoped styles — the same gate as `npm run lint:ui`, so a stray `text-red-500`
+    // fails the unit suite instead of only the manual lint step.
+    const r = spawnSync(process.execPath, [resolve(srcDir, '../scripts/ui-lint.mjs'), '--scoped', '--palette'], {
+      cwd: resolve(srcDir, '..'),
+      encoding: 'utf8',
+    })
+    expect(r.stdout + r.stderr).toMatch(/total: 0/)
+    expect(r.status).toBe(0)
   })
 })

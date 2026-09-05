@@ -14,7 +14,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "check:contrast": "node scripts/check-contrast.js",
-    "lint:ui": "node scripts/ui-lint.mjs --scoped",
+    "lint:ui": "node scripts/ui-lint.mjs --scoped --palette",
     "i18n:diff": "node scripts/i18n-diff.mjs",
     "anchor:diff": "node scripts/anchor-diff.mjs",
     "check:keyname-leak": "node scripts/keyname-leak.mjs"

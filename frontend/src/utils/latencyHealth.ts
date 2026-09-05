@@ -38,32 +38,32 @@ export const durationSeverity = (ms: number): LatencySeverity =>
   classify(ms, DURATION_THRESHOLDS_MS)
 
 export const LATENCY_TEXT_CLASSES: Record<LatencySeverity, string> = {
-  good: 'text-emerald-600',
-  warn: 'text-amber-600',
-  slow: 'text-orange-600',
-  critical: 'text-red-600',
+  good: 'text-success-text',
+  warn: 'text-warning-text',
+  slow: 'text-warning-text',
+  critical: 'text-danger-text',
 }
 
 /** 无首字数据时的纯色色条（仅按总耗时档着色）。 */
 export const LATENCY_BAR_CLASSES: Record<LatencySeverity, string> = {
-  good: 'bg-emerald-500',
-  warn: 'bg-amber-400',
-  slow: 'bg-orange-500',
-  critical: 'bg-red-500',
+  good: 'bg-success-500',
+  warn: 'bg-warning-400',
+  slow: 'bg-warning-500',
+  critical: 'bg-danger-500',
 }
 
 /** 渐变色条上端（首字档）；与 LATENCY_BAR_TO_CLASSES 组合成上下渐变，避免两段硬切割裂感。 */
 export const LATENCY_BAR_FROM_CLASSES: Record<LatencySeverity, string> = {
-  good: 'from-emerald-500',
-  warn: 'from-amber-400',
-  slow: 'from-orange-500',
-  critical: 'from-red-500',
+  good: 'from-success-500',
+  warn: 'from-warning-400',
+  slow: 'from-warning-500',
+  critical: 'from-danger-500',
 }
 
 /** 渐变色条下端（总耗时档）。 */
 export const LATENCY_BAR_TO_CLASSES: Record<LatencySeverity, string> = {
-  good: 'to-emerald-500',
-  warn: 'to-amber-400',
-  slow: 'to-orange-500',
-  critical: 'to-red-500',
+  good: 'to-success-500',
+  warn: 'to-warning-400',
+  slow: 'to-warning-500',
+  critical: 'to-danger-500',
 }

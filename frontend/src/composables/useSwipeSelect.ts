@@ -187,8 +187,8 @@ export function useSwipeSelect(
     const dark = isDark.value
     Object.assign(marqueeEl.style, {
       position: 'fixed',
-      background: dark ? 'rgba(96, 165, 250, 0.15)' : 'rgba(59, 130, 246, 0.12)',
-      border: dark ? '1.5px solid rgba(96, 165, 250, 0.5)' : '1.5px solid rgba(59, 130, 246, 0.4)',
+      background: dark ? 'color-mix(in oklch, var(--accent) 15%, transparent)' : 'color-mix(in oklch, var(--accent) 12%, transparent)',
+      border: dark ? '1.5px solid color-mix(in oklch, var(--accent) 50%, transparent)' : '1.5px solid color-mix(in oklch, var(--accent) 40%, transparent)',
       borderRadius: '4px',
       pointerEvents: 'none',
       zIndex: '9999',

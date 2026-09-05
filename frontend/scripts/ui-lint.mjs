@@ -58,7 +58,8 @@ for (const file of files) {
   lines.forEach((line, i) => {
     for (const re of LEGACY) { const m = line.match(re); if (m) hits.legacy.push({ file: r, line: i + 1, match: m[0] }) }
     if (palette) { for (const m of line.matchAll(PALETTE)) hits.palette.push({ file: r, line: i + 1, match: m[0] }) }
-    if (!COLOR_WHITELIST.some((w) => w.test(r))) {
+    // block-comment continuation lines (` * …`) carry prose such as issue refs (`#4607`), not colours
+    if (!COLOR_WHITELIST.some((w) => w.test(r)) && !/^\s*\*/.test(line)) {
       const trimmed = line.replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '').replace(/<!--.*?-->/g, '')
       for (const m of trimmed.matchAll(COLOR)) {
         // ignore url()/id anchors like href="#foo" and CSS custom-property fallbacks that reference tokens

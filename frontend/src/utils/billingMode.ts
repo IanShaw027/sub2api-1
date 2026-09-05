@@ -14,9 +14,9 @@ export function getBillingModeLabel(mode: string | null | undefined, t: (key: st
 
 export function getBillingModeBadgeClass(mode: string | null | undefined): string {
   switch (mode) {
-    case BILLING_MODE_PER_REQUEST: return 'bg-purple-500/15 text-purple-700'
-    case BILLING_MODE_IMAGE: return 'bg-pink-500/15 text-pink-700'
-    case BILLING_MODE_VIDEO: return 'bg-amber-500/15 text-amber-700'
+    case BILLING_MODE_PER_REQUEST: return 'bg-accent-500/15 text-accent-700'
+    case BILLING_MODE_IMAGE: return 'bg-accent-500/15 text-accent-700'
+    case BILLING_MODE_VIDEO: return 'bg-warning-500/15 text-warning-text'
     default: return 'badge-tone-accent'
   }
 }

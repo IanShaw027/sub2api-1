@@ -10,7 +10,7 @@ export type UsageRequestKind = UsageRequestType
 /** 状态码徽章:≥500 红、429 紫、≥400 琥珀、其余灰 */
 export function statusCodeBadgeClass(code: number): string {
   if (code >= 500) return 'badge-tone-danger'
-  if (code === 429) return 'bg-purple-500/15 text-purple-700'
+  if (code === 429) return 'bg-accent-500/15 text-accent-700'
   if (code >= 400) return 'badge-tone-warning'
   return 'badge-tone-muted'
 }
@@ -19,7 +19,7 @@ export function statusCodeBadgeClass(code: number): string {
 export function requestTypeBadgeClass(kind: UsageRequestKind): string {
   if (kind === 'cyber') return 'badge-tone-danger'
   if (kind === 'live') return 'badge-tone-success'
-  if (kind === 'ws_v2') return 'bg-violet-500/15 text-violet-700'
+  if (kind === 'ws_v2') return 'bg-accent-500/15 text-accent-700'
   if (kind === 'stream') return 'badge-tone-accent'
   if (kind === 'sync') return 'badge-tone-muted'
   return 'badge-tone-warning'
