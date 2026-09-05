@@ -148,6 +148,8 @@ Confirmation dialog built on top of Modal component.
 
 ### StatCard.vue
 
+> Superseded by `components/ui/StatCard.vue` (delta tones up / down / warn / neutral); kept for legacy call sites.
+
 Statistics card component for displaying metrics with optional change indicators.
 
 **Props:**
