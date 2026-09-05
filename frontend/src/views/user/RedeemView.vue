@@ -362,8 +362,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 720px;
-  margin-inline: auto;
+  max-width: var(--action-page-max);
 }
 
 .redeem-stats {

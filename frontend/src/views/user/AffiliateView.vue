@@ -260,8 +260,7 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  max-width: 1080px;
-  margin-inline: auto;
+  max-width: var(--action-page-max);
 }
 
 .affiliate-stats {

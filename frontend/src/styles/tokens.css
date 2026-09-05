@@ -102,6 +102,8 @@
   --sidebar-gutter: 12px;
   --topbar-height: 60px;
   --content-pad: 8px 24px 24px 20px;
+  /* ActionPage (redeem / affiliate): one content-column width, left-aligned with the h1 */
+  --action-page-max: 960px;
 
   /* Public page backgrounds (home / auth): 48px grid + ambient light */
   --bg-grid: linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px)

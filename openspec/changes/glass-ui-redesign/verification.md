@@ -561,3 +561,14 @@ lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrol
 | `openspec validate glass-ui-redesign --strict` | valid |
 
 15 组遗留（不在本 change 范围，交后续健康清理）：超长文件拆分（`SecurityTab`、`useSettingsForm`、`GroupsView`、`Create/EditAccountModal`、`KeysView`、`RiskControlView`）；`ActionPage` 内容宽度说明。
+
+## 15.x ActionPage 内容宽度统一（lead）
+
+`tokens.css` 新增 `--action-page-max: 960px`；`RedeemView`（原 720 居中）与 `AffiliateView`（原 1080 居中）改为 `max-width: var(--action-page-max)` 且不再 `margin-inline: auto`，与 `/profile` 的处理一致（内容列左沿必须与 h1 左沿 244 对齐）。1440×900 user glass-light 探针：
+
+| 路由 | 改前 内容列 left/w | 改后 |
+|---|---|---|
+| `/redeem` | 470 / 720 | 244 / 960（`.redeem-stats` 三卡 top 146） |
+| `/affiliate` | 290 / 1080 | 244 / 960（`.affiliate-stats` 四卡 top 146） |
+
+390 宽单列不受影响（`max-width` 大于视口）。门禁：ui-lint 0、eslint 0、RedeemView/AffiliateView spec 通过。截图 `.shots/ap-after/{redeem,affiliate}.png`。

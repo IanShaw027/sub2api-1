@@ -204,3 +204,4 @@
 - 15.x（lead，死代码）：删除 `features/channel-monitor-v2/MetricCell.vue` 及其 spec；删除 `components/account/{ReAuthAccountModal,AccountStatsModal,AccountTestModal}.vue`（`components/admin/account/` 同名组件的旧副本，无生产引用）及其 spec 与 `index.ts` 导出。见 verification 15.x。
 
 - 15.4（lead，原型六屏 diff 目标改判）：tasks.md 要求六屏像素 diff < 0.5%，实际（去侧栏列、tol 24）为 3.5–14%；差异全部落在数据/文字区域，因为原型画板是设计稿假内容而截图必须用 seeded mock 数据（空态会掩盖行高与溢出问题）。像素级还原的判定改用几何探针（≤5px）+ 热区图人工确认，见 verification.md 15.4；不是样式偏离，不改代码。
+- 15.x（lead，ActionPage 宽度）：`/redeem`（720 居中）与 `/affiliate`（1080 居中）统一为 `--action-page-max: 960px` 左对齐；原型无 ActionPage 画板，取值介于两者之间并与 h1 左沿对齐（与 `/profile` 同一规则），移动端不变。
