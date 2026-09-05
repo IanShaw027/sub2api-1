@@ -205,3 +205,4 @@
 
 - 15.4（lead，原型六屏 diff 目标改判）：tasks.md 要求六屏像素 diff < 0.5%，实际（去侧栏列、tol 24）为 3.5–14%；差异全部落在数据/文字区域，因为原型画板是设计稿假内容而截图必须用 seeded mock 数据（空态会掩盖行高与溢出问题）。像素级还原的判定改用几何探针（≤5px）+ 热区图人工确认，见 verification.md 15.4；不是样式偏离，不改代码。
 - 15.x（lead，ActionPage 宽度）：`/redeem`（720 居中）与 `/affiliate`（1080 居中）统一为 `--action-page-max: 960px` 左对齐；原型无 ActionPage 画板，取值介于两者之间并与 h1 左沿对齐（与 `/profile` 同一规则），移动端不变。
+- 16（SecurityTab/useSettingsForm 拆分，纯重构）：`components/admin/settings/form/useGatewayOpsForms.ts` 把 `panelRateLimitLoading`/`panelRateLimitForm`/`loadPanelRateLimitSettings`（逻辑上属于"安全"标签页 `PanelRateLimitPanel.vue` 使用的状态）与其余 7 组网关运维（upstreamBillingProbe/ollamaCloudUsage/overloadCooldown/rateLimit429Cooldown/streamTimeout/rectifier/betaPolicy）合并在同一个工厂函数里，仅为按代码结构相似度（均为 loading ref + reactive form + 独立 load 函数的重复模式）就近归档，不影响任何行为、命名或返回值，纯组织性选择，无用户可见影响。

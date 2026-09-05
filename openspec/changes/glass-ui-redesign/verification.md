@@ -572,3 +572,9 @@ lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrol
 | `/affiliate` | 290 / 1080 | 244 / 960（`.affiliate-stats` 四卡 top 146） |
 
 390 宽单列不受影响（`max-width` 大于视口）。门禁：ui-lint 0、eslint 0、RedeemView/AffiliateView spec 通过。截图 `.shots/ap-after/{redeem,affiliate}.png`。
+
+## 16C SecurityTab / useSettingsForm 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 组 6）
+
+纯重构。`tabs/SecurityTab.vue` 3012 → 34 行（组合根），拆出 `components/admin/settings/security/` 11 个面板（最大 `CaptchaSettingsPanel.vue` 456 行）+ `oauthCallbackUrl.ts`；`useSettingsForm.ts` 2709 → 1478 行，拆出 `components/admin/settings/form/` 12 个文件（`createSettingsFormDefaults` 320、`useClaudeOAuthSystemPromptBlocks` 281、`usePaymentProvidersForm` 230、`useGatewayOpsForms` 216 …），公开返回对象逐字不变。
+
+lead 复核：vue-tsc 在 `admin/settings` 范围 0 错误；eslint 0；`vitest run src/components/admin/settings src/views/admin/__tests__`（代理）35 文件 211 用例通过，lead 复跑 SettingsView spec 38 通过；ui-lint 0；anchor-diff `--base HEAD --scope src` 两文件 `no anchors lost`；截图 `/admin/settings` 与 `/admin/settings#security` before/after `pixel-diff --tol 0` = 0（代理用 `git show HEAD:` 覆盖原文件背靠背抓取，避免并行代理共用 mock 的状态噪声：顶栏偶发 toast / 未读角标，非本改动）。
