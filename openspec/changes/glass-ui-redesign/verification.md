@@ -578,3 +578,15 @@ lead 复核（390×844 admin glass-light，`scripts/ui/shot.cjs` 全页 + `scrol
 纯重构。`tabs/SecurityTab.vue` 3012 → 34 行（组合根），拆出 `components/admin/settings/security/` 11 个面板（最大 `CaptchaSettingsPanel.vue` 456 行）+ `oauthCallbackUrl.ts`；`useSettingsForm.ts` 2709 → 1478 行，拆出 `components/admin/settings/form/` 12 个文件（`createSettingsFormDefaults` 320、`useClaudeOAuthSystemPromptBlocks` 281、`usePaymentProvidersForm` 230、`useGatewayOpsForms` 216 …），公开返回对象逐字不变。
 
 lead 复核：vue-tsc 在 `admin/settings` 范围 0 错误；eslint 0；`vitest run src/components/admin/settings src/views/admin/__tests__`（代理）35 文件 211 用例通过，lead 复跑 SettingsView spec 38 通过；ui-lint 0；anchor-diff `--base HEAD --scope src` 两文件 `no anchors lost`；截图 `/admin/settings` 与 `/admin/settings#security` before/after `pixel-diff --tol 0` = 0（代理用 `git show HEAD:` 覆盖原文件背靠背抓取，避免并行代理共用 mock 的状态噪声：顶栏偶发 toast / 未读角标，非本改动）。
+
+## 16B GroupsView 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.4）
+
+纯重构。`views/admin/GroupsView.vue` 6372 → 1210 行；新增 `components/admin/group/`：`GroupCreateModal.vue` 1143、`GroupEditModal.vue` 1145、`useCreateGroupForm.ts` 656、`useEditGroupForm.ts` 764、`groupFormShared.ts` 300、四个 `defineModel("form")` 字段子组件（模型路由规则 343 / 消息分发 267 / 图片计费 208 / 视频计费 193）。`groupsModelsListLayout.spec.ts` 只把源码字符串读取改为合并三文件，断言未改。弹层保持静态导入（与同级 `GroupSortModal` 等一致，`openCreateModal` 依赖 ref 立即可用）。
+
+lead 复核：vue-tsc 0（排除 16A 在制品）；eslint 0；`vitest run src/views/admin/__tests__ …` 49 文件 299 用例通过；ui-lint 0；anchor-diff 报 28 项均为共享子组件化后的静态误报（`data-testid` 改 `${testIdPrefix}-…` 动态拼接、`addCreateRoutingRule`→`addRule`、`createForm.x`→`form.x`），代理列表页 / 新建弹窗 / 编辑弹窗 before/after `pixel-diff --tol 0` 三组均 0；lead `/admin/groups` 与 15.4 存档（256 色）diff 0.43%。
+
+## 16D RiskControlView / KeysView 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.4）
+
+纯重构。`views/admin/RiskControlView.vue` 2432 → 332 行，新增 `components/admin/risk-control/` 9 个文件（`RiskControlSettingsModal.vue` 808、`useRiskControlSettings.ts` 566、`useRiskControlData.ts` 377、`riskControlUtils.ts` 340、`RiskRecordsTable.vue` 254 …）。`views/user/KeysView.vue` 1527 → 1044 行，新增 `components/keys/KeysDataTable.vue` 494、`KeysMobileList.vue` 97。代理在拆分中发现并修复两处 scoped `:deep()` 搬移导致的级联退化（桌面行高 59 → 58/65、移动端 1px 边框丢失），最终 DOM/class 不变。
+
+lead 复核：vue-tsc 0；eslint 0；vitest 同上通过；ui-lint 0；anchor-diff 两文件全部类别 `lost 0`；`/keys` 行高探针 `tbody tr: 59x6`（与 15.x 基线一致）；代理 before/after `pixel-diff --tol 0`：risk-control 桌面 0、keys 桌面 0、keys 390 0；lead 与 15.4 存档 diff keys 0.41% / risk-control 0.26%。`RiskControlSettingsModal.vue` 808 行超 800 软阈值 8 行，已记 deviations。
