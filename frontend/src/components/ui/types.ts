@@ -11,7 +11,7 @@ export type ToggleSwitchSize = 'compact' | 'form'
 
 export type PageHeaderVariant = 'compact' | 'hero'
 
-export type StatDeltaTone = 'up' | 'down' | 'neutral'
+export type StatDeltaTone = 'up' | 'down' | 'warn' | 'neutral'
 
 export type DrawerSide = 'right' | 'left'
 

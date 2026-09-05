@@ -163,3 +163,4 @@
 - 15.5：`AdminPaymentPlansView.vue` 有效期单位按后端单数 `day` 归一化为 locale 的复数键后再翻译（后端默认值与前端编辑弹层用词不一致，前端侧兜底，不改后端）。
 - 15.5/14.1：`keyname-leak.mjs` 只对含 viewport meta 的 SPA 页面做 `scrollWidth` 判定；`/setup` 为 vite 代理到上游的独立页面，不在本前端范围。
 - 15.x（lead，对比度）：亮色 `--border` 90% L 为原型装饰性发丝线（卡片/表格/带填充与 `--field-shadow` 的输入框），不按 WCAG 1.4.11 提亮；新增 `--border-strong`（亮 59% L，暗=`--border`）给以边框为唯一边界的控件（复选框/开关/单选，待 15.1-C 交回后替换），新增 `--focus-ring`（亮 59% L，暗=`--accent`）用于全局 `:focus-visible` 描边；`check-contrast.js` 非文字配对改为核这两个令牌，13.2 记录的 4 条亮色失败清零。
+- 15.x（lead）：补 `StatCard` 第四档 `deltaTone='warn'`（warning 16% 底 + `--warning-text`），`/monitor` 健康三态改为 healthy→up / warning→warn / critical→down / unknown→neutral，关闭 12.2 记录的三档映射偏离；mock 种子为 healthy，warn 档由 `StatCard.spec.ts` 覆盖。

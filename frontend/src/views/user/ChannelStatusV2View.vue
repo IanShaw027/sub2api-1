@@ -182,6 +182,7 @@ import RelayPulseMatrix from '@/features/channel-monitor-v2/RelayPulseMatrix.vue
 import MonitorDataTabs from '@/features/channel-monitor-v2/MonitorDataTabs.vue'
 import { useChannelMonitorV2 } from '@/features/channel-monitor-v2/useChannelMonitorV2'
 import type { HealthState } from '@/api/channelMonitorV2'
+import type { StatDeltaTone } from '@/components/ui/types'
 
 const { t } = useI18n()
 
@@ -246,9 +247,10 @@ function healthDeltaLabel(state?: HealthState) {
   if (!state) return undefined
   return t(`channelMonitorV2.healthState.${state}`)
 }
-function healthDeltaTone(state?: HealthState): 'up' | 'down' | 'neutral' {
+function healthDeltaTone(state?: HealthState): StatDeltaTone {
   if (state === 'healthy') return 'up'
   if (state === 'critical') return 'down'
+  if (state === 'warning') return 'warn'
   return 'neutral'
 }
 </script>

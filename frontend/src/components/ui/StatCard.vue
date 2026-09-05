@@ -41,6 +41,7 @@ const props = withDefaults(
 const deltaToneClass = computed(() => {
   if (props.deltaTone === 'up') return 'ui-stat-card-delta-up'
   if (props.deltaTone === 'down') return 'ui-stat-card-delta-down'
+  if (props.deltaTone === 'warn') return 'ui-stat-card-delta-warn'
   return 'ui-stat-card-delta-neutral'
 })
 </script>
@@ -102,6 +103,11 @@ const deltaToneClass = computed(() => {
 .ui-stat-card-delta-down {
   background: color-mix(in oklch, var(--danger) 14%, transparent);
   color: var(--danger-text);
+}
+
+.ui-stat-card-delta-warn {
+  background: color-mix(in oklch, var(--warning) 16%, transparent);
+  color: var(--warning-text);
 }
 
 .ui-stat-card-delta-neutral {
