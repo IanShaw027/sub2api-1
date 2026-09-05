@@ -1,20 +1,12 @@
 <template>
- <div class="fixed inset-0 z-50 overflow-y-auto" @click.self="$emit('close')">
- <div class="flex min-h-full items-center justify-center p-4">
- <div class="fixed inset-0 glass-modal-scrim transition-opacity" @click="$emit('close')"></div>
-
- <div class="relative w-full max-w-md transform glass-card-solid rounded-hero p-6 transition-all">
- <!-- Header -->
- <div class="mb-6">
- <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
- <svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+ <UiModal :open="props.open" :title="t('profile.totp.disableTitle')" @close="$emit('close')">
+ <div class="mb-6 flex items-start gap-3">
+ <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger-100">
+ <svg class="h-5 w-5 text-danger-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
  <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
  </svg>
  </div>
- <h3 class="mt-4 text-center text-xl font-semibold text-foreground">
- {{ t('profile.totp.disableTitle') }}
- </h3>
- <p class="mt-2 text-center text-sm text-muted">
+ <p class="text-sm text-muted">
  {{ t('profile.totp.disableWarning') }}
  </p>
  </div>
@@ -77,16 +69,17 @@
  </button>
  </div>
  </form>
- </div>
- </div>
- </div>
+ </UiModal>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onUnmounted, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { totpAPI } from '@/api'
+import UiModal from '@/components/ui/UiModal.vue'
+
+const props = defineProps<{ open: boolean }>()
 
 const emit = defineEmits<{
  close: []
@@ -174,9 +167,24 @@ const handleDisable = async () => {
  }
 }
 
-onMounted(() => {
+// 弹窗常驻挂载（由 UiModal 的 open 控制显隐），每次打开都重置表单并重新拉取验证方式。
+watch(
+ () => props.open,
+ (isOpen) => {
+ if (!isOpen) {
+ if (cooldownTimer.value) {
+ clearInterval(cooldownTimer.value)
+ cooldownTimer.value = null
+ }
+ return
+ }
+ form.value = { emailCode: '', password: '' }
+ loading.value = false
+ sendingCode.value = false
+ codeCooldown.value = 0
  loadVerificationMethod()
-})
+ }
+)
 
 onUnmounted(() => {
  if (cooldownTimer.value) {

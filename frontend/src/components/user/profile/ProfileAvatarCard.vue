@@ -15,8 +15,8 @@
  <div :class="props.embedded ? 'space-y-3' : 'flex flex-col gap-5 px-6 py-6 sm:flex-row sm:items-start'">
  <div
  :class="props.embedded
- ? 'flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-xl font-bold text-white shadow-lg shadow-[color-mix(in_oklch,var(--accent)_20%,transparent)]'
- : 'flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-3xl font-bold text-white shadow-lg shadow-[color-mix(in_oklch,var(--accent)_20%,transparent)]'"
+ ? 'flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-xl font-bold text-white shadow-sm shadow-[color-mix(in_oklch,var(--accent)_20%,transparent)]'
+ : 'flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-3xl font-bold text-white shadow-sm shadow-[color-mix(in_oklch,var(--accent)_20%,transparent)]'"
  >
  <img
  v-if="avatarPreviewUrl"
@@ -29,11 +29,8 @@
  </div>
 
  <div :class="props.embedded ? 'space-y-3' : 'min-w-0 flex-1 space-y-4'">
- <div class="space-y-1">
- <p v-if="props.embedded" class="text-sm font-semibold text-foreground">
- {{ t('profile.avatar.title') }}
- </p>
- <p v-else class="text-sm font-medium text-foreground">
+ <div v-if="!props.embedded" class="space-y-1">
+ <p class="text-sm font-medium text-foreground">
  {{ displayName }}
  </p>
  <p class="text-sm text-muted">

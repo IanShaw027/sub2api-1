@@ -10,13 +10,8 @@
  </div>
  <div :class="props.embedded ? '' : 'px-6 py-6'">
  <form @submit.prevent="handleUpdateProfile" class="space-y-4">
- <div v-if="props.embedded">
- <p class="text-sm font-semibold text-foreground">
- {{ t('profile.editProfile') }}
- </p>
- </div>
  <div>
- <label for="username" class="input-label">
+ <label for="username" :class="props.embedded ? 'sr-only' : 'input-label'">
  {{ t('profile.username') }}
  </label>
  <input

@@ -83,6 +83,8 @@ describe('ProfileView', () => {
           ProfileBalanceNotifyCard: { template: '<div data-testid="profile-balance-notify-card" />' },
           ProfilePasswordForm: { template: '<div data-testid="profile-password-form" />' },
           ProfileTotpCard: { template: '<div data-testid="profile-totp-card" />' },
+          ProfilePasskeyCard: { template: '<div data-testid="profile-passkey-card" />' },
+          ProfileIdentityBindingsSection: { template: '<div data-testid="profile-identity-bindings-section" />' },
           Icon: true
         }
       }
@@ -95,5 +97,29 @@ describe('ProfileView', () => {
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-info-card')
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-password-form')
     expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-totp-card')
+    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-passkey-card')
+    expect(wrapper.get('[data-testid="profile-shell"]').html()).toContain('profile-identity-bindings-section')
+  })
+
+  it('renders a danger zone section with no destructive actions available', async () => {
+    const wrapper = mount(ProfileView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          ProfileInfoCard: { template: '<div data-testid="profile-info-card" />' },
+          ProfileBalanceNotifyCard: { template: '<div data-testid="profile-balance-notify-card" />' },
+          ProfilePasswordForm: { template: '<div data-testid="profile-password-form" />' },
+          ProfileTotpCard: { template: '<div data-testid="profile-totp-card" />' },
+          ProfilePasskeyCard: { template: '<div data-testid="profile-passkey-card" />' },
+          ProfileIdentityBindingsSection: { template: '<div data-testid="profile-identity-bindings-section" />' },
+          Icon: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const dangerZone = wrapper.get('[data-testid="profile-danger-zone"]')
+    expect(dangerZone.text()).toContain('profile.dangerZone.noActionsAvailable')
   })
 })

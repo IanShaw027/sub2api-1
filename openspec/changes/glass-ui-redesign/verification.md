@@ -162,3 +162,27 @@
 - 门禁（lead 亲自复跑）：vue-tsc 0；eslint（三视图 + `components/tickets`）0；ui-lint --scoped total 0；i18n-diff zh/en 8943 对齐、0 差异；`vitest run src/views/user src/components/tickets` 13 文件 / 68 用例全通过。
 - anchor-diff 报 7 处 lost，逐条核实：3 处建单 handler 与 1 处状态 chip handler 属结构性重构的必然结果（已登记偏差）；`closeTicketItem` 与 `tickets.messages.created` 为工具正则局限导致的假阳性（前者经 `ActionsCell` 数组内箭头函数绑定，后者实际在未纳入 scope 的 `TicketCreateView.vue` 中使用）。
 - lead 复核附带处理：删除确认无引用的死组件 `components/tickets/TicketInfoItem.vue`；修复共享组件 `components/layout/SettingsPageLayout.vue` 在缺省 `#nav` 时把内容挤进 224px 轨道的缺陷（改为默认单列 + `.has-nav` 双栏，双栏消费者零影响，`vitest run src/components/layout` 8 文件 / 60 用例通过）。
+
+## 12.8–12.10 用户侧订阅 / 可用渠道 / 个人资料（组 12E，含 lead 复核）
+
+- 提交：`112e33fb5`（12.8–12.9 WIP）+ 本次批次 2 收尾提交。
+- 12.10 `/profile` 首轮复核被打回（内容列居中、首块 top 123、密码表单标签错位、约 25 处调色板类），返工后 lead 实测：h1 top 74 / h 35 / left 244；`.settings-page-layout-grid` top 146 left 244；`.ui-settings-section` top 146 left 482 w 934——与已验收 `/admin/settings` 基线逐项一致。暗色同几何；390 宽下导航栈在内容上方（section top 368），无横向溢出。
+- 12.8 `/subscriptions`：h1 74；三张订阅卡自 146 起（w 383）。12.9 `/available-channels`：筛选行 146 / h36；首卡 lead 将 `space-y-6` 收为 14px 间距后 top 196（原 206）。
+- 门禁（lead 亲自复跑）：vue-tsc 0；eslint 0；`vitest run src/views/user src/components/user src/components/payment src/features/creation` 36 文件 / 244 用例全过；ui-lint `--scoped --palette` 个人资料范围 0；i18n-diff zh/en 8954 对齐、0 差异；anchor-diff `ProfileView.vue` 无丢失。
+- 截图：`.shots/g12-profile-{light,dark,390}.png`、`g12-subs-light.png`、`g12-channels-light.png`。
+
+## 12.11 兑换 / 邀请返利（组 12F，含 lead 复核）
+
+- 组 12F 代理在 12.12 中途随进程退出，12.11 已完成部分由 lead 单独验收。
+- lead 修复：两页的 `btn-primary` 按钮缺 `.btn` 基类（`.btn` 提供 inline-flex/高度，`btn-primary` 仅配色），导致图标脱离文本流（兑换按钮图标漂到左上角、转入余额按钮图标叠在文字上方）。
+- 几何：h1 74 / 35；首块 146（redeem 三张 StatCard，affiliate 四张）；最近活动 / 已邀请用户表 thead 42、行 58。内容列居中且宽度各异（redeem 718、affiliate 1080、purchase 896），记入 15.x ActionPage 宽度统一。
+- 门禁：vue-tsc 0；eslint 0；vitest（上同）；ui-lint `--scoped --palette`：`RedeemView.vue:409` 1 处字面 `font-size:12.5px`（15.x 排版令牌）；i18n-diff 0；anchor-diff 两视图无丢失。
+- 截图：`.shots/g12-redeem-light.png`、`g12-affiliate-light.png`。
+
+## 12.13–12.14 充值 / 支付流程（组 12G，含 lead 复核）
+
+- 组 12G 代理随进程退出，工作已落盘，lead 独立验收。`PaymentView.vue` 拆出 `views/user/payment/usePurchaseFlow.ts` 与 `components/payment/{PurchaseTabSwitcher,RechargePanel,ActiveSubscriptionsList,SubscriptionConfirmCard,RenewalPlanModal,CheckoutHelpCard,PaymentResultStatusCard}.vue`。
+- lead 修复：`PurchaseTabSwitcher` 改为 `generic="K extends string"` 以匹配 `'recharge' | 'subscription'` 联合类型（vue-tsc TS2322）；`Stripe/Airwallex/StripePopup/StripePaymentInline/SubscriptionPlanCard` 中 23 处调色板类换成 `danger/success/warning` 语义色阶（Stripe 品牌渐变上的 `text-indigo-200` → `text-white/80`）。
+- 几何：`/purchase` h1 74；tab 切换器 146 / h 48；充值账户卡 219，宽 896 居中。`/payment/qrcode`、`/payment/stripe`、`/payment/airwallex` 440 宽卡自 74/106 起；`/payment/result`、`/payment/stripe-popup` 居中 440 卡。
+- 门禁：vue-tsc 0；eslint 0；`vitest run src/components/payment + PaymentView/stripeLazyLoading/paymentWechatResume spec` 12 文件 / 100 用例全过；ui-lint 12G 触及文件 palette 0（`PaymentProviderDialog/PaymentStatusPanel/ProviderCard` 未触及文件仍余 28 处，列入 15.x）；`PaymentQRCodeView.vue:122` 二维码 `#FFFFFF` 与 TotpSetupModal 同理保留；anchor-diff `PaymentView/StripePaymentView/PaymentResultView` 无丢失。
+- 截图：`.shots/g12-purchase-light.png`、`g12-payment-{result,qrcode,stripe,airwallex,stripe-popup}-light.png`。

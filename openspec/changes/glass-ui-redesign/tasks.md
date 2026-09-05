@@ -166,15 +166,15 @@
 批次 2（工单 / 订阅 / 渠道 / 设置）
 - [x] 12.6 `/tickets`（`TicketsView.vue` + `components/tickets/*` 列表相关 + `components/ticket/*` 合并）；验证截图 + spec
 - [x] 12.7 `/tickets/:id`、`/tickets/new`（`TicketDetailView.vue`、`TicketCreateView.vue`、`TicketConversationPane.vue`、`TicketDetailPane.vue`、`TicketCreateDialog` 等）；验证截图 + spec
-- [ ] 12.8 `/subscriptions`（`SubscriptionsView.vue` + `SubscriptionProgressMini`）；验证截图
-- [ ] 12.9 `/available-channels`（`AvailableChannelsView.vue` + `components/channels/*`：玻璃卡网格、24 底板、`.chip` 模型、tabular 价格）；验证截图
-- [ ] 12.10 `/profile`（`ProfileView.vue` + `components/user/profile/*`：SettingsPage 配方，去掉 Hero 横幅与卡中卡；资料 / 安全（密码、Passkey、2FA `UiModal`）/ 通知（余额提醒）/ 绑定 / 危险区）；验证亮 / 暗 / 390 截图 + `profile` spec；提交 `feat(glass): user pages batch 2 (tasks 12.6–12.10)`
+- [x] 12.8 `/subscriptions`（`SubscriptionsView.vue` + `SubscriptionProgressMini`）；验证截图
+- [x] 12.9 `/available-channels`（`AvailableChannelsView.vue` + `components/channels/*`：玻璃卡网格、24 底板、`.chip` 模型、tabular 价格）；验证截图
+- [x] 12.10 `/profile`（`ProfileView.vue` + `components/user/profile/*`：SettingsPage 配方，去掉 Hero 横幅与卡中卡；资料 / 安全（密码、Passkey、2FA `UiModal`）/ 通知（余额提醒）/ 绑定 / 危险区）；验证亮 / 暗 / 390 截图 + `profile` spec；提交 `feat(glass): user pages batch 2 (tasks 12.6–12.10)`
 
 批次 3（操作 / 支付 / 嵌入 / 创作）
-- [ ] 12.11 `/redeem`、`/affiliate`（ActionPage 配方；邀请链接 `EndpointCard`、返利统计 `StatCard`、记录表格；修复 `AffiliateView.spec` 移动端断言）；验证截图 + spec
+- [x] 12.11 `/redeem`、`/affiliate`（ActionPage 配方；邀请链接 `EndpointCard`、返利统计 `StatCard`、记录表格；修复 `AffiliateView.spec` 移动端断言）；验证截图 + spec
 - [ ] 12.12 `/batch-image`（`BatchImageGuideView.vue`）；验证截图
-- [ ] 12.13 `/purchase`（`PaymentView.vue` + `components/payment/*`：套餐卡 r16 + `.glass-ring`、金额 40 字段 `$` 前缀、品牌按钮 32、iframe 模式无壳；修复 `PaymentMethodSelector.spec` 两条）；验证截图 + spec
-- [ ] 12.14 `/payment/{qrcode,stripe,airwallex,stripe-popup,result}`（440 卡、220 二维码盒、轮询徽章、结果页 `CallbackStatusCard`）；验证截图
+- [x] 12.13 `/purchase`（`PaymentView.vue` + `components/payment/*`：套餐卡 r16 + `.glass-ring`、金额 40 字段 `$` 前缀、品牌按钮 32、iframe 模式无壳；修复 `PaymentMethodSelector.spec` 两条）；验证截图 + spec
+- [x] 12.14 `/payment/{qrcode,stripe,airwallex,stripe-popup,result}`（440 卡、220 二维码盒、轮询徽章、结果页 `CallbackStatusCard`）；验证截图
 - [ ] 12.15 `/custom/:id`（`CustomPageView.vue`：EmbedPage 配方）；验证截图
 - [ ] 12.16 `/studio`（`features/creation/**`：三栏保留、会话项 36 侧栏配方、`ComposerBar` `.field`、消息气泡 DetailPage 配方、`TaskCard` 内边距、图片历史网格）；验证截图 + `creation` spec；提交 `feat(glass): user pages batch 3 (tasks 12.11–12.16)`
 
