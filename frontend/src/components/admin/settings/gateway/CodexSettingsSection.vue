@@ -86,7 +86,7 @@
  </label>
  <button
  type="button"
- class="btn-glass-secondary shrink-0 text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary shrink-0 text-danger-600 hover:text-danger-700 "
  @click="removeCodexFingerprintRow(i)"
  >
  {{ t("admin.settings.gatewayForwarding.codexRemoveRow") }}
@@ -97,7 +97,7 @@
  </button>
  <p
  v-if="codexFingerprintNoRequired"
- class="mt-2 text-xs text-amber-600 "
+ class="mt-2 text-xs text-warning-600 "
  >
  {{ t("admin.settings.gatewayForwarding.codexFingerprintNoRequiredWarn") }}
  </p>
@@ -161,7 +161,7 @@
  />
  <button
  type="button"
- class="btn-glass-secondary shrink-0 text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary shrink-0 text-danger-600 hover:text-danger-700 "
  @click="removeCodexBlacklistRow(i)"
  >
  {{ t("admin.settings.gatewayForwarding.codexRemoveRow") }}
@@ -230,7 +230,7 @@
  </label>
  <button
  type="button"
- class="btn-glass-secondary shrink-0 text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary shrink-0 text-danger-600 hover:text-danger-700 "
  @click="removeCodexWhitelistRow(i)"
  >
  {{ t("admin.settings.gatewayForwarding.codexRemoveRow") }}

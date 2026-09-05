@@ -9,7 +9,7 @@
       <!-- 当前分组 -->
       <div class="rounded-lg border border-line bg-surface-2 p-3">
         <div class="flex items-center gap-2">
-          <Icon name="shield" size="sm" class="text-purple-500" />
+          <Icon name="shield" size="sm" class="text-accent-500" />
           <span class="font-medium text-foreground">{{ oldGroup.name }}</span>
           <Icon name="arrowRight" size="sm" class="ml-auto text-muted" />
           <span v-if="selectedGroupId" class="font-medium text-accent">
@@ -41,7 +41,7 @@
  ? 'border-accent bg-accent'
  : 'border-line'"
           >
-            <div v-if="selectedGroupId === group.id" class="h-2 w-2 rounded-full bg-white"></div>
+            <div v-if="selectedGroupId === group.id" class="h-2 w-2 rounded-full bg-[var(--thumb)]"></div>
           </div>
           <div class="flex-1">
             <span class="font-medium text-foreground">{{ group.name }}</span>

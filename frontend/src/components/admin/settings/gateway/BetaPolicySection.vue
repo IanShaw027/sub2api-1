@@ -141,7 +141,7 @@
  <button
  type="button"
  @click="rule.model_whitelist!.splice(index, 1)"
- class="shrink-0 rounded p-1 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 "
+ class="shrink-0 rounded p-1 text-danger-400 transition-colors hover:bg-danger-50 hover:text-danger-600 "
  >
  <svg
  class="h-4 w-4"

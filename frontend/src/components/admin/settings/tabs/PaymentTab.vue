@@ -280,7 +280,7 @@
  <div>
  <label class="input-label"
  >{{ t("admin.settings.payment.orderTimeout") }}
- <span class="text-red-500">*</span></label
+ <span class="text-danger-500">*</span></label
  ><input
  v-model.number="form.payment_order_timeout_minutes"
  type="number"

@@ -39,7 +39,7 @@
  <button
  type="button"
  @click="removeOpenAIFastPolicyRule(ruleIndex)"
- class="rounded p-1 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 "
+ class="rounded p-1 text-danger-400 transition-colors hover:bg-danger-50 hover:text-danger-600 "
  :title="t('admin.settings.openaiFastPolicy.removeRule')"
  >
  <svg
@@ -239,7 +239,7 @@
  @click="
  removeOpenAIFastPolicyModelPattern(rule, patternIdx)
  "
- class="shrink-0 rounded p-1 text-red-400 transition-colors hover:bg-red-50 hover:text-red-600 "
+ class="shrink-0 rounded p-1 text-danger-400 transition-colors hover:bg-danger-50 hover:text-danger-600 "
  >
  <svg
  class="h-4 w-4"

@@ -100,7 +100,7 @@
  }}
  </p>
  <div
- class="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-700 "
+ class="mt-2 rounded-lg border border-danger-200 bg-danger-50 p-3 text-xs leading-5 text-danger-700 "
  >
  {{
  t(

@@ -606,15 +606,15 @@
  <template v-else>
  <!-- 计数维度说明：按账号计数，反代部署无误伤 -->
  <div
- class="rounded-lg border border-sky-200 bg-sky-50 p-4 "
+ class="rounded-lg border border-accent-200 bg-accent-50 p-4 "
  >
  <div class="flex items-start">
  <Icon
  name="infoCircle"
  size="md"
- class="mt-0.5 flex-shrink-0 text-sky-500"
+ class="mt-0.5 flex-shrink-0 text-accent-500"
  />
- <p class="ml-3 text-sm text-sky-700 ">
+ <p class="ml-3 text-sm text-accent-700 ">
  {{ t("admin.settings.panelRateLimit.proxySafeNote") }}
  </p>
  </div>

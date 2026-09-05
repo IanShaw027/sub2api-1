@@ -22,21 +22,21 @@
                 :class="[
                   'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
                   group.platform === 'anthropic'
-                    ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-orange-700  '
+                    ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-700  '
                     : group.platform === 'openai'
                       ? 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text  '
                       : group.platform === 'antigravity'
-                        ? 'bg-purple-500/15 text-purple-700  '
+                        ? 'bg-accent-500/15 text-accent-700  '
                         : group.platform === 'kiro'
-                          ? 'bg-cyan-500/15 text-cyan-700  '
+                          ? 'bg-accent-500/15 text-accent-700  '
                           : group.platform === 'grok'
-                            ? 'bg-zinc-200 text-zinc-800  '
+                            ? 'bg-surface-3 text-foreground  '
                             : group.platform === 'kimi'
-                              ? 'bg-pink-500/15 text-pink-700  '
+                              ? 'bg-accent-500/15 text-accent-700  '
                               : group.platform === 'zhipu'
-                                ? 'bg-indigo-500/15 text-indigo-700  '
+                                ? 'bg-accent-500/15 text-accent-700  '
                                 : group.platform === 'deepseek'
-                                  ? 'bg-teal-500/15 text-teal-700  '
+                                  ? 'bg-success-500/15 text-success-700  '
                                   : 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent  ',
                 ]"
               >

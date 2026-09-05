@@ -107,7 +107,7 @@
 
             <button
               type="button"
-              class="flex h-11 w-11 items-center justify-center self-end rounded-lg text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+              class="flex h-11 w-11 items-center justify-center self-end rounded-lg text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-500 focus:outline-none focus:ring-2 focus:ring-danger-500/30"
               :title="t('admin.groups.form.removeReasoningEffortMapping')"
               :aria-label="t('admin.groups.form.removeReasoningEffortMapping')"
               @click="removeGroup(group.id)"
@@ -183,7 +183,7 @@
 
             <button
               type="button"
-              class="flex h-11 w-11 items-center justify-center self-end rounded-lg text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-red-500 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+              class="flex h-11 w-11 items-center justify-center self-end rounded-lg text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-500 focus:outline-none focus:ring-2 focus:ring-danger-500/30"
               :title="t('admin.groups.form.removeReasoningEffortPair')"
               :aria-label="t('admin.groups.form.removeReasoningEffortPair')"
               @click="removePair(group.id, pair.id)"

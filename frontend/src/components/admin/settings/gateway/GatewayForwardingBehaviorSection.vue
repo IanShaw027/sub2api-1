@@ -276,7 +276,7 @@
  <Toggle v-model="block.enabled" />
  <button
  type="button"
- class="btn-glass-secondary px-2 text-red-600 hover:text-red-700 "
+ class="btn-glass-secondary px-2 text-danger-600 hover:text-danger-700 "
  @click="removeClaudeOAuthSystemPromptBlock(index)"
  >
  <Icon name="trash" size="xs" />

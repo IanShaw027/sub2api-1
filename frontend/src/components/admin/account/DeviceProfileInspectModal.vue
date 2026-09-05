@@ -26,7 +26,7 @@
 
       <div
         v-else-if="errorMessage"
-        class="rounded-lg border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-sm text-amber-800"
+        class="rounded-lg border border-warning-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-sm text-warning-800"
       >
         {{ errorMessage }}
       </div>

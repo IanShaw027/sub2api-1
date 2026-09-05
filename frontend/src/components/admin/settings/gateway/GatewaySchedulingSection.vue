@@ -49,7 +49,7 @@
  )
  }}
  </p>
- <p class="mt-0.5 text-xs text-amber-600 ">
+ <p class="mt-0.5 text-xs text-warning-600 ">
  {{
  t(
  "admin.settings.scheduling.accountSchedulingThresholdsDisabledHint",

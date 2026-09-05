@@ -130,7 +130,7 @@
                     <Icon
                       :name="rule.passthrough_code ? 'checkCircle' : 'xCircle'"
                       size="xs"
-                      :class="rule.passthrough_code ? 'text-green-500' : 'text-muted'"
+                      :class="rule.passthrough_code ? 'text-success-500' : 'text-muted'"
                     />
                     <span class="text-muted">
                       {{ t('admin.errorPassthrough.code') }}:
@@ -141,7 +141,7 @@
                     <Icon
                       :name="rule.passthrough_body ? 'checkCircle' : 'xCircle'"
                       size="xs"
-                      :class="rule.passthrough_body ? 'text-green-500' : 'text-muted'"
+                      :class="rule.passthrough_body ? 'text-success-500' : 'text-muted'"
                     />
                     <span class="text-muted">
                       {{ t('admin.errorPassthrough.body') }}:
@@ -152,7 +152,7 @@
                     <Icon
                       name="checkCircle"
                       size="xs"
-                      class="text-yellow-500"
+                      class="text-warning-500"
                     />
                     <span class="text-muted">
                       {{ t('admin.errorPassthrough.skipMonitoring') }}
@@ -170,7 +170,7 @@
                 >
                   <span
                     :class="[
-                      'pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                      'pointer-events-none inline-block h-3 w-3 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
                       rule.enabled ? 'translate-x-3' : 'translate-x-0'
                     ]"
                   />
@@ -381,7 +381,7 @@
           <input
             type="checkbox"
             v-model="form.skip_monitoring"
-            class="h-3.5 w-3.5 rounded border-line text-yellow-600 focus:ring-yellow-500"
+            class="h-3.5 w-3.5 rounded border-line text-warning-600 focus:ring-warning-500"
           />
           <span class="text-xs font-medium text-foreground">
             {{ t('admin.errorPassthrough.form.skipMonitoring') }}

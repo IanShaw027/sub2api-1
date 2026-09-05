@@ -15,16 +15,16 @@
             :class="[
               'flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br',
               isOpenAILike
-                ? 'from-green-500 to-green-600'
+                ? 'from-success-500 to-success-600'
                 : isGemini
-                  ? 'from-blue-500 to-blue-600'
+                  ? 'from-accent-500 to-accent-600'
                   :               isAntigravity
-                ? 'from-purple-500 to-purple-600'
+                ? 'from-accent-500 to-accent-600'
                 : isKiro
-                  ? 'from-cyan-500 to-sky-600'
+                  ? 'from-accent-500 to-accent-600'
                   : isGrok
-                    ? 'from-zinc-700 to-zinc-900'
-                    : 'from-orange-500 to-orange-600'
+                    ? 'from-[color-mix(in_oklch,var(--muted)_40%,var(--foreground))] to-foreground'
+                    : 'from-warning-500 to-warning-600'
             ]"
           >
             <Icon name="sparkles" size="md" class="text-white" />
@@ -54,16 +54,16 @@
 
       <div
         v-if="isKiroOAuth && kiroDiagnosticItems.length"
-        class="rounded-lg border border-cyan-200 bg-cyan-50/60 p-4"
+        class="rounded-lg border border-accent-200 bg-accent-50/60 p-4"
       >
-        <div class="mb-2 text-sm font-medium text-cyan-900">
+        <div class="mb-2 text-sm font-medium text-accent-900">
           {{ t('admin.accounts.kiro.diagnosticSummaryTitle') }}
         </div>
         <KiroDiagnosticChips
           :credentials="account.credentials || {}"
           :extra="account.extra || {}"
           :usage-info="{}"
-          chip-class="inline-flex rounded bg-surface/80 px-2 py-1 text-cyan-800"
+          chip-class="inline-flex rounded bg-surface/80 px-2 py-1 text-accent-800"
         />
       </div>
 
@@ -106,10 +106,10 @@
             :class="[
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
               geminiOAuthType === 'google_one'
-                ? 'bg-purple-500 text-white'
+                ? 'bg-accent-500 text-white'
                 : geminiOAuthType === 'code_assist'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-amber-500 text-white'
+                  ? 'bg-accent-500 text-white'
+                  : 'bg-warning-500 text-white'
             ]"
           >
             <Icon v-if="geminiOAuthType === 'google_one'" name="user" size="sm" />

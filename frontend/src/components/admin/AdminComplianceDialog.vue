@@ -10,7 +10,7 @@
     @close="noop"
   >
     <div class="space-y-5">
-      <div class="rounded-lg border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-4 text-sm text-amber-900">
+      <div class="rounded-lg border border-warning-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-4 text-sm text-warning-900">
         <div class="flex gap-3">
           <Icon name="exclamationTriangle" size="md" class="mt-0.5 flex-shrink-0" />
           <div class="space-y-2">

@@ -100,7 +100,7 @@
  !expandedProviders[pIdx] &&
  provider.api_key_configured
  "
- class="text-xs text-green-500"
+ class="text-xs text-success-500"
  >
  {{
  t(
@@ -111,7 +111,7 @@
  </div>
  <button
  type="button"
- class="text-red-500 hover:text-red-700 text-xs"
+ class="text-danger-500 hover:text-danger-700 text-xs"
  @click.stop="removeWebSearchProvider(pIdx)"
  >
  {{
@@ -296,10 +296,10 @@
  class="h-full rounded-full transition-all"
  :class="
  quotaPercentage(provider) > 90
- ? 'bg-red-500'
+ ? 'bg-danger-500'
  : quotaPercentage(provider) > 70
- ? 'bg-yellow-500'
- : 'bg-green-500'
+ ? 'bg-warning-500'
+ : 'bg-success-500'
  "
  :style="{
  width:
@@ -415,7 +415,7 @@
  <a
  :href="r.url"
  target="_blank"
- class="text-sm font-medium text-blue-600 hover:underline "
+ class="text-sm font-medium text-accent-600 hover:underline "
  >{{ r.title }}</a
  >
  <p class="mt-0.5 text-xs text-muted ">

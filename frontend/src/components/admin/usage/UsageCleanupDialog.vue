@@ -10,7 +10,7 @@
         @change="noop"
       />
 
-      <div class="rounded-xl border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-4 py-3 text-sm text-amber-700">
+      <div class="rounded-xl border border-warning-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-4 py-3 text-sm text-warning-700">
         {{ t('admin.usage.cleanup.warning') }}
       </div>
 
@@ -46,7 +46,7 @@
                   <button
                     v-if="canCancel(task)"
                     type="button"
-                    class="btn btn-ghost btn-xs text-rose-600 hover:text-rose-700"
+                    class="btn btn-ghost btn-xs text-danger-600 hover:text-danger-700"
                     @click="openCancelConfirm(task)"
                   >
                     {{ t('admin.usage.cleanup.cancel') }}
@@ -60,7 +60,7 @@
                 <span>{{ t('admin.usage.cleanup.range') }}: {{ formatRange(task) }}</span>
                 <span>{{ t('admin.usage.cleanup.deletedRows') }}: {{ task.deleted_rows.toLocaleString() }}</span>
               </div>
-              <div v-if="task.error_message" class="text-xs text-rose-500">
+              <div v-if="task.error_message" class="text-xs text-danger-500">
                 {{ task.error_message }}
               </div>
             </div>
@@ -205,10 +205,10 @@ const statusLabel = (status: string) => {
 
 const statusClass = (status: string) => {
   const map: Record<string, string> = {
-    pending: 'bg-amber-100 text-amber-700',
+    pending: 'bg-warning-100 text-warning-700',
     running: 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent',
     succeeded: 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text',
-    failed: 'bg-rose-100 text-rose-700',
+    failed: 'bg-danger-100 text-danger-700',
     canceled: 'bg-surface-3 text-muted'
   }
   return map[status] || 'bg-surface-2 text-muted'

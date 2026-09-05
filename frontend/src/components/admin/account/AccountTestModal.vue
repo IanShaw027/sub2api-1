@@ -181,7 +181,7 @@
             <Icon name="play" size="sm" :stroke-width="2" />
             <span>{{ t('admin.accounts.readyToTest') }}</span>
           </div>
-          <div v-else-if="status === 'connecting'" class="flex items-center gap-2 text-yellow-400">
+          <div v-else-if="status === 'connecting'" class="flex items-center gap-2 text-warning-400">
             <Icon name="refresh" size="sm" class="animate-spin" :stroke-width="2" />
             <span>{{ t('admin.accounts.connectingToApi') }}</span>
           </div>
@@ -192,21 +192,21 @@
           </div>
 
           <!-- Streaming Content -->
-          <div v-if="streamingContent" class="text-green-400">
+          <div v-if="streamingContent" class="text-success-400">
             {{ streamingContent }}<span class="animate-pulse">_</span>
           </div>
 
           <!-- Result Status -->
           <div
             v-if="status === 'success'"
-            class="mt-3 flex items-center gap-2 border-t border-line pt-3 text-green-400"
+            class="mt-3 flex items-center gap-2 border-t border-line pt-3 text-success-400"
           >
             <Icon name="check" size="sm" :stroke-width="2" />
             <span>{{ t('admin.accounts.testCompleted') }}</span>
           </div>
           <div
             v-else-if="status === 'error'"
-            class="mt-3 flex items-center gap-2 border-t border-line pt-3 text-red-400"
+            class="mt-3 flex items-center gap-2 border-t border-line pt-3 text-danger-400"
           >
             <Icon name="x" size="sm" :stroke-width="2" />
             <span>{{ errorMessage }}</span>
@@ -232,7 +232,7 @@
           <div
             v-for="(image, index) in generatedImages"
             :key="`${image.url}-${index}`"
-            class="group/img relative cursor-pointer overflow-hidden rounded-xl border border-line bg-surface shadow-sm transition hover:border-[color-mix(in_oklch,var(--accent)_28%,transparent)] hover:shadow-md"
+            class="group/img relative cursor-pointer overflow-hidden rounded-xl border border-line bg-surface shadow-sm transition hover:border-[color-mix(in_oklch,var(--accent)_28%,transparent)] hover:shadow-glass"
             @click="previewImageUrl = image.url"
           >
             <img
@@ -241,7 +241,7 @@
               class="max-h-[360px] w-full object-contain"
             />
             <div class="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/img:bg-black/20">
-              <Icon name="eye" size="lg" class="text-white opacity-0 drop-shadow-lg transition-opacity group-hover/img:opacity-100" :stroke-width="2" />
+              <Icon name="eye" size="lg" class="text-white opacity-0 drop-shadow-[0_10px_8px_color-mix(in_oklch,black_4%,transparent),0_4px_3px_color-mix(in_oklch,black_10%,transparent)] transition-opacity group-hover/img:opacity-100" :stroke-width="2" />
             </div>
             <div class="border-t border-line px-3 py-1.5 text-xs text-muted">
               {{ image.mimeType || 'image/*' }}
@@ -297,7 +297,7 @@
             <img
               :src="previewImageUrl"
               :alt="t('admin.accounts.imageLightboxAlt')"
-              class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
+              class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-pop"
             />
           </div>
         </Transition>
@@ -334,9 +334,9 @@
  !canStartTest
  ? 'cursor-not-allowed bg-accent/60 text-white'
  : status === 'success'
- ? 'bg-green-500 text-white hover:bg-green-600'
+ ? 'bg-success-500 text-white hover:bg-success-600'
  : status === 'error'
- ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]0 text-white hover:bg-orange-600'
+ ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]0 text-white hover:bg-warning-600'
  : 'bg-accent text-white hover:opacity-90'
  ]"
         >
@@ -830,7 +830,7 @@ const startTest = async () => {
 
   resetState()
   status.value = 'connecting'
-  addLine(t('admin.accounts.startingTestForAccount', { name: props.account.name }), 'text-blue-400')
+  addLine(t('admin.accounts.startingTestForAccount', { name: props.account.name }), 'text-accent-400')
   addLine(t('admin.accounts.testAccountTypeLabel', { type: props.account.type }), 'text-muted')
   if (isGrokAccount.value) {
     const modeLabel =
@@ -934,7 +934,7 @@ const startTest = async () => {
     status.value = 'error'
     const msg = error instanceof Error ? error.message : t('common.unknownError')
     errorMessage.value = msg
-    addLine(t('admin.accounts.errorPrefix', { message: msg }), 'text-red-400')
+    addLine(t('admin.accounts.errorPrefix', { message: msg }), 'text-danger-400')
   }
 }
 
@@ -951,9 +951,9 @@ const handleEvent = (event: {
 }) => {
   switch (event.type) {
     case 'test_start':
-      addLine(t('admin.accounts.connectedToApi'), 'text-green-400')
+      addLine(t('admin.accounts.connectedToApi'), 'text-success-400')
       if (event.model) {
-        addLine(t('admin.accounts.usingModel', { model: event.model }), 'text-cyan-400')
+        addLine(t('admin.accounts.usingModel', { model: event.model }), 'text-accent-400')
       }
       addLine(
         isGrokAccount.value
@@ -976,7 +976,7 @@ const handleEvent = (event: {
         'text-muted'
       )
       addLine('', 'text-muted')
-      addLine(t('admin.accounts.response'), 'text-yellow-400')
+      addLine(t('admin.accounts.response'), 'text-warning-400')
       break
 
     case 'content':
@@ -992,7 +992,7 @@ const handleEvent = (event: {
           url: event.image_url,
           mimeType: event.mime_type
         })
-        addLine(t('admin.accounts.imageReceived', { count: generatedImages.value.length }), 'text-purple-300')
+        addLine(t('admin.accounts.imageReceived', { count: generatedImages.value.length }), 'text-accent-300')
       }
       break
 
@@ -1002,7 +1002,7 @@ const handleEvent = (event: {
           url: event.audio_url,
           mimeType: event.mime_type
         })
-        addLine(t('admin.accounts.audioReceived', { count: generatedAudios.value.length }), 'text-purple-300')
+        addLine(t('admin.accounts.audioReceived', { count: generatedAudios.value.length }), 'text-accent-300')
       }
       break
 
@@ -1012,20 +1012,20 @@ const handleEvent = (event: {
           url: event.video_url,
           mimeType: event.mime_type
         })
-        addLine(t('admin.accounts.videoReceived', { count: generatedVideos.value.length }), 'text-purple-300')
+        addLine(t('admin.accounts.videoReceived', { count: generatedVideos.value.length }), 'text-accent-300')
       }
       break
 
     case 'status':
       if (event.text) {
-        addLine(event.text, 'text-cyan-300')
+        addLine(event.text, 'text-accent-300')
       }
       break
 
     case 'test_complete':
       // Move streaming content to output lines
       if (streamingContent.value) {
-        addLine(streamingContent.value, 'text-green-300')
+        addLine(streamingContent.value, 'text-success-300')
         streamingContent.value = ''
       }
       if (event.success) {
@@ -1040,7 +1040,7 @@ const handleEvent = (event: {
       status.value = 'error'
       errorMessage.value = event.error || t('common.unknownError')
       if (streamingContent.value) {
-        addLine(streamingContent.value, 'text-green-300')
+        addLine(streamingContent.value, 'text-success-300')
         streamingContent.value = ''
       }
       break

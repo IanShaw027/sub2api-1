@@ -34,7 +34,7 @@
             />
             <div
               v-if="showDropdown && searchResults.length > 0"
-              class="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-lg border border-line bg-surface shadow-lg"
+              class="absolute left-0 right-0 top-full z-10 mt-1 max-h-48 overflow-y-auto rounded-lg border border-line bg-surface shadow-pop"
             >
               <button
                 v-for="user in searchResults"
@@ -96,7 +96,7 @@
           <div class="ml-auto">
             <button
               type="button"
-              class="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-danger-text transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]"
+              class="rounded-lg border border-danger-200 bg-danger-50 px-3 py-1.5 text-sm font-medium text-danger-text transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]"
               @click="clearAllLocal"
             >
               {{ t('admin.groups.clearAll') }}
@@ -284,7 +284,7 @@ const platformColorClass = computed(() => {
   switch (props.group?.platform) {
     case 'anthropic': return 'text-warning-text'
     case 'openai': return 'text-success-text'
-    case 'antigravity': return 'text-purple-700'
+    case 'antigravity': return 'text-accent-700'
     default: return 'text-accent'
   }
 })
