@@ -101,22 +101,22 @@ const tierBadgeClass = computed(() => {
 
   if (isCodeAssist.value) {
     const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-    if (tier === 'gcp_enterprise') return 'bg-purple-100 text-purple-600'
+    if (tier === 'gcp_enterprise') return 'bg-accent-100 text-accent-600'
     if (tier === 'gcp_standard') return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
     // Backward compatibility
     const upper = (creds?.tier_id || '').toString().trim().toUpperCase()
-    if (upper.includes('ULTRA') || upper.includes('ENTERPRISE')) return 'bg-purple-100 text-purple-600'
+    if (upper.includes('ULTRA') || upper.includes('ENTERPRISE')) return 'bg-accent-100 text-accent-600'
     return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
   }
 
   if (isGoogleOne.value) {
     const tier = (creds?.tier_id || '').toString().trim().toLowerCase()
-    if (tier === 'google_ai_ultra') return 'bg-purple-100 text-purple-600'
+    if (tier === 'google_ai_ultra') return 'bg-accent-100 text-accent-600'
     if (tier === 'google_ai_pro') return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
     if (tier === 'google_one_free') return 'bg-surface-2 text-muted'
     // Backward compatibility
     const upper = (creds?.tier_id || '').toString().trim().toUpperCase()
-    if (upper === 'GOOGLE_ONE_UNLIMITED') return 'bg-purple-100 text-purple-600'
+    if (upper === 'GOOGLE_ONE_UNLIMITED') return 'bg-accent-100 text-accent-600'
     if (upper === 'AI_PREMIUM') return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
     return 'bg-surface-2 text-muted'
   }

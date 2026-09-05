@@ -111,11 +111,11 @@ watch(
 // Label background colors
 const labelClass = computed(() => {
   const colors = {
-    indigo: 'bg-indigo-100 text-indigo-700',
-    emerald: 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text',
-    purple: 'bg-purple-100 text-purple-700',
-    amber: 'bg-amber-100 text-amber-700',
-    cyan: 'bg-cyan-100 text-cyan-700'
+    indigo: 'bg-accent-100 text-accent-700',
+    emerald: 'bg-success-100 text-success-text',
+    purple: 'bg-accent-100 text-accent-700',
+    amber: 'bg-warning-100 text-warning-text',
+    cyan: 'bg-accent-100 text-accent-700'
   }
   return colors[props.color]
 })
@@ -132,18 +132,18 @@ const labelSizeClass = computed(() =>
 const barClass = computed(() => {
   if (props.remainingCapacity) {
     if (props.utilization <= 20) {
-      return 'bg-red-500'
+      return 'bg-danger-500'
     } else if (props.utilization <= 50) {
-      return 'bg-amber-500'
+      return 'bg-warning-500'
     }
-    return 'bg-green-500'
+    return 'bg-success-500'
   }
   if (props.utilization >= 90) {
-    return 'bg-red-500'
+    return 'bg-danger-500'
   } else if (props.utilization >= 75) {
-    return 'bg-amber-500'
+    return 'bg-warning-500'
   } else {
-    return 'bg-green-500'
+    return 'bg-success-500'
   }
 })
 

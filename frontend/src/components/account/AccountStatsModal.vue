@@ -46,7 +46,7 @@
         <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <!-- 30-Day Total Cost -->
           <div
-            class="glass-card border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4"
+            class="glass-card border-success-200 bg-gradient-to-br from-success-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -84,7 +84,7 @@
 
           <!-- 30-Day Total Requests -->
           <div
-            class="glass-card border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4"
+            class="glass-card border-accent-200 bg-gradient-to-br from-accent-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
@@ -104,13 +104,13 @@
 
           <!-- Daily Average Cost -->
           <div
-            class="glass-card border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4"
+            class="glass-card border-warning-200 bg-gradient-to-br from-warning-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
                 t('admin.accounts.stats.avgDailyCost')
               }}</span>
-              <div class="rounded-lg bg-amber-100 p-1.5">
+              <div class="rounded-lg bg-warning-100 p-1.5">
                 <Icon
                   name="calculator"
                   size="sm"
@@ -136,15 +136,15 @@
 
           <!-- Daily Average Requests -->
           <div
-            class="glass-card border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4"
+            class="glass-card border-accent-200 bg-gradient-to-br from-accent-50 to-white p-4"
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-xs font-medium text-muted">{{
                 t('admin.accounts.stats.avgDailyRequests')
               }}</span>
-              <div class="rounded-lg bg-purple-100 p-1.5">
+              <div class="rounded-lg bg-accent-100 p-1.5">
                 <svg
-                  class="h-4 w-4 text-purple-600"
+                  class="h-4 w-4 text-accent-600"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -172,9 +172,9 @@
           <!-- Today Overview -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-cyan-100 p-1.5">
+              <div class="rounded-lg bg-accent-100 p-1.5">
                 <svg
-                  class="h-4 w-4 text-cyan-600"
+                  class="h-4 w-4 text-accent-600"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -273,11 +273,11 @@
           <!-- Highest Request Day -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-indigo-100 p-1.5">
+              <div class="rounded-lg bg-accent-100 p-1.5">
                 <Icon
                   name="trendingUp"
                   size="sm"
-                  class="text-indigo-600"
+                  class="text-accent-600"
                   :stroke-width="2"
                 />
               </div>
@@ -298,7 +298,7 @@
                 <span class="text-xs text-muted">{{
                   t('admin.accounts.stats.requests')
                 }}</span>
-                <span class="text-sm font-semibold text-indigo-600">{{
+                <span class="text-sm font-semibold text-accent-600">{{
                   formatNumber(stats.summary.highest_request_day?.requests || 0)
                 }}</span>
               </div>
@@ -323,8 +323,8 @@
           <!-- Accumulated Tokens -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-teal-100 p-1.5">
-                <Icon name="cube" size="sm" class="text-teal-600" :stroke-width="2" />
+              <div class="rounded-lg bg-success-100 p-1.5">
+                <Icon name="cube" size="sm" class="text-success-600" :stroke-width="2" />
               </div>
               <span class="text-sm font-semibold text-foreground">{{
                 t('admin.accounts.stats.accumulatedTokens')
@@ -353,8 +353,8 @@
           <!-- Performance -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-rose-100 p-1.5">
-                <Icon name="bolt" size="sm" class="text-rose-600" :stroke-width="2" />
+              <div class="rounded-lg bg-danger-100 p-1.5">
+                <Icon name="bolt" size="sm" class="text-danger-600" :stroke-width="2" />
               </div>
               <span class="text-sm font-semibold text-foreground">{{
                 t('admin.accounts.stats.performance')
@@ -383,11 +383,11 @@
           <!-- Recent Activity -->
           <div class="glass-card p-4">
             <div class="mb-3 flex items-center gap-2">
-              <div class="rounded-lg bg-lime-100 p-1.5">
+              <div class="rounded-lg bg-success-100 p-1.5">
                 <Icon
                   name="clipboard"
                   size="sm"
-                  class="text-lime-600"
+                  class="text-success-600"
                   :stroke-width="2"
                 />
               </div>
@@ -505,7 +505,7 @@ import EndpointDistributionChart from '@/components/charts/EndpointDistributionC
 import Icon from '@/components/icons/Icon.vue'
 import { adminAPI } from '@/api/admin'
 import type { Account, AccountUsageStatsResponse } from '@/types'
-import { useTheme } from '@/composables/useTheme'
+import { useChartTheme, alpha as chartAlpha } from '@/utils/chartTheme'
 
 ChartJS.register(
   CategoryScale,
@@ -532,13 +532,8 @@ const emit = defineEmits<{
 const loading = ref(false)
 const stats = ref<AccountUsageStatsResponse | null>(null)
 
-const { isDark: isDarkMode } = useTheme()
-
-// Chart colors
-const chartColors = computed(() => ({
-  text: isDarkMode.value ? '#e5e7eb' : '#374151',
-  grid: isDarkMode.value ? '#374151' : '#e5e7eb'
-}))
+// Chart colors — sourced from the design tokens so charts follow the theme.
+const chartColors = useChartTheme()
 
 // Line chart data
 const trendChartData = computed(() => {
@@ -550,8 +545,8 @@ const trendChartData = computed(() => {
       {
         label: t('usage.accountBilled') + ' (USD)',
         data: stats.value.history.map((h) => h.actual_cost),
-        borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        borderColor: chartColors.value.accent,
+        backgroundColor: chartAlpha(chartColors.value.accent, 10),
         fill: true,
         tension: 0.3,
         yAxisID: 'y'
@@ -559,8 +554,8 @@ const trendChartData = computed(() => {
       {
         label: t('usage.userBilled') + ' (USD)',
         data: stats.value.history.map((h) => h.user_cost),
-        borderColor: '#10b981',
-        backgroundColor: 'rgba(16, 185, 129, 0.08)',
+        borderColor: chartColors.value.success,
+        backgroundColor: chartAlpha(chartColors.value.success, 8),
         fill: false,
         tension: 0.3,
         borderDash: [5, 5],
@@ -569,8 +564,8 @@ const trendChartData = computed(() => {
       {
         label: t('admin.accounts.stats.requests'),
         data: stats.value.history.map((h) => h.requests),
-        borderColor: '#f97316',
-        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+        borderColor: chartColors.value.warning,
+        backgroundColor: chartAlpha(chartColors.value.warning, 10),
         fill: false,
         tension: 0.3,
         yAxisID: 'y1'
@@ -635,7 +630,7 @@ const lineChartOptions = computed(() => ({
         color: chartColors.value.grid
       },
       ticks: {
-        color: '#3b82f6',
+        color: chartColors.value.accent,
         font: {
           size: 10
         },
@@ -644,7 +639,7 @@ const lineChartOptions = computed(() => ({
       title: {
         display: true,
         text: t('usage.accountBilled') + ' (USD)',
-        color: '#3b82f6',
+        color: chartColors.value.accent,
         font: {
           size: 11
         }
@@ -658,7 +653,7 @@ const lineChartOptions = computed(() => ({
         drawOnChartArea: false
       },
       ticks: {
-        color: '#f97316',
+        color: chartColors.value.warning,
         font: {
           size: 10
         },
@@ -667,7 +662,7 @@ const lineChartOptions = computed(() => ({
       title: {
         display: true,
         text: t('admin.accounts.stats.requests'),
-        color: '#f97316',
+        color: chartColors.value.warning,
         font: {
           size: 11
         }

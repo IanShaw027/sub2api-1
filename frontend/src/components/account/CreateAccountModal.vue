@@ -90,7 +90,7 @@
             :class="[
  'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
  form.platform === 'openai'
- ? 'bg-surface text-green-600 shadow-sm'
+ ? 'bg-surface text-success-600 shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
           >
@@ -140,7 +140,7 @@
             :class="[
  'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
  form.platform === 'antigravity'
- ? 'bg-surface text-purple-600 shadow-sm'
+ ? 'bg-surface text-accent-600 shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
           >
@@ -153,7 +153,7 @@
             :class="[
  'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
  form.platform === 'grok'
- ? 'bg-surface text-zinc-900 shadow-sm'
+ ? 'bg-surface text-foreground shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
           >
@@ -166,7 +166,7 @@
             :class="[
  'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
  form.platform === 'kiro'
- ? 'bg-surface text-cyan-600 shadow-sm'
+ ? 'bg-surface text-accent-600 shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
           >
@@ -182,7 +182,7 @@
             :class="[
  'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
  form.platform === 'kimi'
- ? 'bg-surface text-pink-600 shadow-sm'
+ ? 'bg-surface text-accent-600 shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
           >
@@ -195,7 +195,7 @@
             :class="[
  'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
  form.platform === 'zhipu'
- ? 'bg-surface text-indigo-600 shadow-sm'
+ ? 'bg-surface text-accent-600 shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
           >
@@ -208,7 +208,7 @@
             :class="[
  'flex flex-1 items-center justify-center gap-2 rounded-md px-4 py-2.5 text-sm font-medium transition-all',
  form.platform === 'deepseek'
- ? 'bg-surface text-teal-600 shadow-sm'
+ ? 'bg-surface text-success-600 shadow-sm'
  : 'text-muted hover:text-foreground'
  ]"
           >
@@ -2911,11 +2911,11 @@ function resetAdaptiveBaseUrls(platform: 'kimi' | 'zhipu' | 'deepseek', mode: Cn
 const cnAccentActiveClass = computed(() => {
   switch (form.platform) {
     case 'kimi':
-      return 'border-pink-500 bg-pink-50'
+      return 'border-accent-500 bg-accent-50'
     case 'zhipu':
-      return 'border-indigo-500 bg-indigo-50'
+      return 'border-accent-500 bg-accent-50'
     case 'deepseek':
-      return 'border-teal-500 bg-teal-50'
+      return 'border-success-500 bg-success-50'
     default:
       return 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]'
   }
@@ -2923,11 +2923,11 @@ const cnAccentActiveClass = computed(() => {
 const cnAccentIconClass = computed(() => {
   switch (form.platform) {
     case 'kimi':
-      return 'bg-pink-500 text-white'
+      return 'bg-accent-500 text-white'
     case 'zhipu':
-      return 'bg-indigo-500 text-white'
+      return 'bg-accent-500 text-white'
     case 'deepseek':
-      return 'bg-teal-500 text-white'
+      return 'bg-success-500 text-white'
     default:
       return 'bg-accent text-white'
   }

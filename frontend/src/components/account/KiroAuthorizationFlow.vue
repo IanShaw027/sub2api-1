@@ -29,7 +29,7 @@
               v-model="inputMode"
               type="radio"
               value="oauth"
-              class="text-accent focus:ring-cyan-500"
+              class="text-accent focus:ring-accent-500"
             />
             <span class="text-sm text-foreground">
               {{ t('admin.accounts.oauth.manualAuth') }}
@@ -40,7 +40,7 @@
               v-model="inputMode"
               type="radio"
               value="refresh_token"
-              class="text-accent focus:ring-cyan-500"
+              class="text-accent focus:ring-accent-500"
             />
             <span class="text-sm text-foreground">
               {{ t('admin.accounts.kiro.manualRefreshTokenAuth') }}

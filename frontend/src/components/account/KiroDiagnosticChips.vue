@@ -26,7 +26,7 @@ const props = withDefaults(defineProps<{
   extra: null,
   usageInfo: null,
   includeProfileMode: true,
-  chipClass: 'inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-slate-600'
+  chipClass: 'inline-flex rounded bg-surface-2 px-1.5 py-0.5 text-muted'
 })
 
 const { t } = useI18n()

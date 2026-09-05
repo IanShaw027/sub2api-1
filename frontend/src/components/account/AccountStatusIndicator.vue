@@ -35,7 +35,7 @@
     <!-- Error Info Indicator -->
     <div v-if="hasError && account.error_message" class="group/error relative">
       <svg
-        class="h-4 w-4 cursor-help text-red-500 transition-colors hover:text-danger-text"
+        class="h-4 w-4 cursor-help text-danger-500 transition-colors hover:text-danger-text"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -49,7 +49,7 @@
       </svg>
       <!-- Tooltip - 向下显示 -->
       <div
-        class="invisible absolute left-0 top-full z-[100] mt-1.5 min-w-[200px] max-w-[300px] rounded-lg bg-[var(--code-bg)] px-3 py-2 text-xs text-white opacity-0 shadow-xl transition-all duration-200 group-hover/error:visible group-hover/error:opacity-100"
+        class="invisible absolute left-0 top-full z-[100] mt-1.5 min-w-[200px] max-w-[300px] rounded-lg bg-[var(--code-bg)] px-3 py-2 text-xs text-white opacity-0 shadow-glass transition-all duration-200 group-hover/error:visible group-hover/error:opacity-100"
       >
         <div class="whitespace-pre-wrap break-words leading-relaxed text-muted">
           {{ account.error_message }}
@@ -64,7 +64,7 @@
     <!-- Rate Limit Indicator (429) -->
     <div v-if="isRateLimited" class="group relative">
       <span
-        class="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+        class="inline-flex items-center gap-1 rounded bg-warning-100 px-1.5 py-0.5 text-xs font-medium text-warning-text"
       >
         <Icon name="exclamationTriangle" size="xs" :stroke-width="2" />
         429
@@ -104,7 +104,7 @@
         <!-- 正在走积分（模型限流但积分可用）-->
         <span
           v-else-if="item.kind === 'credits_active'"
-          class="inline-flex items-center gap-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700"
+          class="inline-flex items-center gap-1 rounded bg-warning-100 px-1.5 py-0.5 text-xs font-medium text-warning-text"
         >
           <span>⚡</span>
           {{ formatScopeName(item.model) }}
@@ -113,7 +113,7 @@
         <!-- 普通模型限流 -->
         <span
           v-else
-          class="inline-flex items-center gap-1 rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700"
+          class="inline-flex items-center gap-1 rounded bg-accent-100 px-1.5 py-0.5 text-xs font-medium text-accent-700"
         >
           <Icon name="exclamationTriangle" size="xs" :stroke-width="2" />
           {{ formatScopeName(item.model) }}

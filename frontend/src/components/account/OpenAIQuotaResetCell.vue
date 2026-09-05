@@ -226,7 +226,7 @@ const autoResetStateClass = computed(() => {
       return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
     case 'no_credit':
     case 'failed':
-      return 'bg-red-50 text-danger-text'
+      return 'bg-danger-50 text-danger-text'
     case 'resetting':
       return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
     default:

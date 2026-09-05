@@ -38,7 +38,7 @@
       </div>
 
       <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error" class="text-xs text-danger-500">
         {{ error }}
       </div>
 
@@ -220,7 +220,7 @@
           class="group relative cursor-help"
         >
           <svg
-            class="h-3.5 w-3.5 text-red-500"
+            class="h-3.5 w-3.5 text-danger-500"
             fill="currentColor"
             viewBox="0 0 20 20"
           >
@@ -253,7 +253,7 @@
             :href="validationURL"
             target="_blank"
             rel="noopener noreferrer"
-            class="text-[10px] text-accent hover:text-blue-800 hover:underline"
+            class="text-[10px] text-accent hover:text-accent-800 hover:underline"
             :title="t('admin.accounts.openVerification')"
           >
             {{ t('admin.accounts.openVerification') }}
@@ -278,7 +278,7 @@
 
       <!-- Degraded error (non-403, non-401) -->
       <div v-else-if="usageInfo?.error" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700">
+        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-warning-100 text-warning-700">
           {{ usageErrorLabel }}
         </span>
       </div>
@@ -293,7 +293,7 @@
       </div>
 
       <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error" class="text-xs text-danger-500">
         {{ error }}
       </div>
 
@@ -354,7 +354,7 @@
           <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
         </div>
       </div>
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error" class="text-xs text-danger-500">
         {{ error }}
       </div>
       <div v-else-if="usageInfo?.error" class="text-xs text-warning-text truncate max-w-[220px]" :title="usageInfo.error">
@@ -394,7 +394,7 @@
           <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
         </div>
       </div>
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error" class="text-xs text-danger-500">
         {{ error }}
       </div>
       <div v-else-if="needsReauth" class="space-y-1">
@@ -540,7 +540,7 @@
               <div><strong>{{ geminiQuotaPolicyChannel }}:</strong></div>
               <div class="pl-2">• {{ geminiQuotaPolicyLimits }}</div>
               <div class="mt-2">
-                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">
+                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" rel="noopener noreferrer" class="text-accent-400 hover:text-accent-300 underline">
                   {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }} →
                 </a>
               </div>
@@ -589,7 +589,7 @@
             <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
           </div>
         </div>
-        <div v-else-if="error" class="text-xs text-red-500">
+        <div v-else-if="error" class="text-xs text-danger-500">
           {{ error }}
         </div>
         <!-- Gemini: show daily usage bars when available -->
@@ -1078,13 +1078,13 @@ const geminiTierClass = computed(() => {
   }
 
   if (channel === 'google one') {
-    if (level === 'ultra') return 'bg-purple-100 text-purple-600'
+    if (level === 'ultra') return 'bg-accent-100 text-accent-600'
     if (level === 'pro') return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
     return 'bg-surface-2 text-muted'
   }
 
   if (channel === 'gcp') {
-    if (level === 'enterprise') return 'bg-purple-100 text-purple-600'
+    if (level === 'enterprise') return 'bg-accent-100 text-accent-600'
     return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
   }
 
@@ -1368,7 +1368,7 @@ const antigravityTierClass = computed(() => {
     case 'g1-pro-tier':
       return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
     case 'g1-ultra-tier':
-      return 'bg-purple-100 text-purple-600'
+      return 'bg-accent-100 text-accent-600'
     default:
       return ''
   }
@@ -1414,7 +1414,7 @@ const forbiddenLabel = computed(() => {
 
 const forbiddenBadgeClass = computed(() => {
   if (forbiddenType.value === 'validation') {
-    return 'bg-yellow-100 text-yellow-700'
+    return 'bg-warning-100 text-warning-700'
   }
   return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
 })

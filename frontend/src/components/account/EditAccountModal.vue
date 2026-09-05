@@ -29,7 +29,7 @@
       <!-- Kiro API Key fields -->
       <div
         v-if="account.platform === 'kiro' && account.type === 'apikey'"
-        class="space-y-4 rounded-lg border border-cyan-200 bg-cyan-50/60 p-4"
+        class="space-y-4 rounded-lg border border-accent-200 bg-accent-50/60 p-4"
       >
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div class="md:col-span-2">
@@ -51,7 +51,7 @@
 
       <div
         v-if="account.platform === 'kiro' && account.type === 'oauth'"
-        class="space-y-4 rounded-lg border border-violet-200 bg-violet-50/60 p-4"
+        class="space-y-4 rounded-lg border border-accent-200 bg-accent-50/60 p-4"
       >
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
@@ -91,7 +91,7 @@
           </span>
           <span
             v-if="kiroProfilePendingHint"
-            class="text-violet-700"
+            class="text-accent-700"
           >
             {{ kiroProfilePendingHint }}
           </span>
@@ -103,7 +103,7 @@
           :credentials="account.credentials || {}"
           :extra="account.extra || {}"
           :include-profile-mode="false"
-          chip-class="inline-flex rounded bg-surface/80 px-2 py-1 text-xs text-violet-800"
+          chip-class="inline-flex rounded bg-surface/80 px-2 py-1 text-xs text-accent-800"
         />
       </div>
 

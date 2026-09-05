@@ -15,12 +15,12 @@
             :class="[
               'flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br',
               isOpenAILike
-                ? 'from-green-500 to-green-600'
+                ? 'from-success-500 to-success-600'
                 : isGemini
-                  ? 'from-blue-500 to-blue-600'
+                  ? 'from-accent-500 to-accent-600'
                   : isAntigravity
-                    ? 'from-purple-500 to-purple-600'
-                    : 'from-orange-500 to-orange-600'
+                    ? 'from-accent-500 to-accent-600'
+                    : 'from-warning-500 to-warning-600'
             ]"
           >
             <Icon name="sparkles" size="md" class="text-white" />
@@ -83,10 +83,10 @@
             :class="[
               'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
               geminiOAuthType === 'google_one'
-                ? 'bg-purple-500 text-white'
+                ? 'bg-accent-500 text-white'
                 : geminiOAuthType === 'code_assist'
-                  ? 'bg-blue-500 text-white'
-                  : 'bg-amber-500 text-white'
+                  ? 'bg-accent-500 text-white'
+                  : 'bg-warning-500 text-white'
             ]"
           >
             <Icon v-if="geminiOAuthType === 'google_one'" name="user" size="sm" />

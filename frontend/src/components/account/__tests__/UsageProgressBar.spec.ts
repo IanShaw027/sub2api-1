@@ -109,7 +109,7 @@ describe('UsageProgressBar', () => {
 
     expect(wrapper.text()).toContain('100%')
     expect(wrapper.get('.h-1\\.5 > div').attributes('style')).toContain('width: 100%')
-    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-green-500')
+    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-success-500')
   })
 
   it('百分比保留两位小数且不向上四舍五入', () => {
@@ -137,13 +137,13 @@ describe('UsageProgressBar', () => {
 
     expect(wrapper.text()).toContain('15%')
     expect(wrapper.get('.h-1\\.5 > div').attributes('style')).toContain('width: 15%')
-    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
+    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-danger-500')
 
     await wrapper.setProps({ utilization: 0 })
 
     expect(wrapper.text()).toContain('0%')
     expect(wrapper.get('.h-1\\.5 > div').attributes('style')).toContain('width: 0%')
-    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
+    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-danger-500')
   })
 
   it('默认利用率模式仍把超限显示为满格红色', () => {
@@ -157,7 +157,7 @@ describe('UsageProgressBar', () => {
 
     expect(wrapper.text()).toContain('120%')
     expect(wrapper.get('.h-1\\.5 > div').attributes('style')).toContain('width: 100%')
-    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
+    expect(wrapper.get('.h-1\\.5 > div').classes()).toContain('bg-danger-500')
   })
 
   it('默认利用率模式按 75/90 阈值提前预警分级', () => {
@@ -167,10 +167,10 @@ describe('UsageProgressBar', () => {
       })
 
     // 条形配色：74 绿 / 75 与 89 黄 / 90 红
-    expect(mountAt(74).get('.h-1\\.5 > div').classes()).toContain('bg-green-500')
-    expect(mountAt(75).get('.h-1\\.5 > div').classes()).toContain('bg-amber-500')
-    expect(mountAt(89).get('.h-1\\.5 > div').classes()).toContain('bg-amber-500')
-    expect(mountAt(90).get('.h-1\\.5 > div').classes()).toContain('bg-red-500')
+    expect(mountAt(74).get('.h-1\\.5 > div').classes()).toContain('bg-success-500')
+    expect(mountAt(75).get('.h-1\\.5 > div').classes()).toContain('bg-warning-500')
+    expect(mountAt(89).get('.h-1\\.5 > div').classes()).toContain('bg-warning-500')
+    expect(mountAt(90).get('.h-1\\.5 > div').classes()).toContain('bg-danger-500')
 
     // 百分比文本同步分级
     expect(mountAt(74).get('.h-1\\.5 + span').classes()).toContain('text-muted')
