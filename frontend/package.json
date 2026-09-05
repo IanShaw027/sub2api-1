@@ -16,7 +16,8 @@
     "check:contrast": "node scripts/check-contrast.js",
     "lint:ui": "node scripts/ui-lint.mjs --scoped",
     "i18n:diff": "node scripts/i18n-diff.mjs",
-    "anchor:diff": "node scripts/anchor-diff.mjs"
+    "anchor:diff": "node scripts/anchor-diff.mjs",
+    "check:keyname-leak": "node scripts/keyname-leak.mjs"
   },
   "dependencies": {
     "@airwallex/components-sdk": "^1.30.2",
