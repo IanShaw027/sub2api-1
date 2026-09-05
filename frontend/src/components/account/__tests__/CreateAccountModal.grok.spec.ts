@@ -17,6 +17,35 @@ const grokCustomBaseUrlSectionSource = readFileSync(
   'utf8'
 )
 
+// The shared API-key template block (base URL / api key inputs, model
+// restriction, pool mode, etc.) was extracted into CreateApiKeySection.vue
+// during the Glass UI script-side split (task 16A); the placeholder binding
+// checked below now lives there instead of directly in CreateAccountModal.vue.
+const createApiKeySectionSource = readFileSync(
+  resolve(process.cwd(), 'src/components/account/create/CreateApiKeySection.vue'),
+  'utf8'
+)
+
+// The Grok OAuth exchange/validate/import handlers (including the
+// validate/applyGrokOAuthUpstreamConfig call sites checked below) were moved
+// out of CreateAccountModal.vue's <script setup> into this composable during
+// the Glass UI script-side split (task 16A); combine both sources so the
+// call-count assertion still reflects the real create-flow behavior.
+const createAccountOAuthFlowsSource = readFileSync(
+  resolve(process.cwd(), 'src/components/account/create/useCreateAccountOAuthFlows.ts'),
+  'utf8'
+)
+
+// The platform-specific hint/placeholder computeds (oauthStepTitle,
+// baseUrlHint, apiKeyHint, apiKeyBaseUrlPlaceholder, apiKeyValuePlaceholder)
+// were moved out of CreateAccountModal.vue's <script setup> into this
+// composable during the Glass UI script-side split (task 16A); the
+// apiKeyValuePlaceholder literal checked below now lives there instead.
+const createAccountPlatformHintsSource = readFileSync(
+  resolve(process.cwd(), 'src/components/account/create/useCreateAccountPlatformHints.ts'),
+  'utf8'
+)
+
 describe('CreateAccountModal Grok account types', () => {
   it('offers API-key setup alongside OAuth with the official xAI default', () => {
     // Account-type selector markup was extracted into GrokPanel.vue during the
@@ -27,8 +56,8 @@ describe('CreateAccountModal Grok account types', () => {
     expect(source).toContain("newPlatform === 'grok'")
     expect(source).toContain("? 'https://api.x.ai/v1'")
     expect(source).toContain("form.platform === 'grok'")
-    expect(source).toContain(':placeholder="apiKeyValuePlaceholder"')
-    expect(source).toContain("return 'xai-...'")
+    expect(createApiKeySectionSource).toContain(':placeholder="apiKeyValuePlaceholder"')
+    expect(createAccountPlatformHintsSource).toContain("return 'xai-...'")
   })
 
   it('exposes custom upstream URL and header override for the OAuth create flow', () => {
@@ -42,8 +71,9 @@ describe('CreateAccountModal Grok account types', () => {
 
   it('validates and applies upstream config on Grok OAuth create paths', () => {
     // 授权码兑换 / RT 批量 / SSO 批量（密码授权已隐藏）
-    expect(source.match(/validateGrokOAuthUpstreamConfig\(\)/g)?.length).toBeGreaterThanOrEqual(3)
-    expect(source.match(/applyGrokOAuthUpstreamConfig\(credentials\)/g)?.length).toBeGreaterThanOrEqual(3)
+    const combined = source + createAccountOAuthFlowsSource
+    expect(combined.match(/validateGrokOAuthUpstreamConfig\(\)/g)?.length).toBeGreaterThanOrEqual(3)
+    expect(combined.match(/applyGrokOAuthUpstreamConfig\(credentials\)/g)?.length).toBeGreaterThanOrEqual(3)
   })
 
   it('hides Grok password authorize option in the create flow', () => {
