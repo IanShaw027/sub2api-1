@@ -650,11 +650,7 @@ import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
-import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
-import type { BatchUserUsageStats } from '@/api/admin/dashboard'
-import type { PlatformQuotaItem } from '@/api/admin/users'
-import type { Column } from '@/components/common/types'
-import type { SelectOption } from '@/components/common/Select.vue'
+import type { AdminUser } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -668,7 +664,6 @@ import GroupBadge from '@/components/common/GroupBadge.vue'
 import Select from '@/components/common/Select.vue'
 import SearchInput from '@/components/common/SearchInput.vue'
 import { MonoCell, StatusCell, TimeCell, ActionsCell, type ActionsCellItem } from '@/components/common/cells'
-import { buildApiKeyGroupFilterOptions } from './apiKeyGroupFilterOptions'
 import UserAttributesConfigModal from '@/components/user/UserAttributesConfigModal.vue'
 import UserConcurrencyCell from '@/components/user/UserConcurrencyCell.vue'
 import PlatformCostCell from '@/components/user/PlatformCostCell.vue'
@@ -682,505 +677,136 @@ import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsMod
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
+import { useUserAttributes } from './users/useUserAttributes'
+import { useUserColumns, USAGE_COLUMN_KEYS } from './users/useUserColumns'
+import { useUserGroupsData } from './users/useUserGroupsData'
+import { useUserFilters } from './users/useUserFilters'
+import { useUserSort, USER_SORT_STORAGE_KEY } from './users/useUserSort'
+import { useUserSecondaryData } from './users/useUserSecondaryData'
 
 const appStore = useAppStore()
 const router = useRouter()
 
-// Generate dynamic attribute columns from enabled definitions
-const attributeColumns = computed<Column[]>(() =>
-  attributeDefinitions.value
-    .filter(def => def.enabled)
-    .map(def => ({
-      key: `attr_${def.id}`,
-      label: def.name,
-      sortable: false
-    }))
-)
-
-// Get formatted attribute value for display in table
-const getAttributeValue = (userId: number, attrId: number): string => {
-  const userAttrs = userAttributeValues.value[userId]
-  if (!userAttrs) return '-'
-  const value = userAttrs[attrId]
-  if (!value) return '-'
-
-  // Find definition for this attribute
-  const def = attributeDefinitions.value.find(d => d.id === attrId)
-  if (!def) return value
-
-  // Format based on type
-  if (def.type === 'multi_select' && value) {
-    try {
-      const arr = JSON.parse(value)
-      if (Array.isArray(arr)) {
-        // Map values to labels
-        return arr.map(v => {
-          const opt = def.options?.find(o => o.value === v)
-          return opt?.label || v
-        }).join(', ')
-      }
-    } catch {
-      return value
-    }
-  }
-
-  if (def.type === 'select' && value && def.options) {
-    const opt = def.options.find(o => o.value === value)
-    return opt?.label || value
-  }
-
-  return value
-}
-
-// All possible columns (for column settings)
-const allColumns = computed<Column[]>(() => [
-  { key: 'email', label: t('admin.users.columns.user'), sortable: true },
-  { key: 'id', label: t('admin.users.columns.id'), sortable: true },
-  { key: 'username', label: t('admin.users.columns.username'), sortable: true },
-  { key: 'notes', label: t('admin.users.columns.notes'), sortable: false },
-  // Dynamic attribute columns
-  ...attributeColumns.value,
-  { key: 'role', label: t('admin.users.columns.role'), sortable: true },
-  { key: 'groups', label: t('admin.users.columns.groups'), sortable: false },
-  { key: 'subscriptions', label: t('admin.users.columns.subscriptions'), sortable: false },
-  { key: 'balance', label: t('admin.users.columns.balance'), sortable: true },
-  { key: 'balance_platform_quota', label: t('admin.users.columns.balancePlatformQuota'), sortable: false },
-  { key: 'usage', label: t('admin.users.columns.usage'), sortable: false },
-  { key: 'usage_anthropic', label: t('admin.users.columns.usageAnthropic'), sortable: false },
-  { key: 'usage_openai', label: t('admin.users.columns.usageOpenAI'), sortable: false },
-  { key: 'usage_gemini', label: t('admin.users.columns.usageGemini'), sortable: false },
-  { key: 'usage_antigravity', label: t('admin.users.columns.usageAntigravity'), sortable: false },
-  { key: 'concurrency', label: t('admin.users.columns.concurrency'), sortable: true },
-  { key: 'status', label: t('admin.users.columns.status'), sortable: true },
-  { key: 'last_active_at', label: t('admin.users.columns.lastActive'), sortable: true },
-  { key: 'last_used_at', label: t('admin.users.columns.lastUsed'), sortable: true },
-  { key: 'created_at', label: t('admin.users.columns.created'), sortable: true },
-  { key: 'actions', label: t('admin.users.columns.actions'), sortable: false }
-])
-
-// Columns that can be toggled (exclude email and actions which are always visible)
-const toggleableColumns = computed(() =>
-  allColumns.value.filter(col => col.key !== 'email' && col.key !== 'actions')
-)
-
-// Hidden columns (stored in Set - columns NOT in this set are visible)
-// This way, new columns are visible by default
-const hiddenColumns = reactive<Set<string>>(new Set())
-
-// Default hidden columns (columns hidden by default on first load)
-const DEFAULT_HIDDEN_COLUMNS = [
-  'notes', 'groups', 'subscriptions', 'usage', 'concurrency',
-  'usage_anthropic', 'usage_openai', 'usage_gemini', 'usage_antigravity',
-  'balance_platform_quota'
-]
-const REMOVED_COLUMNS = new Set(['last_login_at'])
-// 强制可见列：加载时会被强制移出 hiddenColumns，并在列设置 UI 上 disabled。
-// 当前没有列需要强制可见 —— last_active_at 已改为可被用户隐藏。
-const FORCED_VISIBLE_COLUMNS = new Set<string>(['concurrency'])
-
-// localStorage keys for column settings
-const HIDDEN_COLUMNS_KEY = 'user-hidden-columns'
-// 列设置 schema 版本号。每次给 DEFAULT_HIDDEN_COLUMNS 新增列时 bump 一次，
-// 并在 VERSION_NEW_HIDDEN_COLUMNS 中登记该版本新增的 key。
-// 这样老用户升级后这些新列会被自动隐藏一次，而不会影响他们对其它老列的偏好。
-const COLUMN_SETTINGS_VERSION_KEY = 'user-column-settings-version'
-const COLUMN_SETTINGS_VERSION = 3
-const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
-  2: ['usage_anthropic', 'usage_openai', 'usage_gemini', 'usage_antigravity'],
-  3: ['balance_platform_quota']
-}
-
-// Load saved column settings
-const loadSavedColumns = () => {
-  try {
-    const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY)
-    if (saved) {
-      const parsed = JSON.parse(saved) as string[]
-      parsed
-        .filter(key => !REMOVED_COLUMNS.has(key) && !FORCED_VISIBLE_COLUMNS.has(key))
-        .forEach(key => hiddenColumns.add(key))
-
-      // 老用户升级：把每个未应用过的版本里新增的默认隐藏列自动追加到 hiddenColumns。
-      const storedVersion = Number(localStorage.getItem(COLUMN_SETTINGS_VERSION_KEY) ?? '1')
-      if (storedVersion < COLUMN_SETTINGS_VERSION) {
-        let mutated = false
-        for (let v = storedVersion + 1; v <= COLUMN_SETTINGS_VERSION; v++) {
-          for (const key of VERSION_NEW_HIDDEN_COLUMNS[v] ?? []) {
-            if (REMOVED_COLUMNS.has(key) || FORCED_VISIBLE_COLUMNS.has(key)) continue
-            if (!hiddenColumns.has(key)) {
-              hiddenColumns.add(key)
-              mutated = true
-            }
-          }
-        }
-        if (mutated) saveColumnsToStorage()
-        else localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
-      }
-    } else {
-      // Use default hidden columns on first load
-      DEFAULT_HIDDEN_COLUMNS.forEach(key => hiddenColumns.add(key))
-      localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
-    }
-  } catch (e) {
-    console.error('Failed to load saved columns:', e)
-    DEFAULT_HIDDEN_COLUMNS.forEach(key => hiddenColumns.add(key))
-  }
-}
-
-// Save column settings to localStorage
-const saveColumnsToStorage = () => {
-  try {
-    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
-    localStorage.setItem(COLUMN_SETTINGS_VERSION_KEY, String(COLUMN_SETTINGS_VERSION))
-  } catch (e) {
-    console.error('Failed to save columns:', e)
-  }
-}
-
-// Toggle column visibility
-const isForcedVisibleColumn = (key: string) => FORCED_VISIBLE_COLUMNS.has(key)
-const toggleColumn = (key: string) => {
-  // 强制可见列(如 last_active_at)在加载时会被恢复成可见，
-  // 这里阻止用户在当前会话隐藏它，避免"取消勾选 → 刷新又恢复"的反直觉行为。
-  if (FORCED_VISIBLE_COLUMNS.has(key)) return
-  const wasHidden = hiddenColumns.has(key)
-  if (hiddenColumns.has(key)) {
-    hiddenColumns.delete(key)
-  } else {
-    hiddenColumns.add(key)
-  }
-  saveColumnsToStorage()
-  if (wasHidden && (key === 'usage' || key.startsWith('usage_') || key.startsWith('attr_') || key === 'balance_platform_quota')) {
-    refreshCurrentPageSecondaryData()
-  }
-  if (key === 'subscriptions') {
-    loadUsers()
-  }
-  if (wasHidden && key === 'groups') {
-    loadAllGroups()
-  }
-}
-
-// Check if column is visible (not in hidden set)
-const isColumnVisible = (key: string) => !hiddenColumns.has(key)
-// usage 主列或任意 usage_<platform> 子列可见时都需要批量拉取用量数据
-// 列 key → 平台名（'usage' 主列汇总所有平台时为 null）
-// 显式数组取代 Object.keys()：保证迭代顺序（决定列头排序按钮渲染顺序）
-// 不会因 JS 引擎差异或 USAGE_COLUMN_PLATFORMS 属性顺序调整而静默变化。
-const USAGE_COLUMN_KEYS: readonly string[] = ['usage', 'usage_anthropic', 'usage_openai', 'usage_gemini', 'usage_antigravity']
-const USAGE_COLUMN_PLATFORMS: Record<string, string | null> = {
-  usage: null,
-  usage_anthropic: 'anthropic',
-  usage_openai: 'openai',
-  usage_gemini: 'gemini',
-  usage_antigravity: 'antigravity'
-}
-const PLATFORM_USAGE_COLUMNS = USAGE_COLUMN_KEYS.filter((k) => k !== 'usage')
-const hasVisibleUsageColumn = computed(
-  () => !hiddenColumns.has('usage') || PLATFORM_USAGE_COLUMNS.some((k) => !hiddenColumns.has(k))
-)
-const hasVisibleGroupsColumn = computed(() => !hiddenColumns.has('groups'))
-const hasVisiblePlatformQuotaColumn = computed(() => !hiddenColumns.has('balance_platform_quota'))
-const hasVisibleAttributeColumns = computed(() =>
-  attributeDefinitions.value.some((def) => def.enabled && !hiddenColumns.has(`attr_${def.id}`))
-)
-
-// Filtered columns based on visibility
-const columns = computed<Column[]>(() =>
-  allColumns.value.filter(col =>
-    col.key === 'email' || col.key === 'actions' || !hiddenColumns.has(col.key)
-  )
-)
-
-// ListPage 配方：固定列宽通过 `usr-col-<key>` class 挂到 th/td 上，宽度在 style（scoped）里用 :deep() 指定。
-const cols = computed<Column[]>(() =>
-  columns.value.map((col) => ({ ...col, class: `usr-col-${col.key}` }))
-)
-
 const users = ref<AdminUser[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
-const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
-const loadInitialSortState = (): { sort_by: string; sort_order: 'asc' | 'desc' } => {
-  const fallback = { sort_by: 'created_at', sort_order: 'desc' as 'asc' | 'desc' }
-  const sortable = new Set(['email', 'id', 'username', 'role', 'balance', 'concurrency', 'current_concurrency', 'available_concurrency', 'status', 'last_used_at', 'last_active_at', 'created_at', 'last_30d_usage'])
-  try {
-    const raw = localStorage.getItem(USER_SORT_STORAGE_KEY)
-    if (!raw) return fallback
-    const parsed = JSON.parse(raw) as { key?: string; order?: string }
-    const key = typeof parsed.key === 'string' ? parsed.key : ''
-    if (!sortable.has(key)) return fallback
-    return {
-      sort_by: key,
-      sort_order: parsed.order === 'asc' ? 'asc' : 'desc'
-    }
-  } catch {
-    return fallback
-  }
-}
-const sortState = reactive(loadInitialSortState())
 
-// Groups data for the groups column and the existing "authorised group" filter (active only)
-const allGroups = ref<AdminGroup[]>([])
-const loadAllGroups = async () => {
-  if (allGroups.value.length > 0) return
-  try {
-    allGroups.value = await adminAPI.groups.getAll()
-  } catch (e) {
-    console.error('Failed to load groups:', e)
-  }
-}
-
-// Groups for the API Key group filter — includes disabled groups so admins can
-// filter users whose keys are still bound to a now-disabled group.
-const allGroupsForApiKeyFilter = ref<AdminGroup[]>([])
-const loadAllGroupsForApiKeyFilter = async () => {
-  if (allGroupsForApiKeyFilter.value.length > 0) return
-  try {
-    allGroupsForApiKeyFilter.value = await adminAPI.groups.getAllIncludingInactive()
-  } catch (e) {
-    console.error('Failed to load groups for API key filter:', e)
-  }
-}
-// Resolve user's accessible groups: exclusive groups first, then public groups
-const getUserGroups = (user: AdminUser) => {
-  const exclusive: AdminGroup[] = []
-  const publicGroups: AdminGroup[] = []
-  for (const g of allGroups.value) {
-    if (g.status !== 'active' || g.subscription_type !== 'standard') continue
-    if (g.is_exclusive) {
-      if (user.allowed_groups?.includes(g.id)) {
-        exclusive.push(g)
-      }
-    } else {
-      publicGroups.push(g)
-    }
-  }
-  return { exclusive, publicGroups }
-}
-
-// Group filter options: "All Groups" + active exclusive groups (value = group name for fuzzy match)
-const groupFilterOptions = computed(() => {
-  const options: { value: string; label: string }[] = [
-    { value: '', label: t('admin.users.allAuthorizedGroups') }
-  ]
-  for (const g of allGroups.value) {
-    if (g.status !== 'active' || !g.is_exclusive || g.subscription_type !== 'standard') continue
-    options.push({ value: g.name, label: g.name })
-  }
-  return options
+const pagination = reactive({
+  page: 1,
+  page_size: getPersistedPageSize(),
+  total: 0,
+  pages: 0
 })
 
-// API Key group filter options: "All" + groups partitioned by type (value = group id).
-// Uses allGroupsForApiKeyFilter which includes disabled groups.
-const apiKeyGroupFilterOptions = computed(() =>
-  buildApiKeyGroupFilterOptions(allGroupsForApiKeyFilter.value, {
-    all: t('admin.users.allApiKeyGroups'),
-    exclusive: t('admin.users.apiKeyGroupExclusive'),
-    public: t('admin.users.apiKeyGroupPublic'),
-    subscription: t('admin.users.apiKeyGroupSubscription'),
-    disabled: t('admin.users.apiKeyGroupDisabled'),
-  }) as SelectOption[]
-)
+// ---------------------------------------------------------------- attributes
+const {
+  attributeDefinitions,
+  loadAttributeDefinitions,
+  getAttributeDefinition,
+  getAttributeDefinitionName
+} = useUserAttributes()
 
-// Filter values (role, status, and custom attributes)
-const filters = reactive({
-  role: '',
-  status: '',
-  group: '',  // group name for fuzzy match, '' = all
-  apiKeyGroup: null as number | null  // group id bound to the user's API keys, null = all
+// -------------------------------------------------------------- groups data
+const {
+  allGroups,
+  loadAllGroups,
+  allGroupsForApiKeyFilter,
+  loadAllGroupsForApiKeyFilter,
+  getUserGroups,
+  getDaysRemaining
+} = useUserGroupsData()
+
+// ------------------------------------------------------------------ columns
+const {
+  toggleableColumns,
+  loadSavedColumns,
+  isForcedVisibleColumn,
+  toggleColumn,
+  isColumnVisible,
+  hasVisibleUsageColumn,
+  hasVisibleGroupsColumn,
+  hasVisiblePlatformQuotaColumn,
+  hasVisibleAttributeColumns,
+  cols
+} = useUserColumns(attributeDefinitions, {
+  onSecondaryDataColumnShown: () => refreshCurrentPageSecondaryData(),
+  onSubscriptionsToggled: () => loadUsers(),
+  onGroupsColumnShown: () => loadAllGroups()
 })
-const activeAttributeFilters = reactive<Record<number, string>>({})
 
-// Visible filters tracking (which filters are shown in the UI)
-// Keys: 'role', 'status', 'attr_${id}'
-const visibleFilters = reactive<Set<string>>(new Set())
+// ------------------------------------------------------------ secondary data
+const {
+  usageStats,
+  platformQuotaStats,
+  getPlatformUsage,
+  getAttributeValue,
+  loadUsersSecondaryData,
+  refreshCurrentPageSecondaryData,
+  nextSecondaryDataSeq,
+  isCurrentSecondaryDataSeq,
+  resetSecondaryData
+} = useUserSecondaryData(users, attributeDefinitions, {
+  hasVisibleUsageColumn,
+  hasVisibleAttributeColumns,
+  hasVisiblePlatformQuotaColumn
+})
+void loadUsersSecondaryData
 
-// Dropdown states
-const showFilterDropdown = ref(false)
-const showColumnDropdown = ref(false)
+// ------------------------------------------------------------------ filters
+const {
+  filters,
+  activeAttributeFilters,
+  visibleFilters,
+  showFilterDropdown,
+  filterDropdownRef,
+  filterableAttributes,
+  builtInFilters,
+  groupFilterOptions,
+  apiKeyGroupFilterOptions,
+  loadSavedFilters,
+  toggleBuiltInFilter,
+  toggleAttributeFilter,
+  updateAttributeFilter,
+  applyFilter
+} = useUserFilters(attributeDefinitions, allGroups, allGroupsForApiKeyFilter, {
+  loadAllGroups,
+  loadAllGroupsForApiKeyFilter,
+  resetPageAndReload: () => {
+    pagination.page = 1
+    loadUsers()
+  },
+  reload: () => loadUsers()
+})
 
-// Dropdown refs for click outside detection
-const filterDropdownRef = ref<HTMLElement | null>(null)
-const columnDropdownRef = ref<HTMLElement | null>(null)
-
-// localStorage keys
-const FILTER_VALUES_KEY = 'user-filter-values'
-const VISIBLE_FILTERS_KEY = 'user-visible-filters'
-
-// All filterable attribute definitions (enabled attributes)
-const filterableAttributes = computed(() =>
-  attributeDefinitions.value.filter(def => def.enabled)
-)
-
-// Built-in filter definitions
-const builtInFilters = computed(() => [
-  { key: 'role', name: t('admin.users.columns.role'), type: 'select' as const },
-  { key: 'status', name: t('admin.users.columns.status'), type: 'select' as const },
-  { key: 'group', name: t('admin.users.authorizedGroupFilter'), type: 'select' as const },
-  { key: 'apiKeyGroup', name: t('admin.users.apiKeyGroupFilter'), type: 'select' as const }
-])
-
-// Load saved filters from localStorage
-const loadSavedFilters = () => {
-  try {
-    // Load visible filters
-    const savedVisible = localStorage.getItem(VISIBLE_FILTERS_KEY)
-    if (savedVisible) {
-      const parsed = JSON.parse(savedVisible) as string[]
-      parsed.forEach(key => visibleFilters.add(key))
-    }
-    // Load filter values
-    const savedValues = localStorage.getItem(FILTER_VALUES_KEY)
-    if (savedValues) {
-      const parsed = JSON.parse(savedValues)
-      if (parsed.role) filters.role = parsed.role
-      if (parsed.status) filters.status = parsed.status
-      if (parsed.group) filters.group = parsed.group
-      if (typeof parsed.apiKeyGroup === 'number') filters.apiKeyGroup = parsed.apiKeyGroup
-      if (parsed.attributes) {
-        Object.assign(activeAttributeFilters, parsed.attributes)
-      }
-    }
-  } catch (e) {
-    console.error('Failed to load saved filters:', e)
-  }
-}
-
-// Save filters to localStorage
-const saveFiltersToStorage = () => {
-  try {
-    // Save visible filters
-    localStorage.setItem(VISIBLE_FILTERS_KEY, JSON.stringify([...visibleFilters]))
-    // Save filter values
-    const values = {
-      role: filters.role,
-      status: filters.status,
-      group: filters.group,
-      apiKeyGroup: filters.apiKeyGroup,
-      attributes: activeAttributeFilters
-    }
-    localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify(values))
-  } catch (e) {
-    console.error('Failed to save filters:', e)
-  }
-}
-
-// Get attribute definition by ID
-const getAttributeDefinition = (attrId: number): UserAttributeDefinition | undefined => {
-  return attributeDefinitions.value.find(d => d.id === attrId)
-}
-const usageStats = ref<Record<string, BatchUserUsageStats>>({})
-const platformQuotaStats = ref<Record<number, PlatformQuotaItem[]>>({})
-
-const getPlatformUsage = (userId: number, platform: string) =>
-  usageStats.value[userId]?.by_platform?.find((p) => p.platform === platform)
-
-// 用量列前端排序：DataTable 工作在 server-side-sort 模式，所有 sortable
-// 字段都会触发后端查询，而用量列数据是异步批量拉取后再合并到当前页，
-// 因此采用独立的前端排序状态对当前页 users 做本地排序。
-// 排序状态独立于后端 sortState 持久化；缺失数据按 0 处理（desc 沉底、asc 置顶）。
-type UsageMetric = 'today' | 'total'
-type UsageSortState = { key: string; metric: UsageMetric; order: 'asc' | 'desc' } | null
-const USAGE_SORT_STORAGE_KEY = 'admin-users-usage-sort'
-// 列头排序按钮点击后弹出的"今日/近30天"选择菜单，同时只允许一个列展开。
-const openUsageSortMenu = ref<string | null>(null)
-
-const loadInitialUsageSort = (): UsageSortState => {
-  try {
-    const raw = localStorage.getItem(USAGE_SORT_STORAGE_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<{ key: string; metric: string; order: string }>
-    if (!parsed.key || !USAGE_COLUMN_KEYS.includes(parsed.key)) return null
-    const metric: UsageMetric = parsed.metric === 'total' ? 'total' : 'today'
-    const order: 'asc' | 'desc' = parsed.order === 'asc' ? 'asc' : 'desc'
-    return { key: parsed.key, metric, order }
-  } catch {
-    return null
-  }
-}
-const usageSort = ref<UsageSortState>(loadInitialUsageSort())
-const persistUsageSort = () => {
-  try {
-    if (usageSort.value) {
-      localStorage.setItem(USAGE_SORT_STORAGE_KEY, JSON.stringify(usageSort.value))
-    } else {
-      localStorage.removeItem(USAGE_SORT_STORAGE_KEY)
-    }
-  } catch (e) {
-    console.error('Failed to persist usage sort:', e)
-  }
-}
-const clearUsageSort = () => {
-  if (!usageSort.value) return
-  usageSort.value = null
-  openUsageSortMenu.value = null
-  persistUsageSort()
-}
-
-const isUsageSortActive = (key: string, metric: UsageMetric) =>
-  !!usageSort.value && usageSort.value.key === key && usageSort.value.metric === metric
-const getUsageSortOrder = (key: string, metric: UsageMetric): 'asc' | 'desc' | null =>
-  isUsageSortActive(key, metric) ? usageSort.value!.order : null
-
-// 三态循环：desc → asc → off。选完即关闭菜单（用户大多希望"选中即应用"，
-// 想再切换 order 时重新打开菜单点同一项即可）。
-const isServerLast30dSort = computed(() =>
-  usageSort.value?.key === 'usage' && usageSort.value?.metric === 'total'
-)
-
-const toggleUsageSort = (key: string, metric: UsageMetric) => {
-  const cur = usageSort.value
-  if (cur && cur.key === key && cur.metric === metric) {
-    usageSort.value = cur.order === 'desc' ? { key, metric, order: 'asc' } : null
-  } else {
-    usageSort.value = { key, metric, order: 'desc' }
-  }
-  persistUsageSort()
-  openUsageSortMenu.value = null
-  if (key === 'usage' && metric === 'total') {
+// --------------------------------------------------------------------- sort
+const {
+  sortState,
+  usageSort,
+  openUsageSortMenu,
+  isServerLast30dSort,
+  sortedUsers,
+  isUsageSortActive,
+  getUsageSortOrder,
+  toggleUsageSort,
+  toggleUsageSortMenu,
+  handleSort: applySortState
+} = useUserSort(users, usageStats, {
+  onServerUsageSortChanged: () => {
     pagination.page = 1
     loadUsers()
   }
+})
+
+const handleSort = (key: string, order: 'asc' | 'desc') => {
+  applySortState(key, order)
+  pagination.page = 1
+  loadUsers()
 }
 
-// 点击图标本身不触发排序，仅开关菜单；首次排序由用户在菜单内选择 metric 触发（默认 desc，详见 toggleUsageSort）。
-const toggleUsageSortMenu = (key: string) => {
-  openUsageSortMenu.value = openUsageSortMenu.value === key ? null : key
-}
-
-const getUsageValue = (userId: number, key: string, metric: UsageMetric): number => {
-  const stats = usageStats.value[userId]
-  if (!stats) return 0
-  const platform = USAGE_COLUMN_PLATFORMS[key]
-  if (platform === null) {
-    return metric === 'today' ? stats.today_actual_cost ?? 0 : stats.total_actual_cost ?? 0
-  }
-  const p = stats.by_platform?.find((x) => x.platform === platform)
-  if (!p) return 0
-  return metric === 'today' ? p.today_actual_cost ?? 0 : p.total_actual_cost ?? 0
-}
-
-// 在 server-side 排序结果之上叠加用量列的本地排序；无 usageSort 时直接透传原数组。
-// 稳定排序：等值按原 index 保序，避免拉取新用量数据时表行抖动。
 function sanitizeAvatarUrl(url?: string | null): string {
   const raw = url?.trim() || ''
   return sanitizeSupportQRUrl(raw) || sanitizeUrl(raw, { allowRelative: true, allowDataUrl: true })
 }
-
-const sortedUsers = computed(() => {
-  const s = usageSort.value
-  if (!s || isServerLast30dSort.value) return users.value
-  return [...users.value]
-    .map((row, index) => ({ row, index }))
-    .sort((a, b) => {
-      const av = getUsageValue(a.row.id, s.key, s.metric)
-      const bv = getUsageValue(b.row.id, s.key, s.metric)
-      if (av !== bv) return s.order === 'asc' ? av - bv : bv - av
-      return a.index - b.index
-    })
-    .map((x) => x.row)
-})
 
 const {
   selectedIds,
@@ -1198,16 +824,6 @@ const handleSelectedKeysUpdate = (keys: Array<string | number>) => {
 
 const getUserSelectionLabel = (user: AdminUser) =>
   t('admin.users.bulkLimits.selectUser', { email: user.email })
-
-// User attribute definitions and values
-const attributeDefinitions = ref<UserAttributeDefinition[]>([])
-const userAttributeValues = ref<Record<number, Record<number, string>>>({})
-const pagination = reactive({
-  page: 1,
-  page_size: getPersistedPageSize(),
-  total: 0,
-  pages: 0
-})
 
 // ListPage 配方：三段迷你统计卡 → 一行可点击的 .summary-chip。
 // 计数只统计当前页（后端未提供全量分桶接口，与旧 MiniStatCard 的口径一致，非功能回退）。
@@ -1291,91 +907,6 @@ const closePlatformQuotaModal = () => {
   platformQuotaUser.value = null
 }
 let abortController: AbortController | null = null
-let secondaryDataSeq = 0
-
-const loadUsersSecondaryData = async (
-  userIds: number[],
-  signal?: AbortSignal,
-  expectedSeq?: number
-) => {
-  if (userIds.length === 0) return
-
-  const tasks: Promise<void>[] = []
-
-  if (hasVisibleUsageColumn.value) {
-    tasks.push(
-      (async () => {
-        try {
-          const usageResponse = await adminAPI.dashboard.getBatchUsersUsage(userIds)
-          if (signal?.aborted) return
-          if (typeof expectedSeq === 'number' && expectedSeq !== secondaryDataSeq) return
-          usageStats.value = usageResponse.stats
-        } catch (e) {
-          if (signal?.aborted) return
-          console.error('Failed to load usage stats:', e)
-        }
-      })()
-    )
-  }
-
-  if (attributeDefinitions.value.length > 0 && hasVisibleAttributeColumns.value) {
-    tasks.push(
-      (async () => {
-        try {
-          const attrResponse = await adminAPI.userAttributes.getBatchUserAttributes(userIds)
-          if (signal?.aborted) return
-          if (typeof expectedSeq === 'number' && expectedSeq !== secondaryDataSeq) return
-          userAttributeValues.value = attrResponse.attributes
-        } catch (e) {
-          if (signal?.aborted) return
-          console.error('Failed to load user attribute values:', e)
-        }
-      })()
-    )
-  }
-
-  if (hasVisiblePlatformQuotaColumn.value) {
-    tasks.push(
-      (async () => {
-        try {
-          // 无批量端点：对当前页用户逐个拉取，分块并发（每批 6），批间检查中止条件，避免大 pageSize 时请求洪峰
-          const CHUNK = 6
-          for (let i = 0; i < userIds.length; i += CHUNK) {
-            if (signal?.aborted) return
-            if (typeof expectedSeq === 'number' && expectedSeq !== secondaryDataSeq) return
-            const chunk = userIds.slice(i, i + CHUNK)
-            const results = await Promise.allSettled(
-              chunk.map((id) => adminAPI.users.getPlatformQuotas(id))
-            )
-            if (signal?.aborted) return
-            if (typeof expectedSeq === 'number' && expectedSeq !== secondaryDataSeq) return
-            const merged = { ...platformQuotaStats.value }
-            results.forEach((r, idx) => {
-              if (r.status === 'fulfilled') {
-                merged[chunk[idx]] = r.value.platform_quotas || []
-              }
-            })
-            platformQuotaStats.value = merged
-          }
-        } catch (e) {
-          if (signal?.aborted) return
-          console.error('Failed to load platform quotas:', e)
-        }
-      })()
-    )
-  }
-
-  if (tasks.length > 0) {
-    await Promise.allSettled(tasks)
-  }
-}
-
-const refreshCurrentPageSecondaryData = () => {
-  const userIds = users.value.map((u) => u.id)
-  if (userIds.length === 0) return
-  const seq = ++secondaryDataSeq
-  void loadUsersSecondaryData(userIds, undefined, seq)
-}
 
 // ListPage 配方：操作列改用共享的 ActionsCell（编辑图标 + `…` 溢出菜单），
 // 不再手写 Teleport 悬浮菜单与定位逻辑。菜单项与旧版一一对应，零功能损失。
@@ -1397,6 +928,10 @@ const getUserActionItems = (user: AdminUser): ActionsCellItem[] => {
 // Header "更多" dropdown（属性配置入口）
 const showMoreDropdown = ref(false)
 const moreDropdownRef = ref<HTMLElement | null>(null)
+
+// Column settings dropdown
+const showColumnDropdown = ref(false)
+const columnDropdownRef = ref<HTMLElement | null>(null)
 
 // Close menu when clicking outside
 const handleClickOutside = (event: MouseEvent) => {
@@ -1447,22 +982,6 @@ const balanceOperation = ref<'add' | 'subtract'>('add')
 const showBalanceHistoryModal = ref(false)
 const balanceHistoryUser = ref<AdminUser | null>(null)
 
-// 计算剩余天数
-const getDaysRemaining = (expiresAt: string): number => {
-  const now = new Date()
-  const expires = new Date(expiresAt)
-  const diffMs = expires.getTime() - now.getTime()
-  return Math.ceil(diffMs / (1000 * 60 * 60 * 24))
-}
-
-const loadAttributeDefinitions = async () => {
-  try {
-    attributeDefinitions.value = await adminAPI.userAttributes.listEnabledDefinitions()
-  } catch (e) {
-    console.error('Failed to load attribute definitions:', e)
-  }
-}
-
 // Handle attributes modal close - reload definitions and users
 const handleAttributesModalClose = async () => {
   showAttributesModal.value = false
@@ -1511,16 +1030,14 @@ const loadUsers = async () => {
     users.value = response.items
     pagination.total = response.total
     pagination.pages = response.pages
-    usageStats.value = {}
-    userAttributeValues.value = {}
-    platformQuotaStats.value = {}
+    resetSecondaryData()
 
     // Defer heavy secondary data so table can render first.
     if (response.items.length > 0) {
       const userIds = response.items.map((u) => u.id)
-      const seq = ++secondaryDataSeq
+      const seq = nextSecondaryDataSeq()
       window.setTimeout(() => {
-        if (signal.aborted || seq !== secondaryDataSeq) return
+        if (signal.aborted || !isCurrentSecondaryDataSeq(seq)) return
         void loadUsersSecondaryData(userIds, signal, seq)
       }, 50)
     }
@@ -1560,63 +1077,6 @@ const handlePageChange = (page: number) => {
 const handlePageSizeChange = (pageSize: number) => {
   pagination.page_size = pageSize
   pagination.page = 1
-  loadUsers()
-}
-
-const handleSort = (key: string, order: 'asc' | 'desc') => {
-  clearUsageSort()
-  sortState.sort_by = key
-  sortState.sort_order = order
-  pagination.page = 1
-  loadUsers()
-}
-
-// Filter helpers
-const getAttributeDefinitionName = (attrId: number): string => {
-  const def = attributeDefinitions.value.find(d => d.id === attrId)
-  return def?.name || String(attrId)
-}
-
-// Toggle a built-in filter (role/status)
-const toggleBuiltInFilter = (key: string) => {
-  if (visibleFilters.has(key)) {
-    visibleFilters.delete(key)
-    if (key === 'role') filters.role = ''
-    if (key === 'status') filters.status = ''
-    if (key === 'group') filters.group = ''
-    if (key === 'apiKeyGroup') filters.apiKeyGroup = null
-  } else {
-    visibleFilters.add(key)
-    if (key === 'group') loadAllGroups()
-    if (key === 'apiKeyGroup') loadAllGroupsForApiKeyFilter()
-  }
-  saveFiltersToStorage()
-  pagination.page = 1
-  loadUsers()
-}
-
-// Toggle a custom attribute filter
-const toggleAttributeFilter = (attr: UserAttributeDefinition) => {
-  const key = `attr_${attr.id}`
-  if (visibleFilters.has(key)) {
-    visibleFilters.delete(key)
-    delete activeAttributeFilters[attr.id]
-  } else {
-    visibleFilters.add(key)
-    activeAttributeFilters[attr.id] = ''
-  }
-  saveFiltersToStorage()
-  pagination.page = 1
-  loadUsers()
-}
-
-const updateAttributeFilter = (attrId: number, value: string) => {
-  activeAttributeFilters[attrId] = value
-}
-
-// Apply filter and save to localStorage
-const applyFilter = () => {
-  saveFiltersToStorage()
   loadUsers()
 }
 
