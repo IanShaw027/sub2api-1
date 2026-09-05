@@ -727,7 +727,10 @@ export default {
       button: 'Transfer to Balance',
       transferring: 'Transferring...',
       empty: 'No available rebate quota',
-      success: '{amount} has been transferred to your balance'
+      success: '{amount} has been transferred to your balance',
+      confirmTitle: 'Confirm Transfer',
+      confirmMessage: 'This will transfer your available rebate quota of {amount} into your account balance. This cannot be undone. Continue?',
+      confirmButton: 'Confirm Transfer'
     },
     invitees: {
       title: 'Invited Users',
@@ -789,6 +792,14 @@ export default {
     failedToRedeem: 'Failed to redeem code. Please check the code and try again.',
     subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.',
     pleaseEnterCode: 'Please enter a redeem code',
+    totalRecharged: 'Total Recharged',
+    filter: {
+      all: 'All Types',
+      balance: 'Balance',
+      concurrency: 'Concurrency',
+      subscription: 'Subscription',
+      adminAdjustment: 'Admin Adjustment'
+    },
     columns: {
       type: 'Type',
       code: 'Code',
@@ -801,6 +812,13 @@ export default {
   profile: {
     title: 'Profile Settings',
     description: 'Manage your account information and settings',
+    nav: {
+      profile: 'Profile',
+      security: 'Security',
+      notify: 'Notifications',
+      bindings: 'Bindings',
+      danger: 'Danger Zone',
+    },
     accountBalance: 'Account Balance',
     concurrencyLimit: 'Concurrency Limit',
     rpmLimit: 'RPM Limit',
@@ -813,7 +831,12 @@ export default {
     linkedProfileSources: 'Profile Sources',
     linkedProfileSourcesDescription: 'Some profile details may stay synced from third-party sign-in methods.',
     securityTitle: 'Security Settings',
-    securityDescription: 'Password, two-factor authentication, and alerts live in the right rail.',
+    securityDescription: 'Manage your login password, two-factor authentication (2FA), and passkeys.',
+    dangerZone: {
+      title: 'Danger Zone',
+      description: 'Account-level high-risk actions.',
+      noActionsAvailable: 'No account-level destructive actions (e.g. account deletion) are available in this build.',
+    },
     administrator: 'Administrator',
     user: 'User',
     username: 'Username',

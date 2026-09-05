@@ -2,10 +2,11 @@
  <AppLayout>
  <PageHeader :title="t('redeem.title')" :description="t('redeem.description')" />
  <div class="redeem-page">
- <!-- Balance / concurrency mini stats -->
+ <!-- Balance / concurrency / total recharged mini stats -->
  <div class="redeem-stats">
  <StatCard :label="t('redeem.currentBalance')" :value="`$${(user?.balance ?? 0).toFixed(2)}`" />
  <StatCard :label="t('redeem.concurrency')" :value="`${user?.concurrency ?? 0}`" :sub="t('redeem.requests')" />
+ <StatCard :label="t('redeem.totalRecharged')" :value="`$${totalRecharged.toFixed(2)}`" />
  </div>
 
  <!-- Redeem Form -->
@@ -25,7 +26,7 @@
  :disabled="submitting"
  class="field redeem-code-field"
  />
- <button type="submit" class="btn-primary redeem-submit-btn" :disabled="!redeemCode || submitting">
+ <button type="submit" class="btn btn-primary redeem-submit-btn" :disabled="!redeemCode || submitting">
  <span v-if="submitting" class="spinner" aria-hidden="true"></span>
  <Icon v-else name="checkCircle" size="sm" />
  {{ submitting ? t('redeem.redeeming') : t('redeem.redeemButton') }}
@@ -97,49 +98,54 @@
 
  <!-- Recent Activity -->
  <div class="glass-card redeem-history-card">
- <div class="card-header">
+ <div class="card-header redeem-history-header">
  <p class="card-title">{{ t('redeem.recentActivity') }}</p>
+ <UiSelect
+ :model-value="historyType"
+ class="redeem-history-filter"
+ :options="historyTypeOptions"
+ variant="pill"
+ @update:model-value="handleHistoryTypeChange"
+ />
  </div>
 
- <!-- Loading State -->
- <div v-if="loadingHistory" class="flex items-center justify-center py-10">
- <span class="spinner"></span>
- </div>
-
- <!-- History Table -->
- <template v-else-if="history.length > 0">
- <div class="redeem-history-head">
- <span class="rh-col-title">{{ t('redeem.columns.type') }}</span>
- <span class="rh-col-code">{{ t('redeem.columns.code') }}</span>
- <span class="rh-col-time">{{ t('redeem.columns.time') }}</span>
- <span class="rh-col-amount">{{ t('redeem.columns.amount') }}</span>
- </div>
- <div class="redeem-history-body">
- <div v-for="item in history" :key="item.id" class="redeem-history-row">
- <div class="rh-col-title">
- <span class="badge" :class="historyBadgeClass(item)">
- <Icon :name="historyIcon(item)" size="xs" />
- </span>
- <span class="rh-title-text">{{ getHistoryItemTitle(item) }}</span>
- </div>
- <div class="rh-col-code">
- <span v-if="!isAdminAdjustment(item.type)" class="text-mono rh-code">
- {{ item.code.slice(0, 8) }}...
- </span>
- <span v-else class="rh-muted">{{ t('redeem.adminAdjustment') }}</span>
- </div>
- <div class="rh-col-time text-mono rh-muted">{{ formatDateTime(item.used_at) }}</div>
- <div class="rh-col-amount num" :class="historyValueClass(item)">
- {{ formatHistoryValue(item) }}
- </div>
- </div>
+ <DataTable :columns="historyColumns" :data="history" :loading="loadingHistory" row-key="id">
+ <template #cell-type="{ row }">
+ <div class="rh-type-cell">
+ <StatusBadge :tone="historyBadgeTone(row)">
+ <Icon :name="historyIcon(row)" size="xs" />
+ {{ getHistoryItemTitle(row) }}
+ </StatusBadge>
  </div>
  </template>
-
- <!-- Empty State -->
- <div v-else class="empty-state">
+ <template #cell-code="{ row }">
+ <span v-if="!isAdminAdjustment(row.type)" class="text-mono rh-code">
+ {{ row.code.slice(0, 8) }}...
+ </span>
+ <span v-else class="rh-muted">{{ t('redeem.adminAdjustment') }}</span>
+ </template>
+ <template #cell-used_at="{ row }">
+ <span class="text-mono rh-muted">{{ formatDateTime(row.used_at) }}</span>
+ </template>
+ <template #cell-value="{ row }">
+ <span class="num" :class="historyValueClass(row)">{{ formatHistoryValue(row) }}</span>
+ </template>
+ <template #empty>
+ <div class="empty-state">
  <Icon name="clock" size="xl" class="empty-state-icon" />
  <p class="empty-state-description">{{ t('redeem.historyWillAppear') }}</p>
+ </div>
+ </template>
+ </DataTable>
+
+ <div v-if="historyTotal > historyPageSize" class="redeem-pagination">
+ <UiPagination
+ :page="historyPage"
+ :page-size="historyPageSize"
+ :total="historyTotal"
+ :show-page-size-selector="false"
+ @update:page="handleHistoryPageChange"
+ />
  </div>
  </div>
  </div>
@@ -156,6 +162,11 @@ import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import StatCard from '@/components/ui/StatCard.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import UiPagination from '@/components/ui/UiPagination.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import type { Column } from '@/components/common/types'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
 
@@ -183,6 +194,27 @@ const errorMessage = ref('')
 const history = ref<RedeemHistoryItem[]>([])
 const loadingHistory = ref(false)
 const contactInfo = ref('')
+const totalRecharged = ref(0)
+const historyType = ref('')
+const historyPage = ref(1)
+const historyPageSize = ref(8)
+const historyTotal = ref(0)
+
+const historyColumns = computed<Column[]>(() => [
+  { key: 'type', label: t('redeem.columns.type') },
+  { key: 'code', label: t('redeem.columns.code') },
+  { key: 'used_at', label: t('redeem.columns.time') },
+  { key: 'value', label: t('redeem.columns.amount') }
+])
+
+const historyTypeOptions = computed(() => [
+  { value: '', label: t('redeem.filter.all') },
+  { value: 'balance', label: t('redeem.filter.balance') },
+  { value: 'concurrency', label: t('redeem.filter.concurrency') },
+  { value: 'subscription', label: t('redeem.filter.subscription') },
+  { value: 'admin_balance', label: t('redeem.filter.adminAdjustment') },
+  { value: 'admin_concurrency', label: t('redeem.filter.adminAdjustment') }
+])
 
 // Helper functions for history display
 const isBalanceType = (type: string) => {
@@ -218,9 +250,9 @@ const historyIcon = (item: RedeemHistoryItem) => {
   return 'bolt'
 }
 
-const historyBadgeClass = (item: RedeemHistoryItem) => {
-  if (isSubscriptionType(item.type)) return 'badge-primary'
-  return item.value >= 0 ? 'badge-success' : 'badge-danger'
+const historyBadgeTone = (item: RedeemHistoryItem): 'accent' | 'success' | 'danger' => {
+  if (isSubscriptionType(item.type)) return 'accent'
+  return item.value >= 0 ? 'success' : 'danger'
 }
 
 const historyValueClass = (item: RedeemHistoryItem) => {
@@ -246,12 +278,26 @@ const formatHistoryValue = (item: RedeemHistoryItem) => {
 const fetchHistory = async () => {
   loadingHistory.value = true
   try {
-    history.value = await redeemAPI.getHistory()
+    const res = await redeemAPI.getHistoryPaginated(historyPage.value, historyPageSize.value, historyType.value || undefined)
+    history.value = res.items || []
+    historyTotal.value = res.total || 0
+    totalRecharged.value = res.total_recharged || 0
   } catch (error) {
     console.error('Failed to fetch history:', error)
   } finally {
     loadingHistory.value = false
   }
+}
+
+const handleHistoryTypeChange = (value: string | number | boolean | null) => {
+  historyType.value = typeof value === 'string' ? value : ''
+  historyPage.value = 1
+  fetchHistory()
+}
+
+const handleHistoryPageChange = (page: number) => {
+  historyPage.value = page
+  fetchHistory()
 }
 
 const handleRedeem = async () => {
@@ -286,6 +332,7 @@ const handleRedeem = async () => {
     redeemCode.value = ''
 
     // Refresh history
+    historyPage.value = 1
     await fetchHistory()
 
     // Show success toast
@@ -321,7 +368,7 @@ onMounted(async () => {
 
 .redeem-stats {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -372,105 +419,44 @@ onMounted(async () => {
   padding: 16px 20px 12px;
 }
 
-.redeem-history-head,
-.redeem-history-row {
+.redeem-history-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  padding: 0 20px;
 }
 
-.redeem-history-head {
-  height: 42px;
-  background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
+.redeem-history-filter {
+  flex: none;
 }
 
-.redeem-history-row {
-  height: 58px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  color: var(--foreground);
-}
-
-.redeem-history-body .redeem-history-row:last-child {
-  border-bottom: 0;
-}
-
-.rh-col-title {
+.rh-type-cell {
   display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
   align-items: center;
-  gap: 8px;
 }
 
-.rh-col-title .badge {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  justify-content: center;
-}
-
-.rh-title-text {
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.rh-col-code {
-  flex: 0 0 140px;
-  min-width: 0;
-}
-
-.rh-col-time {
-  flex: 0 0 150px;
-}
-
-.rh-col-amount {
-  flex: 0 0 130px;
-  text-align: right;
-  font-weight: 600;
-}
-
-.rh-code {
-  font-size: 12.5px;
-  color: var(--muted);
-}
-
+.rh-code,
 .rh-muted {
-  font-size: 12.5px;
   color: var(--muted);
+}
+
+.redeem-pagination {
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
 }
 
 @media (max-width: 640px) {
   .redeem-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .redeem-history-head {
-    display: none;
+  .redeem-history-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
-  .redeem-history-row {
-    height: auto;
-    flex-wrap: wrap;
-    padding: 12px 16px;
-    gap: 6px 12px;
-  }
-
-  .rh-col-code,
-  .rh-col-time,
-  .rh-col-amount {
-    flex: 1 1 auto;
-    text-align: left;
+  .redeem-history-filter {
+    width: 100%;
   }
 }
 

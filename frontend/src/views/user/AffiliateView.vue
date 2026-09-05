@@ -27,35 +27,18 @@
  </div>
  <div class="card-body">
  <div class="affiliate-copy-grid">
- <div class="affiliate-copy-field">
- <p class="affiliate-copy-label">{{ t('affiliate.yourCode') }}</p>
- <div class="affiliate-copy-row">
- <code class="affiliate-copy-value">{{ detail.aff_code }}</code>
- <button
- type="button"
- class="btn btn-secondary btn-sm affiliate-copy-btn"
- @click="copyCode"
- >
- <Icon name="copy" size="sm" />
- <span>{{ t('affiliate.copyCode') }}</span>
- </button>
- </div>
- </div>
-
- <div class="affiliate-copy-field">
- <p class="affiliate-copy-label">{{ t('affiliate.inviteLink') }}</p>
- <div class="affiliate-copy-row">
- <code class="affiliate-copy-value">{{ inviteLink }}</code>
- <button
- type="button"
- class="btn btn-secondary btn-sm affiliate-copy-btn"
- @click="copyInviteLink"
- >
- <Icon name="copy" size="sm" />
- <span>{{ t('affiliate.copyLink') }}</span>
- </button>
- </div>
- </div>
+ <EndpointCard
+ :label="t('affiliate.yourCode')"
+ :url="detail.aff_code"
+ :copy-label="t('affiliate.copyCode')"
+ @copy="copyCode"
+ />
+ <EndpointCard
+ :label="t('affiliate.inviteLink')"
+ :url="inviteLink"
+ :copy-label="t('affiliate.copyLink')"
+ @copy="copyInviteLink"
+ />
  </div>
 
  <div class="notice notice-info affiliate-tips">
@@ -81,13 +64,36 @@
  <p class="card-subtitle mt-1">{{ t('affiliate.transfer.description') }}</p>
  <p v-if="detail.aff_quota <= 0" class="mt-2 text-xs text-warning-text">{{ t('affiliate.transfer.empty') }}</p>
  </div>
- <button type="button" class="btn-primary" :disabled="transferring || detail.aff_quota <= 0" @click="transferQuota">
- <span v-if="transferring" class="spinner" aria-hidden="true"></span>
- <Icon v-else name="dollar" size="sm" />
- {{ transferring ? t('affiliate.transfer.transferring') : t('affiliate.transfer.button') }}
+ <button type="button" class="btn btn-primary" :disabled="transferring || detail.aff_quota <= 0" @click="showTransferConfirm = true">
+ <Icon name="dollar" size="sm" />
+ {{ t('affiliate.transfer.button') }}
  </button>
  </div>
  </div>
+
+ <UiModal
+ :open="showTransferConfirm"
+ :title="t('affiliate.transfer.confirmTitle')"
+ width="sm"
+ :close-label="t('common.close')"
+ :close-on-overlay="!transferring"
+ @close="showTransferConfirm = false"
+ >
+ <p class="text-sm text-muted">
+ {{ t('affiliate.transfer.confirmMessage', { amount: formatCurrency(detail.aff_quota) }) }}
+ </p>
+ <template #footer>
+ <div class="flex justify-end gap-3">
+ <button type="button" class="btn-secondary" :disabled="transferring" @click="showTransferConfirm = false">
+ {{ t('common.cancel') }}
+ </button>
+ <button type="button" class="btn btn-primary" :disabled="transferring" @click="transferQuota">
+ <span v-if="transferring" class="spinner" aria-hidden="true"></span>
+ {{ transferring ? t('affiliate.transfer.transferring') : t('affiliate.transfer.confirmButton') }}
+ </button>
+ </div>
+ </template>
+ </UiModal>
 
  <!-- Invitees / rebate records -->
  <div class="glass-card affiliate-table-card">
@@ -139,6 +145,8 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import StatCard from '@/components/ui/StatCard.vue'
 import UiPagination from '@/components/ui/UiPagination.vue'
+import UiModal from '@/components/ui/UiModal.vue'
+import EndpointCard from '@/components/ui/EndpointCard.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Icon from '@/components/icons/Icon.vue'
 import userAPI from '@/api/user'
@@ -157,6 +165,7 @@ const { copyToClipboard } = useClipboard()
 
 const loading = ref(true)
 const transferring = ref(false)
+const showTransferConfirm = ref(false)
 const detail = ref<UserAffiliateDetail | null>(null)
 
 const inviteesPage = ref(1)
@@ -229,6 +238,7 @@ async function transferQuota(): Promise<void> {
   try {
     const resp = await userAPI.transferAffiliateQuota()
     appStore.showSuccess(t('affiliate.transfer.success', { amount: formatCurrency(resp.transferred_quota) }))
+    showTransferConfirm.value = false
     await Promise.all([
       loadAffiliateDetail(true),
       authStore.refreshUser().catch(() => undefined),
@@ -264,57 +274,6 @@ onMounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-}
-
-.affiliate-copy-label {
-  margin-bottom: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.affiliate-copy-row {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: var(--surface-secondary);
-}
-
-.affiliate-copy-value {
-  min-width: 0;
-  overflow-wrap: break-word;
-  word-break: break-all;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--foreground);
-}
-
-.affiliate-copy-btn {
-  width: 100%;
-}
-
-@media (min-width: 640px) {
-  .affiliate-copy-row {
-    flex-direction: row;
-    align-items: center;
-    height: 36px;
-    padding: 0 6px 0 12px;
-  }
-
-  .affiliate-copy-value {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .affiliate-copy-btn {
-    width: auto;
-    flex-shrink: 0;
-  }
 }
 
 .affiliate-tips {
@@ -372,11 +331,11 @@ onMounted(() => {
 
 @media (max-width: 640px) {
   .affiliate-stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .affiliate-copy-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .affiliate-transfer {

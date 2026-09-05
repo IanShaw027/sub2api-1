@@ -731,7 +731,10 @@ export default {
       button: '转入余额',
       transferring: '转入中...',
       empty: '当前没有可转入额度',
-      success: '已转入余额：{amount}'
+      success: '已转入余额：{amount}',
+      confirmTitle: '确认转入余额',
+      confirmMessage: '将把可用返利额度 {amount} 转入账户余额，此操作无法撤销，确定继续吗？',
+      confirmButton: '确认转入'
     },
     invitees: {
       title: '已邀请用户',
@@ -793,6 +796,14 @@ export default {
     failedToRedeem: '兑换失败，请检查兑换码后重试。',
     subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。',
     pleaseEnterCode: '请输入兑换码',
+    totalRecharged: '累计充值',
+    filter: {
+      all: '全部类型',
+      balance: '余额',
+      concurrency: '并发',
+      subscription: '订阅',
+      adminAdjustment: '管理员调整'
+    },
     columns: {
       type: '类型',
       code: '兑换码',
@@ -805,6 +816,13 @@ export default {
   profile: {
     title: '个人设置',
     description: '管理您的账户信息和设置',
+    nav: {
+      profile: '资料',
+      security: '安全',
+      notify: '通知',
+      bindings: '绑定',
+      danger: '危险区',
+    },
     accountBalance: '账户余额',
     concurrencyLimit: '并发限制',
     rpmLimit: 'RPM 限制',
@@ -817,7 +835,12 @@ export default {
     linkedProfileSources: '资料来源',
     linkedProfileSourcesDescription: '部分头像和昵称可能同步自第三方登录方式。',
     securityTitle: '安全设置',
-    securityDescription: '密码、双因素认证和通知提醒集中放在右侧。',
+    securityDescription: '管理登录密码、双因素认证（2FA）和 Passkey 免密登录。',
+    dangerZone: {
+      title: '危险区',
+      description: '账户级别的高风险操作。',
+      noActionsAvailable: '当前版本暂无可用的账户级高危操作（如注销账号）。',
+    },
     administrator: '管理员',
     user: '用户',
     username: '用户名',

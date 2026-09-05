@@ -1,16 +1,8 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AffiliateView from '../AffiliateView.vue'
-
-const componentSource = readFileSync(
-  resolve(dirname(fileURLToPath(import.meta.url)), '../AffiliateView.vue'),
-  'utf8',
-)
+import EndpointCard from '@/components/ui/EndpointCard.vue'
 
 const { copyToClipboard, getAffiliateDetail } = vi.hoisted(() => ({
   copyToClipboard: vi.fn(),
@@ -70,7 +62,7 @@ describe('AffiliateView', () => {
     })
   })
 
-  it('stacks long values and copy controls on mobile while retaining desktop rows', async () => {
+  it('renders the invite code and invite link as EndpointCard copy rows', async () => {
     const wrapper = mount(AffiliateView, {
       global: {
         stubs: {
@@ -82,41 +74,19 @@ describe('AffiliateView', () => {
 
     await flushPromises()
 
-    // These mobile/desktop responsibilities moved from Tailwind utility
-    // classes into scoped `.affiliate-copy-row`/`.affiliate-copy-value`/
-    // `.affiliate-copy-btn` rules during the Glass redesign: the row stacks
-    // (column, stretched) and the value wraps with `break-all` by default,
-    // switching to a horizontal, truncating row only from the `sm` (640px)
-    // breakpoint up.
-    const values = wrapper.findAll('code')
-    expect(values).toHaveLength(2)
-    for (const value of values) {
-      expect(value.classes()).toContain('affiliate-copy-value')
-      expect(Array.from(value.element.parentElement?.classList ?? [])).toContain('affiliate-copy-row')
-    }
+    // EndpointCard is the shared ActionPage copy-row primitive: it already
+    // handles text truncation/overflow responsively on its own, so the page
+    // only needs to wire label/url/copy-label and forward the `copy` event.
+    const cards = wrapper.findAllComponents(EndpointCard)
+    expect(cards).toHaveLength(2)
 
-    const valueRuleMatch = componentSource.match(/\.affiliate-copy-value\s*\{([^}]*)\}/)
-    expect(valueRuleMatch?.[1]).toMatch(/word-break:\s*break-all/)
-    const rowRuleMatch = componentSource.match(/\.affiliate-copy-row\s*\{([^}]*)\}/)
-    expect(rowRuleMatch?.[1]).toMatch(/flex-direction:\s*column/)
-    expect(rowRuleMatch?.[1]).toMatch(/align-items:\s*stretch/)
+    expect(cards[0].props('label')).toBe('affiliate.yourCode')
+    expect(cards[0].props('url')).toBe(affiliateCode)
+    expect(cards[1].props('label')).toBe('affiliate.inviteLink')
+    expect(cards[1].props('url')).toBe(`${window.location.origin}/register?aff=${encodeURIComponent(affiliateCode)}`)
 
-    const responsiveBlockMatch = componentSource.match(/@media \(min-width: 640px\)\s*\{([\s\S]*?)\n\}\n/)
-    const responsiveBlock = responsiveBlockMatch?.[1] ?? ''
-    expect(responsiveBlock).toMatch(/\.affiliate-copy-row\s*\{[^}]*flex-direction:\s*row/)
-    expect(responsiveBlock).toMatch(/\.affiliate-copy-value\s*\{[^}]*white-space:\s*nowrap/)
-
-    const copyButtons = wrapper.findAll('button').filter((button) =>
-      ['affiliate.copyCode', 'affiliate.copyLink'].includes(button.text()),
-    )
-    expect(copyButtons).toHaveLength(2)
-    for (const button of copyButtons) {
-      expect(button.classes()).toContain('affiliate-copy-btn')
-    }
-    expect(responsiveBlock).toMatch(/\.affiliate-copy-btn\s*\{[^}]*width:\s*auto/)
-
-    await copyButtons[0].trigger('click')
-    await copyButtons[1].trigger('click')
+    await cards[0].vm.$emit('copy', cards[0].props('url'))
+    await cards[1].vm.$emit('copy', cards[1].props('url'))
     await flushPromises()
 
     expect(copyToClipboard).toHaveBeenNthCalledWith(1, affiliateCode, 'affiliate.codeCopied')
