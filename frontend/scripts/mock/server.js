@@ -893,6 +893,31 @@ const MOCK_AFF_TRANSFERS = Array.from({ length: 9 }, (_, i) => {
 })
 
 const TICKET_USERS = [[2, 'alice', 'alice@example.com'], [3, 'bob', 'bob@example.com'], [4, 'carol', 'carol@example.com'], [5, 'dave', 'dave@example.com']]
+// Category-specific form payloads. The read-only detail pane renders each
+// category's own fields (rate wants group_snapshots, refund wants order_no,
+// ...), so a generic description/contact payload makes every non-consult
+// ticket look empty.
+function ticketPayload(category, title, u) {
+  const base = { description: title + '，请协助处理。', contact: u[2] }
+  if (category === 'rate_apply') {
+    return {
+      ...base,
+      group_ids: [2],
+      group_snapshots: [{ group_id: 2, name: 'Claude Max', base_rate_multiplier: 1.2, user_rate_multiplier: 1.1, effective_rate: 1.1 }],
+      target_rate: '0.9',
+      usage_scenario: '团队内部代码评审助手，日均 1.2 万次请求，高峰集中在工作日 10:00-12:00。',
+    }
+  }
+  if (category === 'refund') {
+    return { ...base, order_no: 'ORD-20260901-0042', refund_amount: '38.25', expected_amount: '38.25', reason: '充值后余额未到账，重复下单一笔。', evidence: '支付平台流水号 4200002389202609011234' }
+  }
+  if (category === 'concurrency_apply') {
+    return { ...base, current_concurrency: '5', target_concurrency: '20', peak_window: '工作日 10:00-12:00 / 20:00-22:00', usage_scenario: '批量图片生成任务，单批 200 张，需要更高并发以缩短排队。' }
+  }
+  if (category === 'consult') return { ...base, question: title + ' 具体表现与排查方向请协助确认。' }
+  return { ...base, details: title + ' 的详细说明，包含复现步骤与预期结果。' }
+}
+
 const MOCK_TICKETS = Array.from({ length: 11 }, (_, i) => {
   const u = TICKET_USERS[i % TICKET_USERS.length]
   const categories = ['rate_apply', 'refund', 'consult', 'concurrency_apply', 'other']
@@ -903,7 +928,7 @@ const MOCK_TICKETS = Array.from({ length: 11 }, (_, i) => {
   return {
     id: 501 + i, ticket_no: 'TK' + (240900 + i), user_id: u[0], user_name: u[1], user_email: u[2],
     category: categories[i % categories.length], title: titles[i], status,
-    current_form_payload: { description: titles[i] + '，请协助处理。', contact: u[2] }, current_revision_no: 1,
+    current_form_payload: ticketPayload(categories[i % categories.length], titles[i], u), current_revision_no: 1,
     latest_message_at: iso(created + 3600e3 * 2), last_reply_role: i % 2 ? 'admin' : 'user',
     unread_by_user: i % 2 === 1, unread_by_admin: i < 3, submitted_at: iso(created),
     closed_at: status === 'closed' ? iso(created + 864e5) : undefined, withdrawn_at: status === 'withdrawn' ? iso(created + 7200e3) : undefined,
