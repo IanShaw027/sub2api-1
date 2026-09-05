@@ -4,7 +4,7 @@
  <div class="h-8 w-8 animate-spin rounded-full border-4 border-accent border-t-transparent"></div>
  </div>
  <div v-else-if="initError" class="glass-card p-6 text-center">
- <p class="text-sm text-red-600">{{ initError }}</p>
+ <p class="text-sm text-danger-text">{{ initError }}</p>
  <button class="btn btn-secondary mt-4" @click="$emit('back')">{{ t('payment.result.backToRecharge') }}</button>
  </div>
  <!-- Success -->
@@ -12,7 +12,7 @@
  <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
  <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
- <Icon name="check" size="lg" class="text-green-500" />
+ <Icon name="check" size="lg" class="text-success" />
  </div>
  <p class="text-lg font-bold text-foreground">{{ t('payment.result.success') }}</p>
  <div class="w-full rounded-xl bg-surface-2 p-4">
@@ -39,14 +39,14 @@
  <!-- Amount -->
  <div class="glass-card overflow-hidden">
         <div class="px-6 py-5 text-center" :style="{ background: STRIPE_BRAND_GRADIENT }">
- <p class="text-sm font-medium text-indigo-200">{{ t('payment.actualPay') }}</p>
+ <p class="text-sm font-medium text-white/80">{{ t('payment.actualPay') }}</p>
  <p class="mt-1 text-3xl font-bold text-white">{{ paymentAmountSymbol }}{{ payAmount.toFixed(2) }}</p>
  </div>
  </div>
  <!-- Stripe Payment Element -->
  <div class="glass-card p-6">
  <div ref="stripeMount" class="min-h-[200px]"></div>
- <p v-if="error" class="mt-4 text-sm text-red-600">{{ error }}</p>
+ <p v-if="error" class="mt-4 text-sm text-danger-text">{{ error }}</p>
  <button class="btn btn-stripe mt-6 w-full py-3 text-base" :disabled="submitting || !ready" @click="handlePay">
  <span v-if="submitting" class="flex items-center justify-center gap-2">
  <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>

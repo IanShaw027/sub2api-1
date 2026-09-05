@@ -233,6 +233,7 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
         },
         Teleport: true,
         Transition: false,
+        SubscriptionConfirmCard: false,
       },
     },
   })
@@ -315,6 +316,7 @@ describe('PaymentView recharge rate preview', () => {
       global: {
         stubs: {
           AppLayout: { template: '<div><slot /></div>' },
+          RechargePanel: false,
           Teleport: true,
           Transition: false,
         },
@@ -491,6 +493,7 @@ describe('PaymentView payment recovery', () => {
             props: ['selected'],
             template: '<div data-test="method-selector">{{ selected }}</div>',
           },
+          RechargePanel: false,
           Teleport: true,
           Transition: false,
         },

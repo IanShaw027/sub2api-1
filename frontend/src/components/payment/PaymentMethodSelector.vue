@@ -5,32 +5,27 @@
  </label>
  <div
  data-testid="payment-method-grid"
- class="method-grid"
+ class="method-row"
  >
  <button
  v-for="method in sortedMethods"
  :key="method.type"
  type="button"
- :title="methodLabel(method)"
+ :title="methodTitle(method)"
  :disabled="!method.available"
- class="method-option glass-card"
+ class="method-option"
  :class="[
  !method.available ? 'method-option--disabled' : '',
- selected === method.type ? 'glass-ring method-option--active' : '',
+ selected === method.type ? 'method-option--active' : '',
  ]"
  @click="method.available && emit('select', method.type)"
  >
  <img :src="methodIcon(method.type)" :alt="methodLabel(method)" class="method-option-icon" />
- <span class="method-option-body">
  <span data-testid="payment-method-label" class="method-option-label">
  {{ methodLabel(method) }}
  </span>
- <span
- v-if="method.fee_rate > 0"
- class="method-option-fee"
- >
- {{ t('payment.fee') }} {{ method.fee_rate }}%
- </span>
+ <span v-if="method.fee_rate > 0" class="method-option-fee">
+ +{{ method.fee_rate }}%
  </span>
  </button>
  </div>
@@ -92,37 +87,33 @@ function methodIcon(type: string): string {
 function methodLabel(method: PaymentMethodOption): string {
  return method.display_name || t(`payment.methods.${method.type}`, method.type)
 }
+
+function methodTitle(method: PaymentMethodOption): string {
+ if (method.fee_rate > 0) {
+ return `${methodLabel(method)} · ${t('payment.fee')} ${method.fee_rate}%`
+ }
+ return methodLabel(method)
+}
 </script>
 
 <style scoped>
-.method-grid {
- display: grid;
- grid-template-columns: repeat(2, 1fr);
- gap: 10px;
-}
-
-@media (min-width: 640px) {
- .method-grid {
- grid-template-columns: repeat(3, 1fr);
- }
-}
-
-@media (min-width: 1024px) {
- .method-grid {
- grid-template-columns: repeat(4, 1fr);
- }
+.method-row {
+ display: flex;
+ flex-wrap: wrap;
+ gap: 8px;
 }
 
 .method-option {
  display: flex;
- min-width: 0;
- height: 58px;
+ height: 32px;
  align-items: center;
- justify-content: center;
- gap: 8px;
+ gap: 6px;
  padding: 0 12px;
+ border-radius: var(--radius-field);
+ border: 1px solid var(--border);
+ background: color-mix(in oklch, var(--surface) 85%, transparent);
  cursor: pointer;
- transition: transform 0.15s ease, box-shadow 0.15s ease;
+ transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
 }
 
 .method-option:hover:not(.method-option--disabled) {
@@ -130,7 +121,9 @@ function methodLabel(method: PaymentMethodOption): string {
 }
 
 .method-option--active {
- background: color-mix(in oklch, var(--accent) 8%, transparent);
+ border-color: var(--accent);
+ background: color-mix(in oklch, var(--accent) 12%, transparent);
+ box-shadow: 0 0 0 1px color-mix(in oklch, var(--accent) 40%, transparent);
 }
 
 .method-option--disabled {
@@ -139,27 +132,15 @@ function methodLabel(method: PaymentMethodOption): string {
 }
 
 .method-option-icon {
- height: 26px;
- width: 26px;
+ height: 16px;
+ width: 16px;
  flex-shrink: 0;
  object-fit: contain;
 }
 
-.method-option-body {
- display: flex;
- min-width: 0;
- flex-direction: column;
- align-items: flex-start;
- line-height: 1.2;
-}
-
 .method-option-label {
- display: block;
- width: 100%;
- overflow: hidden;
- text-overflow: ellipsis;
  white-space: nowrap;
- font-size: 13px;
+ font-size: 12.5px;
  font-weight: 600;
  color: var(--foreground);
 }

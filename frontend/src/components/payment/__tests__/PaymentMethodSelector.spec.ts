@@ -18,7 +18,7 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('PaymentMethodSelector', () => {
-  it('wraps large custom method collections without letting labels widen the selector', () => {
+  it('renders brand buttons as a wrapping 32px-tall pill row (glass-page-templates PaymentFlow spec)', () => {
     const methods = Array.from({ length: 12 }, (_, index) => ({
       type: `custom_${index}`,
       display_name: `CUSTOM_PAYMENT_METHOD_${index}`,
@@ -33,39 +33,26 @@ describe('PaymentMethodSelector', () => {
       },
     })
 
-    // Layout responsibilities moved from Tailwind utility classes to the
-    // scoped `.method-grid` rule during the Glass redesign; assert the
-    // grid still wraps into columns (never a flex/nowrap row) at every
-    // breakpoint instead of matching now-removed utility class names.
-    const grid = wrapper.get('[data-testid="payment-method-grid"]')
-    expect(grid.classes()).toContain('method-grid')
-    expect(grid.classes()).not.toContain('sm:flex')
+    const row = wrapper.get('[data-testid="payment-method-grid"]')
+    expect(row.classes()).toContain('method-row')
 
-    const gridRuleMatch = componentSource.match(/\.method-grid\s*\{([^}]*)\}/)
-    expect(gridRuleMatch?.[1]).toMatch(/display:\s*grid/)
-    const responsiveGridRules = Array.from(
-      componentSource.matchAll(/@media[^{]*\{\s*\.method-grid\s*\{([^}]*)\}/g),
-    )
-    expect(responsiveGridRules.length).toBeGreaterThanOrEqual(2)
-    expect(responsiveGridRules.every(([, declarations]) => /grid-template-columns/.test(declarations))).toBe(true)
-    expect(componentSource).not.toMatch(/\.method-grid\s*\{[^}]*display:\s*flex/)
+    const rowRuleMatch = componentSource.match(/\.method-row\s*\{([^}]*)\}/)
+    expect(rowRuleMatch?.[1]).toMatch(/display:\s*flex/)
+    expect(rowRuleMatch?.[1]).toMatch(/flex-wrap:\s*wrap/)
 
     const buttons = wrapper.findAll('button')
     expect(buttons).toHaveLength(methods.length)
-    // `min-w-0` and `truncate` were folded into the scoped `.method-option`
-    // and `.method-option-label` rules; assert the equivalent raw CSS instead
-    // of the now-removed Tailwind utility class names.
     expect(buttons.every(button => button.classes().includes('method-option'))).toBe(true)
+
+    // Spec: "支付品牌按钮 32px" — brand buttons are 32px tall pills, not the
+    // previous 58px stacked cards.
     const optionRuleMatch = componentSource.match(/\.method-option\s*\{([^}]*)\}/)
-    expect(optionRuleMatch?.[1]).toMatch(/min-width:\s*0/)
+    expect(optionRuleMatch?.[1]).toMatch(/height:\s*32px/)
+
     expect(buttons.every((button, index) => button.attributes('title') === methods[index].display_name)).toBe(true)
 
     const labels = wrapper.findAll('[data-testid="payment-method-label"]')
     expect(labels.every(label => label.classes().includes('method-option-label'))).toBe(true)
-    const labelRuleMatch = componentSource.match(/\.method-option-label\s*\{([^}]*)\}/)
-    expect(labelRuleMatch?.[1]).toMatch(/overflow:\s*hidden/)
-    expect(labelRuleMatch?.[1]).toMatch(/text-overflow:\s*ellipsis/)
-    expect(labelRuleMatch?.[1]).toMatch(/white-space:\s*nowrap/)
   })
 
   it('shows the configured display name for custom EasyPay methods', () => {
@@ -81,6 +68,19 @@ describe('PaymentMethodSelector', () => {
     expect(wrapper.text()).not.toContain('payment.methods.ldc')
   })
 
+  it('includes the fee rate in the title when a method charges a fee', () => {
+    const wrapper = mount(PaymentMethodSelector, {
+      props: {
+        selected: 'stripe',
+        methods: [{ type: 'stripe', display_name: 'Stripe', fee_rate: 2.9, available: true }],
+      },
+    })
+
+    const button = wrapper.get('button')
+    expect(button.attributes('title')).toBe('Stripe · payment.fee 2.9%')
+    expect(wrapper.get('.method-option-fee').text()).toContain('2.9%')
+  })
+
   it('uses the generic selected style for custom methods that contain built-in names', () => {
     const wrapper = mount(PaymentMethodSelector, {
       props: {
@@ -89,14 +89,11 @@ describe('PaymentMethodSelector', () => {
       },
     })
 
-    // The redesign dropped the old per-brand `methodSelectedClass()` branching
-    // (border-[#...] arbitrary colors per provider) in favor of one generic
-    // selected style (`glass-ring` + `method-option--active`) applied to every
+    // One generic selected style (`method-option--active`) is applied to every
     // method regardless of its `type`, so a custom method whose type merely
     // contains a built-in provider name (e.g. "card_alipay") can no longer be
     // mistaken for the real Alipay method and painted with its brand color.
     const button = wrapper.get('button')
-    expect(button.classes()).toContain('glass-ring')
     expect(button.classes()).toContain('method-option--active')
     expect(button.classes().some((cls) => /^border-\[#/.test(cls))).toBe(false)
   })

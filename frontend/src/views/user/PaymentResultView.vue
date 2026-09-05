@@ -1,37 +1,17 @@
 <template>
  <div class="callback-page flex min-h-screen items-center justify-center px-4">
- <div class="w-full max-w-md space-y-6">
+ <div class="result-card mx-auto space-y-6">
  <!-- Loading -->
  <div v-if="loading" class="flex items-center justify-center py-20">
  <div class="h-8 w-8 animate-spin rounded-full border-4 border-[var(--accent)] border-t-transparent"></div>
  </div>
  <template v-else>
  <!-- Status Icon -->
- <div class="text-center">
- <div v-if="isSuccess"
- class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-green-100 ">
- <svg class="h-10 w-10 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"
- stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
- </svg>
- </div>
- <div v-else-if="isPending"
- class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-yellow-100 ">
- <div class="h-10 w-10 animate-spin rounded-full border-4 border-yellow-500 border-t-transparent"></div>
- </div>
- <div v-else
- class="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-red-100 ">
- <svg class="h-10 w-10 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
- </svg>
- </div>
- <h2 class="mt-4 text-2xl font-bold text-foreground">
- {{ statusTitle }}
- </h2>
- <p v-if="isPending" class="mt-2 text-sm text-muted">
- {{ t('payment.result.processingHint') }}
- </p>
- </div>
+ <PaymentResultStatusCard
+ :tone="isSuccess ? 'success' : isPending ? 'loading' : 'error'"
+ :title="statusTitle"
+ :description="isPending ? t('payment.result.processingHint') : undefined"
+ />
  <!-- Order Info -->
  <div v-if="order" class="glass-card p-5">
  <div class="space-y-3 text-sm">
@@ -101,6 +81,7 @@ import { ref, computed, onBeforeUnmount, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import OrderStatusBadge from '@/components/payment/OrderStatusBadge.vue'
+import PaymentResultStatusCard from '@/components/payment/PaymentResultStatusCard.vue'
 import {
   PAYMENT_RECOVERY_STORAGE_KEY,
   clearPaymentRecoverySnapshot,
@@ -461,3 +442,10 @@ onBeforeUnmount(() => {
   clearStatusRefreshTimer()
 })
 </script>
+
+<style scoped>
+.result-card {
+  width: 100%;
+  max-width: 440px;
+}
+</style>

@@ -1,31 +1,31 @@
 <template>
  <AppLayout>
- <div class="mx-auto flex max-w-md flex-col items-center space-y-6 py-8">
- <h2 class="text-xl font-semibold text-foreground">
+ <div class="qrcode-card glass-card mx-auto flex flex-col items-center p-8 text-center">
+ <h1 class="text-xl font-semibold text-foreground">
  {{ qrUrl ? scanTitle : t('payment.qr.payInNewWindow') }}
- </h2>
- <div v-if="qrUrl" class="glass-card p-6">
+ </h1>
+ <div v-if="qrUrl" class="qrcode-box mt-6">
  <canvas ref="qrCanvas" class="mx-auto"></canvas>
  </div>
  <!-- Scan prompt for QR code -->
- <p v-if="qrUrl && !expired && scanHint" class="text-center text-sm text-muted">
+ <p v-if="qrUrl && !expired && scanHint" class="mt-4 text-sm text-muted">
  {{ scanHint }}
  </p>
- <div v-if="expired" class="text-center">
- <p class="text-lg font-medium text-red-500">{{ t('payment.qr.expired') }}</p>
- <button class="btn-glass-primary mt-4" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
+ <div v-if="expired" class="mt-6">
+ <StatusBadge tone="danger" dot :label="t('payment.qr.expired')" />
+ <button class="btn-glass-primary mt-4 w-full" @click="router.push('/purchase')">{{ t('payment.result.backToRecharge') }}</button>
  </div>
- <div v-else class="text-center">
- <p class="text-sm text-muted">{{ qrUrl ? t('payment.qr.expiresIn') : t('payment.qr.payInNewWindowHint') }}</p>
+ <template v-else>
+ <StatusBadge tone="accent" dot pulse class="mt-6" :label="t('payment.qr.waitingPayment')" />
+ <p class="mt-3 text-sm text-muted">{{ qrUrl ? t('payment.qr.expiresIn') : t('payment.qr.payInNewWindowHint') }}</p>
  <p class="mt-1 text-2xl font-bold tabular-nums text-foreground">{{ countdownDisplay }}</p>
- <p class="mt-2 text-sm text-muted">{{ t('payment.qr.waitingPayment') }}</p>
- </div>
+ </template>
  <a v-if="payUrl && !qrUrl && !expired" :href="payUrl" target="_blank" rel="noopener noreferrer"
- class="btn-glass-primary w-full py-3">
+ class="btn-glass-primary mt-6 w-full py-3">
  {{ t('payment.qr.openPayWindow') }}
  </a>
  <!-- Cancel button -->
- <button v-if="!expired && orderId" class="btn-glass-secondary w-full" :disabled="cancelling" @click="handleCancel">
+ <button v-if="!expired && orderId" class="btn-glass-secondary mt-3 w-full" :disabled="cancelling" @click="handleCancel">
  {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
  </button>
  </div>
@@ -37,6 +37,7 @@ import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import { usePaymentStore } from '@/stores/payment'
 import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
@@ -212,3 +213,25 @@ onMounted(() => {
 
 onUnmounted(() => cleanup())
 </script>
+
+<style scoped>
+.qrcode-card {
+  max-width: 440px;
+}
+
+.qrcode-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 220px;
+  height: 220px;
+  border-radius: var(--radius-field);
+  background: var(--surface-secondary);
+  padding: 10px;
+}
+
+.qrcode-box canvas {
+  width: 100%;
+  height: 100%;
+}
+</style>
