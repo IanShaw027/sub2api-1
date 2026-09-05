@@ -24,6 +24,7 @@ this table summarizes.
 | `Fab` | 52px r16 accent button, fixed bottom-right | Mobile list pages (`/keys`, `/admin/*` list views) |
 | `ChipScroller` | horizontal `.chip-filter`-style row, active = foreground fill | Mobile status/category filters |
 | `ListFade` | absolute bottom fade overlay, 120px | Mobile scrollable lists under a FAB |
+| `FieldLabel` | `htmlFor`, `hint`, `required`; 12.5/600 label, 12px muted hint, 6px gap below | `TextInput`, key/group forms (`KeyFormModal`) |
 | `Button`, `TextInput`, `UiSelect`, `ToggleSwitch`, `Checkbox`, `SegmentedControl`, `StatusBadge` | See each component's own spec | Not owned here — documented for cross-reference only |
 
 ## Layout skeletons (`components/layout`)

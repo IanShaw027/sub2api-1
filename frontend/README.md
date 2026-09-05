@@ -27,7 +27,9 @@ logged in `deviations.md` next to it, and every task's evidence in `verification
 - `tailwind.config.js` remaps the raw palette names (`red-*`, `emerald-*`, `blue-*`, `zinc-*` …)
   onto those tones, so a stray `text-red-500` still renders on-token — but new code must use the
   semantic scales (`text-danger-text`, `bg-success-100`, `border-line`, `bg-surface-2`,
-  `text-muted`). `npm run lint:ui -- --palette` enforces this.
+  `text-muted`; note `accent` has no `-text` step — use `text-accent-600/700`). `npm run lint:ui`
+  (`ui-lint.mjs --scoped --palette`) enforces this over the whole tree and
+  `src/__tests__/designTokens.spec.ts` runs the same gate under vitest.
 - Typography: `--display` (Manrope) for titles, body `Inter`, mono `JetBrains Mono`; the type
   scale is in `ui-standards.md` §2.
 
@@ -59,10 +61,10 @@ All of these run from `frontend/`; the mock harness below must be up for the bro
 | Command | What it checks |
 |---|---|
 | `npm run typecheck` / `npm run lint:check` / `npm run test:run` | vue-tsc · eslint · vitest |
-| `node scripts/ui-lint.mjs --scoped --palette <files>` | legacy classes, raw colour literals, raw palette classes, non-layout declarations in `views/**` scoped styles |
+| `npm run lint:ui` (`node scripts/ui-lint.mjs --scoped --palette [files]`) | legacy classes, raw colour literals, raw palette classes, non-layout declarations in `views/**` scoped styles; whole tree when no files are given |
 | `npm run check:contrast` | WCAG text (4.5:1) and non-text (3:1) pairs across both themes, badges and tooltips included |
 | `npm run i18n:diff` | zh/en key parity and duplicate keys |
-| `node scripts/anchor-diff.mjs <file.vue> --base <rev> --scope <dir>` | no lost `data-testid` / `id` / `aria-label` / handlers / `v-model` / `t()` keys after a rewrite |
+| `node scripts/anchor-diff.mjs <file.vue> --base <rev> --scope src` | no lost `data-testid` / `id` / `aria-label` / handlers / `v-model` / `t()` keys after a rewrite (`--scope src` so anchors that moved into extracted components count as kept) |
 | `node scripts/keyname-leak.mjs [--width 390]` | walks every route in `scripts/ui/routes.txt`, fails on rendered raw i18n keys; with `--width 390` also fails on horizontal overflow |
 | `scripts/ui/ui-shots.sh all\|desktop\|mobile` | screenshot matrix into `screens/<route>/{d,m}-{light,dark}.png` |
 | `node scripts/ui/pixel-diff.mjs` | diff against the prototype boards in `openspec/changes/glass-ui-redesign/reference/` |
@@ -73,8 +75,11 @@ All of these run from `frontend/`; the mock harness below must be up for the bro
 node scripts/mock/server.js                                     # seeded API on :8091
 VITE_DEV_PROXY_TARGET=http://127.0.0.1:8091 npx vite --port 3777
 UI_SHOTS_PROBE='h1|.glass-card' node scripts/ui/shot.cjs <name> <route> 1440 900 <role> glass-light zh 1
+UI_SHOTS_PROBE='tbody tr' UI_SHOTS_PROBE_ALL=1 node scripts/ui/shot.cjs rows /admin/orders 1440 900 admin glass-light zh 1
 ```
 
 `shot.cjs` seeds the role/theme/locale through the mock's `/setup/seed`, prints the bounding
 boxes of the probed selectors plus `scrollWidth`, and writes `.shots/<name>.png`. Always verify
-against seeded data — empty states hide row-height and overflow problems.
+against seeded data — empty states hide row-height and overflow problems. `UI_SHOTS_PROBE_ALL=1`
+prints a height histogram over every match (`58x1 59x17`), which is the table row-height gate
+(ListPage rows must stay ≤ 61px).

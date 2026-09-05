@@ -73,40 +73,43 @@ Pagination component with page numbers, navigation, and page size selector.
 
 ---
 
-### Modal.vue
+### BaseDialog.vue
 
-Modal dialog with customizable size and close behavior.
+Compatibility modal wrapper around `ui/UiModal` (kept for call sites that predate the glass
+redesign; new code should use `UiModal` directly).
 
 **Props:**
 
-- `show: boolean` - Control modal visibility
-- `title: string` - Modal title
-- `size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'` - Modal size (default: 'md')
+- `show: boolean` - Control dialog visibility
+- `title: string` - Dialog title
+- `width?: 'narrow' | 'normal' | 'wide' | 'extra-wide' | 'full'` - Maps to `UiModal` sm 440 · md 560 · lg 720 · xl 960 (default: `normal`)
 - `closeOnEscape?: boolean` - Close on Escape key (default: true)
-- `closeOnClickOutside?: boolean` - Close on backdrop click (default: true)
+- `closeOnClickOutside?: boolean` - Close on backdrop click (default: false)
+- `showCloseButton?: boolean` - Render the 32px header close button (default: true)
+- `zIndex?: number` - Overlay z-index (default: 50)
 
 **Events:**
 
-- `close` - Emitted when modal should close
+- `close` - Emitted when the dialog should close
 
 **Slots:**
 
-- `default` - Modal body content
-- `footer` - Modal footer content
+- `default` - Dialog body content
+- `footer` - Dialog footer content (`.btn` actions)
 
 **Usage:**
 
 ```vue
-<Modal :show="showModal" title="Edit User" size="lg" @close="showModal = false">
+<BaseDialog :show="showModal" title="Edit User" width="wide" @close="showModal = false">
   <form @submit.prevent="saveUser">
     <!-- Form content -->
   </form>
 
   <template #footer>
-    <button @click="showModal = false">Cancel</button>
-    <button @click="saveUser">Save</button>
+    <button class="btn btn-secondary" @click="showModal = false">Cancel</button>
+    <button class="btn btn-primary" @click="saveUser">Save</button>
   </template>
-</Modal>
+</BaseDialog>
 ```
 
 ---
@@ -176,7 +179,7 @@ Toast notification component that automatically displays toasts from the app sto
 **Usage:**
 
 ```vue
-<!-- Add once in App.vue or layout -->
+<!-- Mounted once in the app shell (src/App.vue) -->
 <Toast />
 ```
 
@@ -303,6 +306,18 @@ These `common/` components follow the token-based recipes from
   triggers**: 34px `.header-icon-btn`.
 - **VersionBadge**: renders as a mono `.tag` (11.5px); the admin dropdown
   reuses the global `.dropdown` panel recipe.
+- **Toggle**: the legacy boolean switch — renders the same global `.switch`/`.toggle-switch`
+  recipe (36×20, `--border-strong` track) as `ui/ToggleSwitch`, `role="switch"` +
+  `aria-checked`; prefer `ui/ToggleSwitch` (label + description) in new code.
+- **GroupSelector / GroupOptionItem**: multi-select group picker (`modelValue: number[]`,
+  `groups`, optional `platform` filter, `mixedScheduling`, `searchable: 'auto'`) built from
+  the `.field` trigger + dropdown panel recipes; each option is a `GroupOptionItem` row
+  (36px, `GroupBadge` hue, subscription/rate meta in 11.5px muted, 14px check mark).
+- **PlatformIcon / ModelIcon / GrokFreeIcon**: brand glyphs sized `xs` 12 · `sm` 16 · `md` 20
+  · `lg` 24 (`ModelIcon` takes a CSS `size`, default 18px); colours come from
+  `@/utils/platformColors` tone tokens, never literal hex.
+- **ProxyAdBanner**: a `.notice-accent` strip (12px radius, accent 10% background) shown above
+  proxy lists when the upstream ad slot is configured.
 
 ## Import
 
