@@ -43,6 +43,8 @@ withDefaults(
 }
 
 .ui-status-badge-dot-live {
+  --pulse-color: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 25%, transparent);
   animation: s2a-pulse 1.6s ease-in-out infinite;
 }
 </style>

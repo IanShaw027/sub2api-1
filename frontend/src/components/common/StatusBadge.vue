@@ -1,11 +1,10 @@
 <template>
-  <span :class="['badge', 'badge-dot', toneClass]">
-    {{ label }}
-  </span>
+  <UiStatusBadge :tone="tone" :label="label" dot />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import UiStatusBadge from '@/components/ui/StatusBadge.vue'
 
 const props = defineProps<{
   status: string
@@ -13,24 +12,24 @@ const props = defineProps<{
 }>()
 
 /** Same variant mapping as before, expressed with the Glass badge tones. */
-const toneClass = computed(() => {
+const tone = computed(() => {
   switch (props.status) {
     case 'active':
     case 'success':
-      return 'badge-tone-success'
+      return 'success'
     case 'disabled':
     case 'inactive':
     case 'warning':
-      return 'badge-tone-warning'
+      return 'warning'
     case 'error':
     case 'danger':
-      return 'badge-tone-danger'
+      return 'danger'
     case 'accent':
     case 'primary':
     case 'info':
-      return 'badge-tone-accent'
+      return 'accent'
     default:
-      return 'badge-tone-muted'
+      return 'muted'
   }
 })
 </script>

@@ -16,6 +16,21 @@ vi.mock('vue-i18n', async () => {
 })
 
 describe('SupportQRCodesButton', () => {
+  it('reports teleported dialog state so compact parents preserve the return-focus target', async () => {
+    const wrapper = mount(SupportQRCodesButton, {
+      attachTo: document.body,
+      props: { entries: [], legacyContactInfo: 'support@example.test', menuMode: true },
+    })
+    const trigger = wrapper.get('button')
+    expect(trigger.get('span').classes()).not.toContain('hidden')
+    await trigger.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:open')).toEqual([[true]])
+    document.querySelector<HTMLButtonElement>('.modal-close')?.click()
+    await flushPromises()
+    expect(wrapper.emitted('update:open')).toEqual([[true], [false]])
+    wrapper.unmount()
+  })
   it('does not render when there are no valid qr codes or legacy contact info', () => {
     const wrapper = mount(SupportQRCodesButton, {
       props: {

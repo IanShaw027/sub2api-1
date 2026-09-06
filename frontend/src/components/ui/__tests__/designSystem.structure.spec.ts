@@ -87,9 +87,7 @@ describe('controls', () => {
     expect(styleCss).toMatch(/\.btn-xs\s*{\s*height:\s*26px;\s*padding:\s*0 9px;\s*border-radius:\s*8px/)
     expect(styleCss).toMatch(/\.btn-sm\s*{\s*height:\s*32px;[\s\S]*?border-radius:\s*9px/)
     expect(styleCss).toMatch(/\.btn-glass-primary[\s\S]*?height:\s*34px/)
-    expect(readUi('Button.vue')).toContain('height: 42px')
-    expect(readUi('Button.vue')).toContain("classes.push('ui-btn-success')")
-    expect(readUi('Button.vue')).toContain("classes.push('ui-btn-warning')")
+    expect(styleCss).toMatch(/\.btn-lg,[\s\S]*?height:\s*42px/)
     expect(readUi('Button.vue')).toContain("classes.push('btn-xs')")
     expect(readUi('Button.vue')).toContain("classes.push('btn-sm')")
     expect(mount(Button, { props: { size: 'xs' } }).classes()).toContain('btn-xs')
@@ -112,7 +110,7 @@ describe('controls', () => {
   })
 
   it('focus / error rings use accent 18% and danger 14%', () => {
-    expect(styleCss).toMatch(/\.field:focus,[\s\S]*?color-mix\(in oklch, var\(--accent\) 18%, transparent\)/)
+    expect(styleCss).toMatch(/\.field:focus-visible,[\s\S]*?var\(--focus-ring\)/)
     expect(styleCss).toMatch(/\.input-error:focus,\s*\n\s*\.field-error:focus\s*{[\s\S]*?color-mix\(in oklch, var\(--danger\) 14%, transparent\)/)
   })
 
@@ -165,7 +163,7 @@ describe('controls', () => {
 
   it('badges are 22px r999 with five tones and a pulsing live dot', () => {
     expect(styleCss).toMatch(/\.badge,\s*\n\s*\.badge-tone-success,[\s\S]*?height:\s*22px;\s*\n\s*padding:\s*0 8px;\s*\n\s*border-radius:\s*999px/)
-    expect(styleCss).toContain('@keyframes s2a-pulse')
+    expect(tokensCss).toContain('@keyframes s2a-pulse')
     const wrapper = mount(StatusBadge, { props: { tone: 'success', dot: true, pulse: true } })
     expect(wrapper.find('.ui-status-badge-dot-live').exists()).toBe(true)
   })

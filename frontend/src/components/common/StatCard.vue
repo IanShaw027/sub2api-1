@@ -1,81 +1,37 @@
 <template>
- <div class="stat-card">
- <div :class="['stat-icon', iconClass]">
- <component v-if="icon" :is="icon" class="h-5 w-5" aria-hidden="true" />
- </div>
- <div class="min-w-0 flex-1">
- <p class="stat-label truncate">{{ title }}</p>
- <div class="mt-1 flex items-baseline gap-2">
- <p class="stat-value" :title="String(formattedValue)">{{ formattedValue }}</p>
- <span v-if="change !== undefined" :class="['stat-trend', trendClass]">
- <Icon
- v-if="changeType !== 'neutral'"
- name="arrowUp"
- size="xs"
- :class="changeType === 'down' && 'rotate-180'"
- />
- {{ formattedChange }}
- </span>
- </div>
- </div>
- </div>
+  <UiStatCard
+    layout="icon"
+    :label="title"
+    :value="formattedValue"
+    :icon="icon"
+    :icon-variant="iconVariant"
+    :delta="formattedChange"
+    :delta-tone="changeType"
+  />
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Component } from 'vue'
-import Icon from '@/components/icons/Icon.vue'
+import UiStatCard from '@/components/ui/StatCard.vue'
 
-type ChangeType = 'up' | 'down' | 'neutral'
-type IconVariant = 'primary' | 'success' | 'warning' | 'danger'
-
-interface Props {
- title: string
- value: number | string
- icon?: Component
- iconVariant?: IconVariant
- change?: number
- changeType?: ChangeType
- formatValue?: (value: number | string) => string
-}
-
-const props = withDefaults(defineProps<Props>(), {
- changeType: 'neutral',
- iconVariant: 'primary'
+const props = withDefaults(defineProps<{
+  title: string
+  value: number | string
+  icon?: Component
+  iconVariant?: 'primary' | 'success' | 'warning' | 'danger'
+  change?: number
+  changeType?: 'up' | 'down' | 'neutral'
+  formatValue?: (value: number | string) => string
+}>(), {
+  changeType: 'neutral',
+  iconVariant: 'primary'
 })
 
 const formattedValue = computed(() => {
- if (props.formatValue) {
- return props.formatValue(props.value)
- }
- if (typeof props.value === 'number') {
- return props.value.toLocaleString()
- }
- return props.value
+  if (props.formatValue) return props.formatValue(props.value)
+  return typeof props.value === 'number' ? props.value.toLocaleString() : props.value
 })
 
-const formattedChange = computed(() => {
- if (props.change === undefined) return ''
- const absChange = Math.abs(props.change)
- return `${absChange}%`
-})
-
-const iconClass = computed(() => {
- const classes: Record<IconVariant, string> = {
- primary: 'stat-icon-primary',
- success: 'stat-icon-success',
- warning: 'stat-icon-warning',
- danger: 'stat-icon-danger'
- }
- return classes[props.iconVariant]
-})
-
-const trendClass = computed(() => {
- const classes: Record<ChangeType, string> = {
- up: 'stat-trend-up',
- down: 'stat-trend-down',
- neutral: 'text-muted'
- }
- return classes[props.changeType]
-})
+const formattedChange = computed(() => props.change === undefined ? undefined : `${Math.abs(props.change)}%`)
 </script>

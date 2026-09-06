@@ -1,7 +1,7 @@
 <template>
   <GlassCard v-if="items?.length" variant="glass" padding="sm" class="ui-mini-stat-group">
     <div class="ui-mini-stat-grid">
-      <div v-for="(item, index) in items" :key="index" class="ui-mini-stat">
+      <div v-for="(item, index) in items" :key="index" class="ui-mini-stat" :class="item.tone ? `is-${item.tone}` : undefined">
         <p class="ui-mini-stat-label">{{ item.label }}</p>
         <p class="ui-mini-stat-value">{{ item.value }}</p>
         <p v-if="item.sub" class="ui-mini-stat-sub">{{ item.sub }}</p>
@@ -69,4 +69,10 @@ defineProps<{
   font-size: 11px;
   color: var(--muted);
 }
+
+.ui-mini-stat-value { color: var(--foreground); }
+.ui-mini-stat.is-success .ui-mini-stat-value { color: var(--success-text); }
+.ui-mini-stat.is-warning .ui-mini-stat-value { color: var(--warning-text); }
+.ui-mini-stat.is-danger .ui-mini-stat-value { color: var(--danger-text); }
+.ui-mini-stat.is-accent .ui-mini-stat-value { color: var(--info-text); }
 </style>

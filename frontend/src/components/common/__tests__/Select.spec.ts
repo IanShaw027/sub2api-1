@@ -217,3 +217,23 @@ describe('Select remote search', () => {
     expect(labels).toEqual(['Alpha account'])
   })
 })
+
+describe('Select portal keyboard handoff', () => {
+  it.each([false, true])('returns focus to the trigger before native Tab traversal (shift=%s)', async shiftKey => {
+    const wrapper = mount(Select, {
+      attachTo: document.body,
+      props: { modelValue: null, searchable: true, options: [{ value: 'alpha', label: 'Alpha' }] },
+    })
+    unmountWrapper = () => wrapper.unmount()
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+    const search = document.querySelector<HTMLInputElement>('.select-search-input')!
+    search.focus()
+    const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+    search.dispatchEvent(event)
+    expect(document.activeElement).toBe(wrapper.get('button').element)
+    expect(event.defaultPrevented).toBe(false)
+    await nextTick()
+    expect(wrapper.get('button').attributes('aria-expanded')).toBe('false')
+  })
+})

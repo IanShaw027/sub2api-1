@@ -1,15 +1,16 @@
 <template>
   <Teleport to="body">
-    <Transition name="ui-modal">
+    <Transition name="modal">
       <div
         v-if="open"
-        class="ui-modal-overlay"
+        class="modal-overlay ui-modal-overlay"
+        :style="{ zIndex }"
         role="presentation"
         @click.self="onOverlayClick"
       >
         <div
           ref="panelRef"
-          class="ui-modal-panel glass-card-solid"
+          class="modal-content ui-modal-panel glass-card-solid"
           role="dialog"
           aria-modal="true"
           tabindex="-1"
@@ -17,9 +18,9 @@
           :style="panelStyle"
           @click.stop
         >
-          <header class="ui-modal-header">
+          <header class="modal-header ui-modal-header">
             <div class="ui-modal-heading">
-              <h2 :id="titleId" class="ui-modal-title">{{ title }}</h2>
+              <h2 :id="titleId" class="modal-title ui-modal-title">{{ title }}</h2>
               <p v-if="subtitle || $slots.subtitle" class="modal-subtitle">
                 <slot name="subtitle">{{ subtitle }}</slot>
               </p>
@@ -27,17 +28,17 @@
             <button
               v-if="showClose"
               type="button"
-              class="ui-modal-close"
+              class="modal-close ui-modal-close"
               :aria-label="closeLabel"
               @click="emit('close')"
             >
               <Icon name="x" size="sm" />
             </button>
           </header>
-          <div ref="bodyRef" class="ui-modal-body">
+          <div ref="bodyRef" class="modal-body ui-modal-body">
             <slot />
           </div>
-          <footer v-if="$slots.footer" class="ui-modal-footer">
+          <footer v-if="$slots.footer" class="modal-footer ui-modal-footer">
             <slot name="footer" />
           </footer>
         </div>
@@ -63,13 +64,15 @@ const props = withDefaults(
     closeOnEscape?: boolean
     showClose?: boolean
     closeLabel?: string
+    zIndex?: number
   }>(),
   {
     width: 'md',
     closeOnOverlay: true,
     closeOnEscape: true,
     showClose: true,
-    closeLabel: 'Close'
+    closeLabel: 'Close',
+    zIndex: 60
   }
 )
 
@@ -120,6 +123,7 @@ watch(
       previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
       holdOverlay()
       await nextTick()
+      if (!props.open || !overlayHeld) return
       if (bodyRef.value) bodyRef.value.scrollTop = 0
       focusFirst(panelRef.value)
       return
@@ -133,69 +137,19 @@ watch(
   { immediate: true }
 )
 
-onBeforeUnmount(releaseOverlay)
+onBeforeUnmount(() => {
+  releaseOverlay()
+  previousFocus?.focus?.()
+  previousFocus = null
+})
 </script>
 
 <style scoped>
-.ui-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 16px;
-  background: color-mix(in oklch, var(--foreground) 40%, transparent);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-}
-
-.ui-modal-panel {
-  width: 100%;
-  max-height: min(90vh, 900px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-radius: var(--radius-hero);
-}
-
-.ui-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 16px 20px 12px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
 .ui-modal-heading {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-}
-
-.ui-modal-title {
-  font-family: var(--display);
-  font-size: 16px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  color: var(--foreground);
-}
-
-.ui-modal-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
 }
 
 @media (max-width: 767px) {
@@ -210,56 +164,4 @@ onBeforeUnmount(releaseOverlay)
   }
 }
 
-.ui-modal-close:hover {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--foreground);
-}
-
-.ui-modal-body {
-  padding: 20px;
-  overflow: auto;
-  max-height: 80vh;
-}
-
-.ui-modal-footer {
-  padding: 12px 20px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.ui-modal-enter-active,
-.ui-modal-leave-active {
-  transition: opacity 160ms ease;
-}
-
-.ui-modal-enter-active .ui-modal-panel,
-.ui-modal-leave-active .ui-modal-panel {
-  transition: transform 160ms ease, opacity 160ms ease;
-}
-
-.ui-modal-enter-from,
-.ui-modal-leave-to {
-  opacity: 0;
-}
-
-.ui-modal-enter-from .ui-modal-panel,
-.ui-modal-leave-to .ui-modal-panel {
-  transform: scale(0.98);
-  opacity: 0;
-}
-
-@media (max-width: 767px) {
-  .ui-modal-overlay {
-    align-items: flex-end;
-    padding: 0;
-  }
-
-  .ui-modal-panel {
-    max-height: 92vh;
-    border-radius: 16px 16px 0 0;
-  }
-}
 </style>

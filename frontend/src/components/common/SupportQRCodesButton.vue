@@ -3,11 +3,12 @@
  <button
  type="button"
  class="header-icon-btn !w-auto gap-1.5 px-2.5 text-sm font-medium"
+ :class="{ 'support-menu-trigger': menuMode }"
  :aria-label="t('common.contactSupport')"
  @click="showDialog = true"
  >
  <Icon name="chat" size="sm" />
- <span class="hidden sm:inline">{{ t('common.contactSupport') }}</span>
+ <span :class="menuMode ? '' : 'hidden sm:inline'">{{ t('common.contactSupport') }}</span>
  </button>
 
  <BaseDialog
@@ -49,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SupportQRCodeEntry } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -59,10 +60,14 @@ import { sanitizeSupportQRUrl } from '@/utils/url'
 const props = defineProps<{
  entries: SupportQRCodeEntry[]
  legacyContactInfo?: string
+ menuMode?: boolean
 }>()
+
+const emit = defineEmits<{ 'update:open': [open: boolean] }>()
 
 const { t } = useI18n()
 const showDialog = ref(false)
+watch(showDialog, open => emit('update:open', open), { flush: 'sync' })
 
 const normalizedEntries = computed(() =>
  (props.entries || [])
@@ -77,3 +82,12 @@ const hasEntries = computed(() => normalizedEntries.value.length > 0)
 const normalizedLegacyContactInfo = computed(() => props.legacyContactInfo?.trim() || '')
 const hasLegacyContactInfo = computed(() => !hasEntries.value && normalizedLegacyContactInfo.value.length > 0)
 </script>
+
+<style scoped>
+.support-menu-trigger {
+ width: 100% !important;
+ justify-content: flex-start;
+ gap: 10px;
+ font-size: 13px;
+}
+</style>

@@ -1,27 +1,30 @@
 <template>
   <div class="ui-text-input">
-    <FieldLabel v-if="label" :html-for="inputId" :hint="hint" :required="required">
-      {{ label }}
+    <FieldLabel v-if="label || $slots.label" :html-for="inputId" :hint="hint" :required="required">
+      <slot name="label">{{ label }}</slot>
     </FieldLabel>
-    <input
-      :id="inputId"
-      ref="inputRef"
-      v-bind="$attrs"
-      class="field"
-      :class="{ 'ui-text-input-error': error }"
-      :type="type"
-      :value="modelValue"
-      :placeholder="placeholder"
-      :disabled="disabled"
-      :readonly="readonly"
-      :required="required"
-      :autocomplete="autocomplete"
-      :aria-invalid="error ? true : undefined"
-      :aria-describedby="errorDescribedBy"
-      @input="onInput"
-      @blur="emit('blur', $event)"
-      @focus="emit('focus', $event)"
-    >
+    <div :class="['ui-text-input-control', $slots.suffix && 'has-suffix']">
+      <input
+        :id="inputId"
+        ref="inputRef"
+        v-bind="$attrs"
+        class="field"
+        :class="{ 'ui-text-input-error': hasError, 'ui-text-input-with-suffix': $slots.suffix }"
+        :type="type"
+        :value="modelValue"
+        :placeholder="placeholder"
+        :disabled="disabled"
+        :readonly="readonly"
+        :required="required"
+        :autocomplete="autocomplete"
+        :aria-invalid="hasError ? true : ariaInvalid()"
+        :aria-describedby="errorDescribedBy()"
+        @input="onInput"
+        @blur="emit('blur', $event)"
+        @focus="emit('focus', $event)"
+      >
+      <span v-if="$slots.suffix" class="ui-text-input-suffix"><slot name="suffix" /></span>
+    </div>
     <p
       v-if="error || $slots.error"
       :id="`${inputId}-error`"
@@ -34,7 +37,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, useId, useSlots } from 'vue'
+import { computed, ref, useAttrs, useId, useSlots, type InputHTMLAttributes } from 'vue'
 import FieldLabel from './FieldLabel.vue'
 
 defineOptions({ inheritAttrs: false })
@@ -64,25 +67,35 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   'update:modelValue': [value: string | number]
+  input: [event: Event]
   blur: [event: FocusEvent]
   focus: [event: FocusEvent]
 }>()
 
 const slots = useSlots()
+const attrs = useAttrs()
 const fallbackId = useId()
 const inputId = computed(() => props.id ?? `ui-input-${fallbackId}`)
 const inputRef = ref<HTMLInputElement | null>(null)
-const errorDescribedBy = computed(() =>
-  props.error || slots.error ? `${inputId.value}-error` : undefined
-)
+const hasError = computed(() => Boolean(props.error || slots.error))
+function ariaInvalid() {
+  return attrs['aria-invalid'] as InputHTMLAttributes['aria-invalid']
+}
+function errorDescribedBy() {
+  return [attrs['aria-describedby'], hasError.value ? `${inputId.value}-error` : undefined]
+    .filter(Boolean)
+    .join(' ') || undefined
+}
 
 function onInput(event: Event) {
   const target = event.target as HTMLInputElement
   if (props.type !== 'number') {
     emit('update:modelValue', target.value)
-    return
+  } else {
+    emit('update:modelValue', target.value === '' ? '' : Number(target.value))
   }
-  emit('update:modelValue', target.value === '' ? '' : Number(target.value))
+  // Native v-model updates the value before user input handlers run.
+  emit('input', event)
 }
 
 defineExpose({ focus: () => inputRef.value?.focus() })
@@ -91,6 +104,23 @@ defineExpose({ focus: () => inputRef.value?.focus() })
 <style scoped>
 .ui-text-input-error {
   border-color: var(--danger);
+}
+
+.ui-text-input-control {
+  position: relative;
+}
+
+.ui-text-input-control.has-suffix .field {
+  padding-right: 42px;
+}
+
+.ui-text-input-suffix {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  transform: translateY(-50%);
 }
 
 .ui-text-input-error:focus,

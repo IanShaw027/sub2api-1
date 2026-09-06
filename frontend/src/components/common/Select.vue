@@ -487,6 +487,8 @@ const onDropdownKeyDown = (e: KeyboardEvent) => {
  break
  case 'Tab':
  isOpen.value = false
+ // Resume native tab order inside the owning dialog, not from the body portal.
+ triggerRef.value?.focus()
  break
  }
 }

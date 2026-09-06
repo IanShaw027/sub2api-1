@@ -60,8 +60,9 @@ function toggle() {
 }
 
 .ui-toggle:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+  box-shadow: var(--focus-ring-shadow);
 }
 
 .ui-toggle:disabled {

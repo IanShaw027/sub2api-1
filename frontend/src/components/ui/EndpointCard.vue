@@ -19,6 +19,7 @@
       </button>
     </div>
     <p v-if="description" class="ui-endpoint-card-description">{{ description }}</p>
+    <div v-if="$slots.actions" class="ui-endpoint-card-actions"><slot name="actions" /></div>
   </GlassCard>
 </template>
 
@@ -83,9 +84,7 @@ const badgeClass = computed(() => `badge-tone-${props.badgeTone}`)
   font-size: 13.5px;
   font-weight: 500;
   color: var(--foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .ui-endpoint-card-copy {
@@ -108,5 +107,12 @@ const badgeClass = computed(() => `badge-tone-${props.badgeTone}`)
   margin-top: 8px;
   font-size: 12px;
   color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.ui-endpoint-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
 }
 </style>

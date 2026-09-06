@@ -1,5 +1,20 @@
 <template>
-  <GlassCard :variant="variant" :hover="hover" :padding="padding" class="ui-stat-card ui-stat-card-pad">
+  <div v-if="layout === 'icon'" class="stat-card">
+    <div :class="['stat-icon', `stat-icon-${iconVariant}`]">
+      <component :is="icon" v-if="icon" class="h-5 w-5" aria-hidden="true" />
+    </div>
+    <div class="min-w-0 flex-1">
+      <p class="stat-label truncate">{{ label }}</p>
+      <div class="mt-1 flex items-baseline gap-2">
+        <p class="stat-value" :title="String(value)">{{ value }}</p>
+        <span v-if="delta" :class="['stat-trend', legacyTrendClass]">
+          <Icon v-if="deltaTone === 'up' || deltaTone === 'down'" name="arrowUp" size="xs" :class="deltaTone === 'down' && 'rotate-180'" />
+          {{ delta }}
+        </span>
+      </div>
+    </div>
+  </div>
+  <GlassCard v-else :variant="variant" :hover="hover" :padding="padding" class="ui-stat-card ui-stat-card-pad">
     <div class="ui-stat-card-top">
       <p class="ui-stat-card-label">{{ label }}</p>
       <span v-if="delta" class="ui-stat-card-delta" :class="deltaToneClass">{{ delta }}</span>
@@ -16,6 +31,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { Component } from 'vue'
+import Icon from '@/components/icons/Icon.vue'
 import GlassCard from './GlassCard.vue'
 import type { GlassCardPadding, GlassCardVariant, StatDeltaTone } from './types'
 
@@ -29,14 +46,25 @@ const props = withDefaults(
     variant?: GlassCardVariant
     padding?: GlassCardPadding
     hover?: boolean
+    layout?: 'standard' | 'icon'
+    icon?: Component
+    iconVariant?: 'primary' | 'success' | 'warning' | 'danger'
   }>(),
   {
     deltaTone: 'neutral',
     variant: 'glass',
     padding: 'md',
-    hover: true
+    hover: true,
+    layout: 'standard',
+    iconVariant: 'primary'
   }
 )
+
+const legacyTrendClass = computed(() => {
+  if (props.deltaTone === 'up') return 'stat-trend-up'
+  if (props.deltaTone === 'down') return 'stat-trend-down'
+  return 'text-muted'
+})
 
 const deltaToneClass = computed(() => {
   if (props.deltaTone === 'up') return 'ui-stat-card-delta-up'
@@ -69,7 +97,7 @@ const deltaToneClass = computed(() => {
   font-family: var(--display);
   font-size: 28px;
   font-weight: 800;
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
   line-height: 1.05;
   font-variant-numeric: tabular-nums;
   color: var(--foreground);

@@ -29,4 +29,5 @@ export type MiniStatItem = {
   label: string
   value: string | number
   sub?: string
+  tone?: StatusBadgeTone
 }

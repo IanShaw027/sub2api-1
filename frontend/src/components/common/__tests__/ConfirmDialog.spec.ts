@@ -51,4 +51,24 @@ describe('ConfirmDialog', () => {
     expect(wrapper.emitted('cancel')).toBeTruthy()
     wrapper.unmount()
   })
+
+  it('blocks confirmation while explicitly disabled without disabling cancellation', async () => {
+    const wrapper = mountDialog({ confirmDisabled: true })
+    const buttons = Array.from(document.body.querySelectorAll('button'))
+    const confirmButton = buttons.find((btn) => btn.textContent?.includes('common.confirm'))!
+    const cancelButton = buttons.find((btn) => btn.textContent?.includes('common.cancel'))!
+    expect(confirmButton.disabled).toBe(true)
+    expect(cancelButton.disabled).toBe(false)
+    confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(wrapper.emitted('confirm')).toBeUndefined()
+    await wrapper.setProps({ confirmDisabled: false })
+    expect(confirmButton.disabled).toBe(false)
+    confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+    await wrapper.setProps({ confirming: true })
+    expect(confirmButton.disabled).toBe(true)
+    confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(wrapper.emitted('confirm')).toHaveLength(1)
+    wrapper.unmount()
+  })
 })

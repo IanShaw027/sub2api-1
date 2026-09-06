@@ -1,13 +1,19 @@
 <template>
- <div class="relative" ref="dropdownRef">
+ <div class="relative" ref="dropdownRef" @keydown.esc="handleEscape">
  <button
+ ref="triggerRef"
+ type="button"
  @click="toggleDropdown"
  :disabled="switching"
  class="btn btn-ghost btn-sm"
+ :class="{ 'locale-menu-trigger': menuMode }"
  :title="currentLocale?.name"
+ :aria-label="currentLocale?.name"
+ :aria-expanded="isOpen"
+ :aria-controls="listId"
  >
  <span class="text-base">{{ currentLocale?.flag }}</span>
- <span class="hidden sm:inline">{{ currentLocale?.code.toUpperCase() }}</span>
+ <span :class="menuMode ? '' : 'hidden sm:inline'">{{ menuMode ? currentLocale?.name : currentLocale?.code.toUpperCase() }}</span>
  <Icon
  name="chevronDown"
  size="xs"
@@ -19,10 +25,13 @@
  <transition name="dropdown">
  <div
  v-if="isOpen"
+ :id="listId"
  class="dropdown right-0 mt-1 w-36"
+ :class="{ 'locale-menu-options': menuMode }"
  >
  <button
  v-for="locale in availableLocales"
+ type="button"
  :key="locale.code"
  :disabled="switching"
  @click="selectLocale(locale.code)"
@@ -39,33 +48,51 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { setLocale, availableLocales } from '@/i18n'
 
 const { locale } = useI18n()
+defineProps<{ menuMode?: boolean }>()
+const listId = `locale-options-${useId()}`
 
 const isOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const switching = ref(false)
+const triggerRef = ref<HTMLButtonElement | null>(null)
 
 const currentLocaleCode = computed(() => locale.value)
 const currentLocale = computed(() => availableLocales.find((l) => l.code === locale.value))
 
-function toggleDropdown() {
+async function toggleDropdown() {
  isOpen.value = !isOpen.value
+ if (isOpen.value) {
+ await nextTick()
+ dropdownRef.value?.querySelector<HTMLElement>('.dropdown-item')?.focus()
+ }
+}
+
+function closeDropdown(restoreFocus = false) {
+ isOpen.value = false
+ if (restoreFocus) triggerRef.value?.focus()
+}
+
+function handleEscape(event: KeyboardEvent) {
+ if (!isOpen.value) return
+ event.stopPropagation()
+ closeDropdown(true)
 }
 
 async function selectLocale(code: string) {
  if (switching.value || code === currentLocaleCode.value) {
- isOpen.value = false
+ closeDropdown(true)
  return
  }
  switching.value = true
  try {
  await setLocale(code)
- isOpen.value = false
+ closeDropdown(true)
  } finally {
  switching.value = false
  }
@@ -87,6 +114,19 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.locale-menu-trigger {
+ width: 100%;
+ justify-content: flex-start;
+ padding-inline: 10px;
+ gap: 10px;
+}
+
+.locale-menu-options {
+ position: static;
+ width: 100%;
+ box-shadow: none;
+}
+
 .dropdown-enter-active,
 .dropdown-leave-active {
  transition: all 0.15s ease;

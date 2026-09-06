@@ -112,6 +112,7 @@
  <th
  v-for="(column, index) in columns"
  :key="column.key"
+ :data-column="column.key"
  scope="col"
  :aria-sort="column.sortable ? getColumnAriaSort(column.key) : undefined"
  :class="[
@@ -164,7 +165,7 @@
  <td v-if="selectable" class="data-table-td w-11 min-w-11 px-4">
  <div class="skeleton mx-auto h-4 w-4"></div>
  </td>
- <td v-for="column in columns" :key="column.key" :class="['data-table-td whitespace-nowrap', getAdaptivePaddingClass()]">
+ <td v-for="column in columns" :key="column.key" :data-column="column.key" :class="['data-table-td whitespace-nowrap', getAdaptivePaddingClass()]">
  <div class="skeleton h-3 w-3/4"></div>
  </td>
  </tr>
@@ -215,6 +216,7 @@
  <td
  v-for="(column, colIndex) in columns"
  :key="column.key"
+ :data-column="column.key"
  :class="[
  'data-table-td whitespace-nowrap text-foreground',
  getAdaptivePaddingClass(),
@@ -981,7 +983,7 @@ defineExpose({
  height: 16px;
  flex: none;
  border-radius: 5px;
- border: 1.5px solid var(--border);
+ border: 1.5px solid var(--border-strong);
  background: color-mix(in oklch, var(--surface) 85%, transparent);
  box-shadow: var(--field-shadow);
  cursor: pointer;
@@ -1006,8 +1008,9 @@ defineExpose({
 }
 
 .dt-checkbox:focus-visible {
- outline: 2px solid var(--accent);
+ outline: 2px solid var(--focus-ring);
  outline-offset: 2px;
+ box-shadow: var(--focus-ring-shadow);
 }
 
 /* 空状态：虚线 12px 盒子（原型 07） */
@@ -1076,10 +1079,6 @@ defineExpose({
  background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
 }
 
-:global([data-theme='glass-dark']) .sticky-header-cell {
- background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
-}
-
 /* Sticky 列基础样式 */
 .sticky-col {
  position: sticky;
@@ -1118,16 +1117,8 @@ tbody .sticky-col {
  background-color: var(--surface);
 }
 
-:global([data-theme='glass-dark']) tbody .sticky-col {
- background-color: var(--surface);
-}
-
 /* hover 状态保持 */
 tbody tr:hover .sticky-col {
- background: color-mix(in oklch, var(--accent) 5%, var(--surface));
-}
-
-:global([data-theme='glass-dark']) tbody tr:hover .sticky-col {
  background: color-mix(in oklch, var(--accent) 5%, var(--surface));
 }
 
@@ -1141,7 +1132,7 @@ tbody tr:hover .sticky-col {
  bottom: 0;
  width: 10px;
  transform: translateX(100%);
- background: linear-gradient(to right, color-mix(in oklch, black 8%, transparent), transparent);
+ background: linear-gradient(to right, var(--table-sticky-shadow), transparent);
  pointer-events: none;
 }
 
@@ -1154,7 +1145,7 @@ tbody tr:hover .sticky-col {
  bottom: 0;
  width: 10px;
  transform: translateX(100%);
- background: linear-gradient(to right, color-mix(in oklch, black 8%, transparent), transparent);
+ background: linear-gradient(to right, var(--table-sticky-shadow), transparent);
  pointer-events: none;
 }
 
@@ -1167,19 +1158,10 @@ tbody tr:hover .sticky-col {
  bottom: 0;
  width: 10px;
  transform: translateX(-100%);
- background: linear-gradient(to left, color-mix(in oklch, black 8%, transparent), transparent);
+ background: linear-gradient(to left, var(--table-sticky-shadow), transparent);
  pointer-events: none;
 }
 
-/* 暗色模式阴影 */
-:global([data-theme='glass-dark']) .is-scrollable .sticky-col-left::after,
-:global([data-theme='glass-dark']) .is-scrollable .sticky-col-left-second::after {
- background: linear-gradient(to right, color-mix(in oklch, black 20%, transparent), transparent);
-}
-
-:global([data-theme='glass-dark']) .is-scrollable .sticky-col-right::before {
- background: linear-gradient(to left, color-mix(in oklch, black 20%, transparent), transparent);
-}
 </style>
 
 <style>

@@ -61,5 +61,64 @@ describe('TextInput', () => {
     })
     expect(wrapper.get('input').attributes('aria-describedby')).toBe('qty-error')
     expect(wrapper.get('#qty-error').text()).toBe('Slot error')
+    expect(wrapper.get('input').attributes('aria-invalid')).toBe('true')
+  })
+
+  it('preserves native attributes and hint associations while errors change', async () => {
+    const wrapper = mount(TextInput, {
+      props: { id: 'password', error: 'Required' },
+      attrs: {
+        name: 'password',
+        autofocus: true,
+        class: 'input-lg',
+        'aria-describedby': 'password-hint'
+      },
+      slots: { label: 'Password <span>(optional)</span>' }
+    })
+    const input = wrapper.get('input')
+    expect(input.attributes('name')).toBe('password')
+    expect(input.element.autofocus).toBe(true)
+    expect(input.classes()).toContain('input-lg')
+    expect(input.attributes('aria-describedby')).toBe('password-hint password-error')
+    expect(wrapper.get('label').attributes('for')).toBe('password')
+    expect(wrapper.get('label').text()).toContain('(optional)')
+    expect(wrapper.get('#password-error').attributes('role')).toBe('alert')
+
+    await wrapper.setProps({ error: '' })
+    expect(input.attributes('aria-describedby')).toBe('password-hint')
+    expect(input.attributes('aria-invalid')).toBeUndefined()
+    await wrapper.setProps({ 'aria-describedby': 'updated-hint' })
+    expect(input.attributes('aria-describedby')).toBe('updated-hint')
+  })
+
+  it('updates the model before forwarding the native input event', async () => {
+    let value: string | number = ''
+    let valueDuringInput: string | number = ''
+    let receivedEvent: Event | undefined
+    const wrapper = mount(TextInput, {
+      props: {
+        'onUpdate:modelValue': (next) => { value = next },
+        onInput: (event) => {
+          valueDuringInput = value
+          receivedEvent = event
+        }
+      }
+    })
+    await wrapper.get('input').setValue('INVITE-NEW')
+    expect(valueDuringInput).toBe('INVITE-NEW')
+    expect(receivedEvent?.target).toBe(wrapper.get('input').element)
+    expect(wrapper.emitted('input')).toHaveLength(1)
+  })
+
+  it('renders a suffix without changing the input id or native attributes', () => {
+    const wrapper = mount(TextInput, {
+      props: { modelValue: 'secret', id: 'password', type: 'password', autocomplete: 'current-password' },
+      slots: { suffix: '<button type="button" aria-label="Show password">eye</button>' }
+    })
+    const input = wrapper.get('input')
+    expect(input.attributes('id')).toBe('password')
+    expect(input.attributes('autocomplete')).toBe('current-password')
+    expect(wrapper.get('[aria-label="Show password"]').exists()).toBe(true)
+    expect(wrapper.get('.ui-text-input-control.has-suffix').exists()).toBe(true)
   })
 })

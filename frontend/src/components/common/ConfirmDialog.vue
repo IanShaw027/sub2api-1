@@ -29,7 +29,7 @@
  <button
  @click="handleConfirm"
  type="button"
- :disabled="confirming"
+ :disabled="confirming || confirmDisabled"
  :class="['btn btn-sm disabled:cursor-not-allowed disabled:opacity-50', confirmButtonClass]"
  >
  {{ confirmText }}
@@ -58,6 +58,7 @@ interface Props {
  danger?: boolean
  tone?: ConfirmTone
  confirming?: boolean
+ confirmDisabled?: boolean
 }
 
 interface Emits {
@@ -68,7 +69,8 @@ interface Emits {
 const props = withDefaults(defineProps<Props>(), {
  danger: false,
  tone: undefined,
- confirming: false
+ confirming: false,
+ confirmDisabled: false
 })
 
 const tone = computed<ConfirmTone>(() => props.tone ?? (props.danger ? 'danger' : 'accent'))
@@ -85,7 +87,7 @@ const cancelText = computed(() => props.cancelText || t('common.cancel'))
 const emit = defineEmits<Emits>()
 
 const handleConfirm = () => {
- if (props.confirming) return
+ if (props.confirming || props.confirmDisabled) return
  emit('confirm')
 }
 
