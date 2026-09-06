@@ -2,6 +2,8 @@
 
 This document provides practical examples of how to use the authentication views in the Sub2API frontend.
 
+Visual styling follows [VISUAL_GUIDE.md](./VISUAL_GUIDE.md) and the shared Glass primitives. Historical workflow snippets below are illustrative, not the current API/schema contract; consult the view and auth store before reusing them.
+
 ## Quick Start
 
 ### 1. Login Flow
@@ -486,7 +488,7 @@ async function handleRegister(): Promise<void> {
 
 ```html
 <!-- Proper labels for screen readers -->
-<label for="username" class="mb-1 block text-sm font-medium text-gray-700"> Username </label>
+<label for="username" class="mb-1 block text-sm font-medium text-foreground"> Username </label>
 <input
   id="username"
   type="text"
@@ -495,7 +497,7 @@ async function handleRegister(): Promise<void> {
   aria-invalid="false"
   aria-describedby="username-error"
 />
-<p id="username-error" role="alert" class="text-sm text-red-600">
+<p id="username-error" role="alert" class="text-sm text-danger-text">
   <!-- Error message here -->
 </p>
 

@@ -24,21 +24,19 @@
       </div>
 
       <form v-else @submit.prevent="handleSubmit" class="login-form">
-        <label class="login-field" for="email">
-          <span class="login-label">{{ t('auth.emailLabel') }}</span>
-          <input
-            id="email"
-            v-model="formData.email"
-            type="email"
-            required
-            autofocus
-            autocomplete="email"
-            :disabled="isLoading"
-            class="field input-lg"
-            :class="{ 'input-error': errors.email }"
-            :placeholder="t('auth.emailPlaceholder')"
-          />
-        </label>
+        <TextInput
+          id="email"
+          v-model="formData.email"
+          :label="t('auth.emailLabel')"
+          type="email"
+          required
+          autofocus
+          autocomplete="email"
+          :disabled="isLoading"
+          class="input-lg"
+          :error="errors.email"
+          :placeholder="t('auth.emailPlaceholder')"
+        />
 
         <div v-if="captchaEnabled">
           <TurnstileWidget
@@ -88,6 +86,7 @@ import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import Button from '@/components/ui/Button.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import type { AliyunCaptchaBizResult } from '@/components/AliyunCaptchaWidget.vue'
 import { useAppStore } from '@/stores'
@@ -358,20 +357,6 @@ async function handleSubmit(): Promise<void> {
 
 .forgot-submit {
   width: 100%;
-}
-
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.login-label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--foreground);
 }
 
 .login-link {

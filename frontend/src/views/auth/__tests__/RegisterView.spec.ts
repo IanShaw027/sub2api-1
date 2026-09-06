@@ -2,10 +2,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import RegisterView from '@/views/auth/RegisterView.vue'
 
-const { getPublicSettingsMock, registerMock, showErrorMock } = vi.hoisted(() => ({
+const { getPublicSettingsMock, registerMock, showErrorMock, validateInvitationCodeMock, validatePromoCodeMock } = vi.hoisted(() => ({
   getPublicSettingsMock: vi.fn(),
   registerMock: vi.fn(),
-  showErrorMock: vi.fn()
+  showErrorMock: vi.fn(),
+  validateInvitationCodeMock: vi.fn(),
+  validatePromoCodeMock: vi.fn()
 }))
 
 const publicSettings = {
@@ -58,7 +60,9 @@ vi.mock('@/api/auth', async () => {
   const actual = await vi.importActual<typeof import('@/api/auth')>('@/api/auth')
   return {
     ...actual,
-    getPublicSettings: (...args: unknown[]) => getPublicSettingsMock(...args)
+    getPublicSettings: (...args: unknown[]) => getPublicSettingsMock(...args),
+    validateInvitationCode: (...args: unknown[]) => validateInvitationCodeMock(...args),
+    validatePromoCode: (...args: unknown[]) => validatePromoCodeMock(...args)
   }
 })
 
@@ -86,6 +90,8 @@ describe('RegisterView invitation layout', () => {
     getPublicSettingsMock.mockReset()
     registerMock.mockReset()
     showErrorMock.mockReset()
+    validateInvitationCodeMock.mockReset()
+    validatePromoCodeMock.mockReset()
     getPublicSettingsMock.mockResolvedValue(publicSettings)
     registerMock.mockResolvedValue({})
   })
@@ -178,7 +184,8 @@ describe('RegisterView invitation layout', () => {
 
     expect(registerMock).not.toHaveBeenCalled()
     expect(showErrorMock).toHaveBeenCalledWith('auth.emailAliasNotAllowed')
-    expect(wrapper.get('#email').classes()).toContain('input-error')
+    expect(wrapper.get('#email').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('#email-error').text()).toBe('auth.emailAliasNotAllowed')
   })
 
   // 域名限量注册开关默认关闭：恢复 PR5423 之前的客户端白名单预检，非白名单域名不发起注册请求。
@@ -199,7 +206,8 @@ describe('RegisterView invitation layout', () => {
     expect(registerMock).not.toHaveBeenCalled()
     // 校验失败通过 validationToastMessage watcher 弹 toast
     expect(showErrorMock).toHaveBeenCalledWith('auth.emailSuffixNotAllowedWithAllowed')
-    expect(wrapper.get('#email').classes()).toContain('input-error')
+    expect(wrapper.get('#email').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('#email-error').text()).toBe('auth.emailSuffixNotAllowedWithAllowed')
   })
 
   it('still submits whitelisted email domains when the domain quota switch is disabled', async () => {
@@ -220,5 +228,61 @@ describe('RegisterView invitation layout', () => {
       expect.objectContaining({ email: 'user@allowed.com' })
     )
     expect(showErrorMock).not.toHaveBeenCalled()
+  })
+
+  it('keeps password hint, reveal control and validation error associated with the field', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({ ...publicSettings, turnstile_enabled: false })
+    const wrapper = mountRegister()
+    await flushPromises()
+    const input = wrapper.get('#password')
+    expect(wrapper.get('label[for="password"]').text()).toContain('auth.passwordLabel')
+    expect(input.attributes('autocomplete')).toBe('new-password')
+    expect(input.attributes('aria-describedby')).toBe('password-hint')
+    await input.setValue('short')
+    await wrapper.get('[aria-controls="password"]').trigger('click')
+    expect(input.attributes('type')).toBe('text')
+    expect(wrapper.get('[aria-controls="password"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('form').trigger('submit')
+    expect(input.attributes('aria-describedby')).toBe('password-hint password-error')
+    expect(wrapper.get('#password-error').attributes('role')).toBe('alert')
+    expect(wrapper.get('#password-hint').text()).toBe('auth.passwordHint')
+    expect(registerMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('validates current invitation and promo values and submits both without dropping either', async () => {
+    getPublicSettingsMock.mockResolvedValueOnce({
+      ...publicSettings,
+      turnstile_enabled: false,
+      invitation_code_enabled: true,
+      promo_code_enabled: true
+    })
+    validateInvitationCodeMock.mockResolvedValue({ valid: true })
+    validatePromoCodeMock.mockResolvedValue({ valid: true, bonus_amount: 10 })
+    const wrapper = mountRegister()
+    await flushPromises()
+    vi.useFakeTimers()
+    try {
+      await wrapper.get('#email').setValue('user@example.com')
+      await wrapper.get('#password').setValue('secret-123')
+      await wrapper.get('#invitation_code').setValue('INVITE-NEW')
+      await wrapper.get('#promo_code').setValue('PROMO-NEW')
+      await vi.advanceTimersByTimeAsync(500)
+      expect(validateInvitationCodeMock).toHaveBeenCalledWith('INVITE-NEW')
+      expect(validatePromoCodeMock).toHaveBeenCalledWith('PROMO-NEW')
+      expect(wrapper.get('#invitation_code').classes()).toContain('field-success')
+      expect(wrapper.get('#promo_code').classes()).toContain('field-success')
+      expect(wrapper.text()).toContain('auth.invitationCodeValid')
+      expect(wrapper.text()).toContain('auth.promoCodeValid')
+      await wrapper.get('form').trigger('submit')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(registerMock).toHaveBeenCalledWith(expect.objectContaining({
+        invitation_code: 'INVITE-NEW',
+        promo_code: 'PROMO-NEW'
+      }))
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 })

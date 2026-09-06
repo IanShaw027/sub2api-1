@@ -145,6 +145,28 @@ describe('Tencent captcha action gate', () => {
     }))
   })
 
+  it('keeps email semantics, password reveal and field errors without entering the captcha gate', async () => {
+    const wrapper = mountLogin()
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('#email').element.required).toBe(true)
+    expect(wrapper.get<HTMLInputElement>('#email').element.autofocus).toBe(true)
+    expect(wrapper.get('#email').attributes('autocomplete')).toBe('email')
+    expect(wrapper.get('label[for="email"]').text()).toContain('auth.emailLabel')
+    expect(wrapper.get('#password').attributes('autocomplete')).toBe('current-password')
+    await wrapper.get('#email').setValue('invalid')
+    await wrapper.get('#password').setValue('short')
+    await wrapper.get('[aria-controls="password"]').trigger('click')
+    expect(wrapper.get('#password').attributes('type')).toBe('text')
+    expect(wrapper.get('[aria-controls="password"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.get('#email').attributes('aria-invalid')).toBe('true')
+    expect(wrapper.get('#email-error').text()).toBe('auth.invalidEmail')
+    expect(wrapper.get('#password-error').text()).toBe('auth.passwordMinLength')
+    expect(verifyActionMock).not.toHaveBeenCalled()
+    expect(loginMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('does not call login when Tencent captcha is closed', async () => {
     verifyActionMock.mockResolvedValue(null)
     const wrapper = mountLogin()

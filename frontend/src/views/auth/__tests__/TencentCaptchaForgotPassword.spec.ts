@@ -109,6 +109,25 @@ describe('忘记密码腾讯验证码门禁', () => {
     expect(captchaResetMock).toHaveBeenCalledOnce()
     expect(wrapper.text()).toContain('auth.resetEmailSent')
   })
+
+  it('associates email validation with the input without sending a reset request', async () => {
+    const wrapper = mountForgotPassword()
+    await flushPromises()
+    const input = wrapper.get<HTMLInputElement>('#email')
+    expect(input.element.required).toBe(true)
+    expect(input.element.autofocus).toBe(true)
+    expect(input.attributes('autocomplete')).toBe('email')
+    expect(wrapper.get('label[for="email"]').text()).toContain('auth.emailLabel')
+    await input.setValue('invalid')
+    await wrapper.get('form').trigger('submit')
+    expect(input.attributes('aria-invalid')).toBe('true')
+    expect(input.attributes('aria-describedby')).toBe('email-error')
+    expect(wrapper.get('#email-error').attributes('role')).toBe('alert')
+    expect(wrapper.get('#email-error').text()).toBe('auth.invalidEmail')
+    expect(verifyActionMock).not.toHaveBeenCalled()
+    expect(forgotPasswordMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })
 
 describe('忘记密码阿里云验证码门禁', () => {

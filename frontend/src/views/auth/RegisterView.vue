@@ -11,139 +11,139 @@
     </div>
 
     <form v-else class="register-form" @submit.prevent="handleRegister">
-      <label class="register-field" for="email">
-        <span class="register-label">{{ t('auth.emailLabel') }}</span>
-        <input
-          id="email"
-          v-model="formData.email"
-          type="email"
+      <TextInput
+        id="email"
+        v-model="formData.email"
+        :label="t('auth.emailLabel')"
+        type="email"
+        required
+        autofocus
+        autocomplete="email"
+        :disabled="registrationActionDisabled"
+        class="input-lg"
+        :error="errors.email"
+        :placeholder="t('auth.emailPlaceholder')"
+      />
+
+      <div class="register-field">
+        <TextInput
+          id="password"
+          v-model="formData.password"
+          :label="t('auth.passwordLabel')"
+          :type="showPassword ? 'text' : 'password'"
           required
-          autofocus
-          autocomplete="email"
+          autocomplete="new-password"
           :disabled="registrationActionDisabled"
-          class="field input-lg"
-          :class="{ 'input-error': errors.email }"
-          :placeholder="t('auth.emailPlaceholder')"
-        />
-      </label>
+          class="input-lg"
+          :error="errors.password"
+          aria-describedby="password-hint"
+          :placeholder="t('auth.createPasswordPlaceholder')"
+        >
+          <template #suffix>
+            <button
+              type="button"
+              class="register-eye"
+              :disabled="registrationActionDisabled"
+              :aria-label="t('auth.passwordLabel')"
+              :aria-pressed="showPassword"
+              aria-controls="password"
+              @click="showPassword = !showPassword"
+            >
+              <Icon v-if="showPassword" name="eyeOff" size="sm" />
+              <Icon v-else name="eye" size="sm" />
+            </button>
+          </template>
+        </TextInput>
+        <span id="password-hint" class="register-note">{{ t('auth.passwordHint') }}</span>
+      </div>
 
-      <label class="register-field" for="password">
-        <span class="register-label">{{ t('auth.passwordLabel') }}</span>
-        <span class="register-affix">
-          <input
-            id="password"
-            v-model="formData.password"
-            :type="showPassword ? 'text' : 'password'"
-            required
-            autocomplete="new-password"
-            :disabled="registrationActionDisabled"
-            class="field input-lg register-affix-input"
-            :class="{ 'input-error': errors.password }"
-            :placeholder="t('auth.createPasswordPlaceholder')"
-          />
-          <button
-            type="button"
-            class="register-eye"
-            :disabled="registrationActionDisabled"
-            :aria-label="t('auth.passwordLabel')"
-            @click="showPassword = !showPassword"
-          >
-            <Icon v-if="showPassword" name="eyeOff" size="sm" />
-            <Icon v-else name="eye" size="sm" />
-          </button>
-        </span>
-        <span class="register-note">{{ t('auth.passwordHint') }}</span>
-      </label>
-
-      <label v-if="invitationCodeEnabled" class="register-field" for="invitation_code">
-        <span class="register-label">{{ t('auth.invitationCodeLabel') }}</span>
-        <span class="register-affix">
-          <input
-            id="invitation_code"
-            v-model="formData.invitation_code"
-            type="text"
-            :disabled="registrationActionDisabled"
-            class="field input-lg register-affix-input"
-            :class="{
-              'field-success': invitationValidation.valid,
-              'input-error': invitationValidation.invalid || errors.invitation_code
-            }"
-            :placeholder="t('auth.invitationCodePlaceholder')"
-            @input="handleInvitationCodeInput"
-          />
-          <span class="register-affix-status">
-            <span v-if="invitationValidating" class="spinner" aria-hidden="true"></span>
-            <Icon v-else-if="invitationValidation.valid" name="checkCircle" size="sm" class="register-ok" />
-            <Icon
-              v-else-if="invitationValidation.invalid || errors.invitation_code"
-              name="exclamationCircle"
-              size="sm"
-              class="register-bad"
-            />
-          </span>
-        </span>
+      <div v-if="invitationCodeEnabled" class="register-field">
+        <TextInput
+          id="invitation_code"
+          v-model="formData.invitation_code"
+          :label="t('auth.invitationCodeLabel')"
+          type="text"
+          :disabled="registrationActionDisabled"
+          class="input-lg"
+          :class="{ 'field-success': invitationValidation.valid }"
+          :error="invitationValidation.message || errors.invitation_code"
+          :placeholder="t('auth.invitationCodePlaceholder')"
+          @input="handleInvitationCodeInput"
+        >
+          <template #suffix>
+            <span class="register-affix-status">
+              <span v-if="invitationValidating" class="spinner" aria-hidden="true"></span>
+              <Icon v-else-if="invitationValidation.valid" name="checkCircle" size="sm" class="register-ok" />
+              <Icon
+                v-else-if="invitationValidation.invalid || errors.invitation_code"
+                name="exclamationCircle"
+                size="sm"
+                class="register-bad"
+              />
+            </span>
+          </template>
+        </TextInput>
         <transition name="fade">
           <span v-if="invitationValidation.valid" class="register-note register-note-success">
             <Icon name="checkCircle" size="sm" />
             {{ t('auth.invitationCodeValid') }}
           </span>
         </transition>
-      </label>
+      </div>
 
       <!-- Affiliate Invitation Code Input (Optional) -->
-      <label
+      <div
         v-else-if="affiliateEnabled"
         class="register-field"
-        for="affiliate_code"
         data-testid="affiliate-invitation-field"
       >
-        <span class="register-label">
-          {{ t('auth.invitationCodeLabel') }}
-          <span class="register-optional">({{ t('common.optional') }})</span>
-        </span>
-        <input
+        <TextInput
           id="affiliate_code"
           v-model="formData.aff_code"
           type="text"
           :disabled="registrationActionDisabled"
-          class="field input-lg"
+          class="input-lg"
           :placeholder="t('auth.invitationCodePlaceholder')"
-        />
-      </label>
+        >
+          <template #label>
+            {{ t('auth.invitationCodeLabel') }}
+            <span class="register-optional">({{ t('common.optional') }})</span>
+          </template>
+        </TextInput>
+      </div>
 
       <!-- Promo Code Input (Optional) -->
-      <label v-if="promoCodeEnabled" class="register-field" for="promo_code">
-        <span class="register-label">
-          {{ t('auth.promoCodeLabel') }}
-          <span class="register-optional">({{ t('common.optional') }})</span>
-        </span>
-        <span class="register-affix">
-          <input
-            id="promo_code"
-            v-model="formData.promo_code"
-            type="text"
-            :disabled="registrationActionDisabled"
-            class="field input-lg register-affix-input"
-            :class="{
-              'field-success': promoValidation.valid,
-              'input-error': promoValidation.invalid
-            }"
-            :placeholder="t('auth.promoCodePlaceholder')"
-            @input="handlePromoCodeInput"
-          />
-          <span class="register-affix-status">
-            <span v-if="promoValidating" class="spinner" aria-hidden="true"></span>
-            <Icon v-else-if="promoValidation.valid" name="checkCircle" size="sm" class="register-ok" />
-            <Icon v-else-if="promoValidation.invalid" name="exclamationCircle" size="sm" class="register-bad" />
-          </span>
-        </span>
+      <div v-if="promoCodeEnabled" class="register-field">
+        <TextInput
+          id="promo_code"
+          v-model="formData.promo_code"
+          type="text"
+          :disabled="registrationActionDisabled"
+          class="input-lg"
+          :class="{ 'field-success': promoValidation.valid }"
+          :error="promoValidation.message"
+          :placeholder="t('auth.promoCodePlaceholder')"
+          @input="handlePromoCodeInput"
+        >
+          <template #label>
+            {{ t('auth.promoCodeLabel') }}
+            <span class="register-optional">({{ t('common.optional') }})</span>
+          </template>
+          <template #suffix>
+            <span class="register-affix-status">
+              <span v-if="promoValidating" class="spinner" aria-hidden="true"></span>
+              <Icon v-else-if="promoValidation.valid" name="checkCircle" size="sm" class="register-ok" />
+              <Icon v-else-if="promoValidation.invalid" name="exclamationCircle" size="sm" class="register-bad" />
+            </span>
+          </template>
+        </TextInput>
         <transition name="fade">
           <span v-if="promoValidation.valid" class="register-note register-note-success">
             <Icon name="gift" size="sm" />
             {{ t('auth.promoCodeValid', { amount: promoValidation.bonusAmount?.toFixed(2) }) }}
           </span>
         </transition>
-      </label>
+      </div>
 
       <!-- Turnstile Widget -->
       <div v-if="captchaEnabled" data-testid="registration-turnstile">
@@ -260,6 +260,7 @@ import EmailOAuthButtons from '@/components/auth/EmailOAuthButtons.vue'
 import LoginAgreementPrompt from '@/components/auth/LoginAgreementPrompt.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Button from '@/components/ui/Button.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { useAuthStore, useAppStore } from '@/stores'
 import {
@@ -1108,12 +1109,6 @@ function buildRegistrationErrorMessage(error: unknown, fallback: string): string
   gap: 6px;
 }
 
-.register-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
 .register-optional {
   margin-left: 4px;
   font-size: 12px;
@@ -1121,22 +1116,10 @@ function buildRegistrationErrorMessage(error: unknown, fallback: string): string
   color: var(--muted);
 }
 
-.register-affix {
-  position: relative;
-  display: block;
-}
-
-.register-affix-input {
-  padding-right: 38px;
-}
-
 .register-eye,
 .register-affix-status {
-  position: absolute;
-  top: 0;
-  right: 0;
-  height: 40px;
-  width: 36px;
+  height: 32px;
+  width: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1178,11 +1161,11 @@ function buildRegistrationErrorMessage(error: unknown, fallback: string): string
   color: var(--success-text);
 }
 
-.field-success {
+:deep(.field-success) {
   border-color: var(--success);
 }
 
-.field-success:focus {
+:deep(.field-success:focus) {
   border-color: var(--success);
   box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--success) 18%, transparent);
 }

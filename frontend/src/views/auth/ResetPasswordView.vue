@@ -40,67 +40,71 @@
       </div>
 
       <form v-else @submit.prevent="handleSubmit" class="login-form">
-        <label class="login-field" for="email">
-          <span class="login-label">{{ t('auth.emailLabel') }}</span>
-          <input
-            id="email"
-            :value="email"
-            type="email"
-            readonly
-            disabled
-            class="field input-lg"
-          />
-        </label>
+        <TextInput
+          id="email"
+          :model-value="email"
+          :label="t('auth.emailLabel')"
+          type="email"
+          readonly
+          disabled
+          class="input-lg"
+        />
 
-        <label class="login-field" for="password">
-          <span class="login-label">{{ t('auth.newPassword') }}</span>
-          <div class="login-field-input">
-            <input
-              id="password"
-              v-model="formData.password"
-              :type="showPassword ? 'text' : 'password'"
-              required
-              autocomplete="new-password"
-              :disabled="isLoading"
-              class="field input-lg login-field-affix"
-              :class="{ 'input-error': errors.password }"
-              :placeholder="t('auth.newPasswordPlaceholder')"
-            />
+        <TextInput
+          id="password"
+          v-model="formData.password"
+          :label="t('auth.newPassword')"
+          :type="showPassword ? 'text' : 'password'"
+          required
+          autocomplete="new-password"
+          :disabled="isLoading"
+          class="input-lg"
+          :error="errors.password"
+          :placeholder="t('auth.newPasswordPlaceholder')"
+        >
+          <template #suffix>
             <button
               type="button"
               @click="showPassword = !showPassword"
               class="login-eye"
+              :disabled="isLoading"
+              :aria-label="t('auth.newPassword')"
+              :aria-pressed="showPassword"
+              aria-controls="password"
             >
               <Icon v-if="showPassword" name="eyeOff" size="sm" />
               <Icon v-else name="eye" size="sm" />
             </button>
-          </div>
-        </label>
+          </template>
+        </TextInput>
 
-        <label class="login-field" for="confirmPassword">
-          <span class="login-label">{{ t('auth.confirmPassword') }}</span>
-          <div class="login-field-input">
-            <input
-              id="confirmPassword"
-              v-model="formData.confirmPassword"
-              :type="showConfirmPassword ? 'text' : 'password'"
-              required
-              autocomplete="new-password"
-              :disabled="isLoading"
-              class="field input-lg login-field-affix"
-              :class="{ 'input-error': errors.confirmPassword }"
-              :placeholder="t('auth.confirmPasswordPlaceholder')"
-            />
+        <TextInput
+          id="confirmPassword"
+          v-model="formData.confirmPassword"
+          :label="t('auth.confirmPassword')"
+          :type="showConfirmPassword ? 'text' : 'password'"
+          required
+          autocomplete="new-password"
+          :disabled="isLoading"
+          class="input-lg"
+          :error="errors.confirmPassword"
+          :placeholder="t('auth.confirmPasswordPlaceholder')"
+        >
+          <template #suffix>
             <button
               type="button"
               @click="showConfirmPassword = !showConfirmPassword"
               class="login-eye"
+              :disabled="isLoading"
+              :aria-label="t('auth.confirmPassword')"
+              :aria-pressed="showConfirmPassword"
+              aria-controls="confirmPassword"
             >
               <Icon v-if="showConfirmPassword" name="eyeOff" size="sm" />
               <Icon v-else name="eye" size="sm" />
             </button>
-          </div>
-        </label>
+          </template>
+        </TextInput>
 
         <Button
           native-type="submit"
@@ -133,6 +137,7 @@ import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import Button from '@/components/ui/Button.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 import { useAppStore } from '@/stores'
 import { resetPassword } from '@/api/auth'
 
@@ -305,27 +310,9 @@ async function handleSubmit(): Promise<void> {
   width: 100%;
 }
 
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.login-field-input {
-  position: relative;
-  display: block;
-}
-
-.login-field-affix {
-  padding-right: 38px;
-}
-
 .login-eye {
-  position: absolute;
-  top: 0;
-  right: 0;
-  height: 40px;
-  width: 36px;
+  height: 32px;
+  width: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -336,14 +323,6 @@ async function handleSubmit(): Promise<void> {
 }
 
 .login-eye:hover {
-  color: var(--foreground);
-}
-
-.login-label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
   color: var(--foreground);
 }
 

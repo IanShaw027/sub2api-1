@@ -8,49 +8,48 @@
     <!-- Login Form -->
     <form class="login-form" @submit.prevent="handleLogin">
       <!-- Email Input -->
-      <label class="login-field" for="email">
-        <span class="login-label">{{ t('auth.emailLabel') }}</span>
-        <input
-          id="email"
-          v-model="formData.email"
-          type="email"
-          required
-          autofocus
-          autocomplete="email"
-          :disabled="authActionDisabled"
-          class="field input-lg"
-          :class="{ 'field-error': errors.email }"
-          :placeholder="t('auth.emailPlaceholder')"
-        />
-      </label>
+      <TextInput
+        id="email"
+        v-model="formData.email"
+        :label="t('auth.emailLabel')"
+        type="email"
+        required
+        autofocus
+        autocomplete="email"
+        :disabled="authActionDisabled"
+        class="input-lg"
+        :error="errors.email"
+        :placeholder="t('auth.emailPlaceholder')"
+      />
 
       <!-- Password Input -->
-      <label class="login-field" for="password">
-        <span class="login-label">{{ t('auth.passwordLabel') }}</span>
-        <span class="login-password">
-          <input
-            id="password"
-            v-model="formData.password"
-            :type="showPassword ? 'text' : 'password'"
-            required
-            autocomplete="current-password"
-            :disabled="authActionDisabled"
-            class="field input-lg login-password-input"
-            :class="{ 'field-error': errors.password }"
-            :placeholder="t('auth.passwordPlaceholder')"
-          />
+      <TextInput
+        id="password"
+        v-model="formData.password"
+        :label="t('auth.passwordLabel')"
+        :type="showPassword ? 'text' : 'password'"
+        required
+        autocomplete="current-password"
+        :disabled="authActionDisabled"
+        class="input-lg"
+        :error="errors.password"
+        :placeholder="t('auth.passwordPlaceholder')"
+      >
+        <template #suffix>
           <button
             type="button"
             class="login-eye"
             :disabled="authActionDisabled"
             :aria-label="t('auth.passwordLabel')"
+            :aria-pressed="showPassword"
+            aria-controls="password"
             @click="showPassword = !showPassword"
           >
             <Icon v-if="showPassword" name="eyeOff" size="sm" />
             <Icon v-else name="eye" size="sm" />
           </button>
-        </span>
-      </label>
+        </template>
+      </TextInput>
 
       <div class="login-row">
         <Checkbox v-model="rememberMe" class="login-remember">
@@ -205,6 +204,7 @@ import TotpLoginModal from '@/components/auth/TotpLoginModal.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Button from '@/components/ui/Button.vue'
 import Checkbox from '@/components/ui/Checkbox.vue'
+import TextInput from '@/components/ui/TextInput.vue'
 import AuthLayout from '@/components/layout/AuthLayout.vue'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
 import { useAuthStore, useAppStore } from '@/stores'
@@ -836,33 +836,9 @@ function handle2FACancel(): void {
   gap: 14px;
 }
 
-.login-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.login-label {
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.login-password {
-  position: relative;
-  display: block;
-}
-
-.login-password-input {
-  padding-right: 38px;
-}
-
 .login-eye {
-  position: absolute;
-  top: 0;
-  right: 0;
-  height: 40px;
-  width: 36px;
+  height: 32px;
+  width: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
