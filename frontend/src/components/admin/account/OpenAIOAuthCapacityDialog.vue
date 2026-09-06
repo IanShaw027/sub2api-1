@@ -68,7 +68,7 @@
 
       <div
         v-else-if="error"
-        class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-danger-text"
+        class="rounded-xl border border-red-200 bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] p-4 text-sm text-danger-text"
       >
         {{ error }}
       </div>
@@ -104,7 +104,7 @@
               <div class="text-[11px] text-muted">{{ bucket.label }}</div>
               <div
                 class="mt-1 text-base font-semibold"
-                :class="bucket.value ? 'text-amber-700' : 'text-muted'"
+                :class="bucket.value ? 'text-warning-text' : 'text-muted'"
               >
                 {{ bucket.value }}
               </div>
@@ -124,7 +124,7 @@
               <span
                 v-if="window.alert"
                 class="text-xs font-medium uppercase"
-                :class="window.alert === 'critical' ? 'text-danger-text' : 'text-amber-700'"
+                :class="window.alert === 'critical' ? 'text-danger-text' : 'text-warning-text'"
               >
                 {{ window.alert === 'critical'
                   ? t('admin.accounts.oauthCapacity.alertCritical')
@@ -164,7 +164,7 @@
 
         <div
           v-if="overview.total.suggest_accounts"
-          class="rounded-lg border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-sm text-amber-800"
+          class="rounded-lg border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-sm text-warning-text"
         >
           {{ t('admin.accounts.oauthCapacity.suggestAdd', { count: overview.total.suggest_accounts }) }}
         </div>
@@ -335,7 +335,7 @@ const accountMetrics = computed(() => {
       value: accounts.errors,
       icon: 'exclamationTriangle' as const,
       cardClass: accounts.errors
-        ? 'border-red-200 bg-red-50'
+        ? 'border-red-200 bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]'
         : 'border-line',
       iconWrapClass: accounts.errors ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]' : 'bg-surface-2',
       iconClass: accounts.errors ? 'text-danger-text' : 'text-muted',
@@ -348,9 +348,9 @@ const accountMetrics = computed(() => {
       cardClass: accounts.rate_limited
         ? 'border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]'
         : 'border-line',
-      iconWrapClass: accounts.rate_limited ? 'bg-amber-100' : 'bg-surface-2',
+      iconWrapClass: accounts.rate_limited ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]' : 'bg-surface-2',
       iconClass: accounts.rate_limited ? 'text-warning-text' : 'text-muted',
-      valueClass: accounts.rate_limited ? 'text-amber-700' : 'text-foreground'
+      valueClass: accounts.rate_limited ? 'text-warning-text' : 'text-foreground'
     }
   ]
 })
@@ -510,7 +510,7 @@ function windowLabel(window: string) {
 }
 
 function windowCardClass(alert?: string) {
-  if (alert === 'critical') return 'border-red-300 bg-red-50'
+  if (alert === 'critical') return 'border-red-300 bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]'
   if (alert === 'warning') return 'border-amber-300 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]'
   return 'border-line'
 }

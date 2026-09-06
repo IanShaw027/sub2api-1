@@ -107,7 +107,7 @@
  </span>
  <span
  v-if="selIds.length"
- class="rounded-full bg-accent px-2 py-0.5 text-xs font-medium text-accent "
+ class="rounded-full bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-2 py-0.5 text-xs font-medium text-accent "
  >
  {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
  </span>

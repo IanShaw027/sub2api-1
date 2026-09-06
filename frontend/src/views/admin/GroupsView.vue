@@ -29,7 +29,7 @@
           <Icon name="arrowsUpDown" size="md" class="mr-2" />
           {{ t("admin.groups.sortOrder") }}
         </Button>
-        <Button class="groups-create-desktop" data-tour="groups-create-btn" @click="openCreateModal">
+        <Button class="groups-create-desktop" :data-tour="isMobile ? undefined : 'groups-create-btn'" @click="openCreateModal">
           <Icon name="plus" size="md" />
           {{ t("admin.groups.createGroup") }}
         </Button>
@@ -434,7 +434,7 @@
         />
       </template>
     </TablePageLayout>
-    <Fab class="groups-fab" data-tour="groups-create-btn" :label="t('admin.groups.createGroup')" @click="openCreateModal">
+    <Fab class="groups-fab" :data-tour="isMobile ? 'groups-create-btn' : undefined" :label="t('admin.groups.createGroup')" @click="openCreateModal">
       <Icon name="plus" size="md" />
       {{ t("admin.groups.createGroup") }}
     </Fab>
@@ -4494,6 +4494,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
+import { useIsMobile } from "@/composables/useIsMobile";
 import { adminAPI } from "@/api/admin";
 import type {
   AdminGroup,
@@ -4666,6 +4667,7 @@ const groupPricingToAPI = (
     }));
 
 const { t } = useI18n();
+const { isMobile } = useIsMobile();
 const appStore = useAppStore();
 const onboardingStore = useOnboardingStore();
 
@@ -4847,11 +4849,11 @@ const statusChipOptions = computed(() =>
 const groupMiniStats = computed(() => [
   { label: t("common.total"), value: pagination.total },
   {
-    label: t("common.active"),
+    label: t("common.currentPageLabel", { label: t("common.active") }),
     value: groups.value.filter((group) => group.status === "active").length,
   },
   {
-    label: t("admin.groups.exclusive"),
+    label: t("common.currentPageLabel", { label: t("admin.groups.exclusive") }),
     value: groups.value.filter((group) => group.is_exclusive).length,
   },
 ]);

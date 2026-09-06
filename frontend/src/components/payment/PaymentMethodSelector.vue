@@ -99,10 +99,10 @@ function methodLabel(method: PaymentMethodOption): string {
 }
 
 function methodSelectedClass(type: string): string {
-  if (isBuiltInAlipayMethod(type)) return 'border-[#02A9F1] bg-blue-50 text-foreground shadow-sm'
-  if (isBuiltInWxpayMethod(type)) return 'border-[#09BB07] bg-green-50 text-foreground shadow-sm'
-  if (type === 'stripe') return 'border-[#676BE5] bg-indigo-50 text-foreground shadow-sm'
-  if (type === 'airwallex') return 'border-[#FF6B3D] bg-orange-50 text-foreground shadow-sm'
+  if (isBuiltInAlipayMethod(type)) return 'border-[#02A9F1] bg-[color-mix(in_oklch,var(--surface)_90%,#02A9F1)] text-foreground shadow-sm'
+  if (isBuiltInWxpayMethod(type)) return 'border-[#09BB07] bg-[color-mix(in_oklch,var(--surface)_90%,#09BB07)] text-foreground shadow-sm'
+  if (type === 'stripe') return 'border-[#676BE5] bg-[color-mix(in_oklch,var(--surface)_90%,#676BE5)] text-foreground shadow-sm'
+  if (type === 'airwallex') return 'border-[#FF6B3D] bg-[color-mix(in_oklch,var(--surface)_90%,#FF6B3D)] text-foreground shadow-sm'
  return 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-foreground shadow-sm'
 }
 </script>

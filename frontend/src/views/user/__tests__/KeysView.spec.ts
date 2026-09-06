@@ -4,6 +4,7 @@ import { nextTick } from 'vue'
 
 import type { ApiKey } from '@/types'
 import KeysView from '../KeysView.vue'
+import MiniStatCard from '@/components/ui/MiniStatCard.vue'
 
 const {
   listKeys,
@@ -100,7 +101,9 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: { label: string }) => key === 'common.currentPageLabel'
+        ? `This page: ${params?.label}`
+        : messages[key] ?? key,
     }),
   }
 })
@@ -283,6 +286,18 @@ describe('user KeysView column settings', () => {
     getAvailableGroups.mockResolvedValue([])
     getUserGroupRates.mockResolvedValue({})
     isCurrentStep.mockReturnValue(false)
+  })
+
+  it('distinguishes current-page statistics from the full matching key count', async () => {
+    listKeys.mockResolvedValue({ items: [createApiKey()], total: 21, page: 1, page_size: 20, pages: 2 })
+    getDashboardApiKeysUsage.mockResolvedValue({ stats: { 1: { today_actual_cost: 1.5 } } })
+    const wrapper = await mountView()
+    expect(wrapper.getComponent(MiniStatCard).props('items')).toEqual([
+      { label: 'common.total', value: 21 },
+      { label: 'This page: common.active', value: 1 },
+      { label: 'This page: keys.today', value: '$1.50' }
+    ])
+    wrapper.unmount()
   })
 
   it('uses the default API key columns with low-frequency columns hidden', async () => {

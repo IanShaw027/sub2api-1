@@ -51,6 +51,7 @@ export default {
     pageNotFound: '页面不存在',
     enabled: '已启用',
     disabled: '已禁用',
+    currentPageLabel: '当前页{label}',
 	    total: '总计',
 	    balance: '余额',
 	    availableBalance: '可用余额',

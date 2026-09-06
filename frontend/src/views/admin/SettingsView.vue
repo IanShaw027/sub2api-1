@@ -930,7 +930,7 @@
  v-for="preset in betaPresets[rule.beta_token]"
  :key="preset.label"
  type="button"
- class="inline-flex items-center gap-1 rounded-md border border-accent bg-accent px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent "
+ class="inline-flex items-center gap-1 rounded-md border border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_20%,transparent)] "
  @click="applyBetaPreset(rule, preset)"
  :title="preset.description"
  >
@@ -1018,7 +1018,7 @@
  v-for="pattern in commonModelPatterns"
  :key="pattern"
  type="button"
- class="rounded border border-line px-2 py-0.5 text-xs text-muted transition-colors hover:border-accent hover:bg-accent hover:text-accent "
+ class="rounded border border-line px-2 py-0.5 text-xs text-muted transition-colors hover:border-accent hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent "
  @click="addQuickPattern(rule, pattern)"
  >
  {{ pattern }}
@@ -1177,7 +1177,7 @@
  </span>
  <span aria-hidden="true">→</span>
  <span
- class="inline-flex items-center rounded bg-accent px-2 py-0.5 font-medium text-accent "
+ class="inline-flex items-center rounded bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-2 py-0.5 font-medium text-accent "
  >
  {{ openaiFastPolicyActionSummary(rule.action) }}
  </span>
@@ -7940,7 +7940,7 @@
  {{ entry.aff_code }}
  <span
  v-if="entry.aff_code_custom"
- class="ml-1 inline-block rounded bg-accent px-1.5 py-0.5 text-[10px] font-medium text-accent "
+ class="ml-1 inline-block rounded bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-accent "
  >{{ t('admin.settings.features.affiliate.customUsers.customBadge') }}</span>
  </td>
  <td class="px-3 py-2 text-sm">
@@ -8011,7 +8011,7 @@
  <!-- Chip showing the picked user; clicking it re-opens the search -->
  <div
  v-if="affiliateModal.selectedUser"
- class="flex items-center justify-between rounded-md border border-accent bg-accent px-3 py-2 "
+ class="flex items-center justify-between rounded-md border border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-3 py-2 "
  >
  <div class="text-sm">
  <span class="font-medium text-foreground ">{{ affiliateModal.selectedUser.email }}</span>

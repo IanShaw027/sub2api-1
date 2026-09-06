@@ -87,7 +87,8 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key,
+      t: (key: string, params?: { label?: string }) =>
+        key === 'common.currentPageLabel' ? `This page: ${params?.label}` : messages[key] ?? key,
     }),
   }
 })
@@ -260,6 +261,38 @@ describe('admin GroupsView column settings', () => {
 
   afterEach(() => {
     localStorage.clear()
+  })
+
+  it('labels paginated group counts separately from the result total', async () => {
+    listGroups.mockResolvedValueOnce({
+      items: [createGroup({ is_exclusive: true })],
+      total: 40,
+      page: 1,
+      page_size: 20,
+      pages: 2,
+    }).mockResolvedValueOnce({
+      items: [createGroup({ id: 2, status: 'inactive' })],
+      total: 40,
+      page: 2,
+      page_size: 20,
+      pages: 2,
+    })
+    const wrapper = await mountView()
+    const stats = () => wrapper.findComponent({ name: 'MiniStatCard' }).props('items')
+    expect(stats()).toEqual([
+      { label: 'common.total', value: 40 },
+      { label: 'This page: common.active', value: 1 },
+      { label: 'This page: admin.groups.exclusive', value: 1 },
+    ])
+
+    wrapper.findComponent({ name: 'Pagination' }).vm.$emit('update:page', 2)
+    await flushPromises()
+    expect(stats()).toEqual([
+      { label: 'common.total', value: 40 },
+      { label: 'This page: common.active', value: 0 },
+      { label: 'This page: admin.groups.exclusive', value: 0 },
+    ])
+    wrapper.unmount()
   })
 
   it('hides the id column by default while keeping other group columns visible', async () => {

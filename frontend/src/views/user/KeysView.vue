@@ -38,7 +38,7 @@
  </button>
  </div>
  </div>
- <Button class="keys-create-desktop" data-tour="keys-create-btn" @click="showCreateModal = true">
+ <Button class="keys-create-desktop" :data-tour="isMobile ? undefined : 'keys-create-btn'" @click="showCreateModal = true">
  <Icon name="plus" size="md" />
  {{ t('keys.createKey') }}
  </Button>
@@ -459,7 +459,7 @@
  />
  </template>
  </TablePageLayout>
- <Fab class="keys-fab" data-tour="keys-create-btn" :label="t('keys.createKey')" @click="showCreateModal = true">
+ <Fab class="keys-fab" :data-tour="isMobile ? 'keys-create-btn' : undefined" :label="t('keys.createKey')" @click="showCreateModal = true">
  <Icon name="plus" size="md" />
  {{ t('keys.createKey') }}
  </Fab>
@@ -1141,10 +1141,12 @@
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
+import { useIsMobile } from '@/composables/useIsMobile'
 	import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
+const { isMobile } = useIsMobile()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -1431,8 +1433,8 @@ const todayKeySpend = computed(() =>
 )
 const keyMiniStats = computed(() => [
   { label: t('common.total'), value: pagination.value.total },
-  { label: t('common.active'), value: activeKeyCount.value },
-  { label: t('keys.today'), value: `$${todayKeySpend.value.toFixed(2)}` }
+  { label: t('common.currentPageLabel', { label: t('common.active') }), value: activeKeyCount.value },
+  { label: t('common.currentPageLabel', { label: t('keys.today') }), value: `$${todayKeySpend.value.toFixed(2)}` }
 ])
 
 const copyEndpoint = async (url: string) => {

@@ -101,7 +101,7 @@
 
       <div
         v-else-if="error"
-        class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-danger-text"
+        class="rounded-xl border border-red-200 bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] p-4 text-sm text-danger-text"
       >
         {{ error }}
       </div>
@@ -270,7 +270,7 @@
 
         <div
           v-if="probeError"
-          class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-danger-text"
+          class="rounded-lg border border-red-200 bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] p-3 text-sm text-danger-text"
         >
           {{ probeError }}
         </div>

@@ -12,6 +12,7 @@ export default {
     performance: '性能指标',
     liveRpm: '实时 RPM',
     avgRpm: '近5分钟 RPM',
+    currentConcurrency: '当前并发',
     avgResponse: '平均响应',
     averageTime: '平均时间',
     timeRange: '时间范围',

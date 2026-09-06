@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 
 import type { AdminUser } from '@/types'
 import UsersView from '../UsersView.vue'
@@ -58,7 +58,8 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => key
+      t: (key: string, params?: { label?: string }) =>
+        key === 'common.currentPageLabel' ? `This page: ${params?.label}` : key
     })
   }
 })
@@ -155,6 +156,49 @@ describe('admin UsersView', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('labels paginated status and role counts separately from the result total', async () => {
+    listUsers.mockResolvedValueOnce({
+      items: [createAdminUser({ role: 'admin' })],
+      total: 40,
+      page: 1,
+      page_size: 20,
+      pages: 2
+    }).mockResolvedValueOnce({
+      items: [createAdminUser({ id: 43, status: 'disabled' })],
+      total: 40,
+      page: 2,
+      page_size: 20,
+      pages: 2
+    })
+    const wrapper = shallowMount(UsersView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          TablePageLayout: {
+            template: '<div><slot name="filters" /><slot name="table" /><slot name="pagination" /></div>'
+          }
+        }
+      }
+    })
+    await flushPromises()
+
+    const stats = () => wrapper.findComponent({ name: 'MiniStatCard' }).props('items')
+    expect(stats()).toEqual([
+      { label: 'common.total', value: 40 },
+      { label: 'This page: common.active', value: 1 },
+      { label: 'This page: admin.users.admin', value: 1 }
+    ])
+
+    wrapper.findComponent({ name: 'Pagination' }).vm.$emit('update:page', 2)
+    await flushPromises()
+    expect(stats()).toEqual([
+      { label: 'common.total', value: 40 },
+      { label: 'This page: common.active', value: 0 },
+      { label: 'This page: admin.users.admin', value: 0 }
+    ])
+    wrapper.unmount()
   })
 
   it('shows active, used, and created activity columns in order and requests last_used_at sort', async () => {

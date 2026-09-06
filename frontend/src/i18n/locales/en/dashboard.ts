@@ -12,6 +12,7 @@ export default {
     performance: 'Performance',
     liveRpm: 'Live RPM',
     avgRpm: '5-min RPM',
+    currentConcurrency: 'Current Concurrency',
     avgResponse: 'Avg Response',
     averageTime: 'Average time',
     timeRange: 'Time Range',

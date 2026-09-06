@@ -51,6 +51,7 @@ export default {
     pageNotFound: 'Page not found',
     enabled: 'Enabled',
     disabled: 'Disabled',
+    currentPageLabel: 'This page: {label}',
 	    total: 'Total',
 	    balance: 'Balance',
 	    availableBalance: 'Available balance',

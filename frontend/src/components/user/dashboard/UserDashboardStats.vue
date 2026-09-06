@@ -23,7 +23,7 @@
  <StatCard
  :label="t('dashboard.todayCost')"
  :value="`$${formatCost(stats?.today_actual_cost || 0)}`"
- :sub="`${t('common.total')}: $${formatCost(stats?.total_actual_cost || 0)}`"
+ :sub="`${t('dashboard.standard')}: $${formatCost(stats?.today_cost || 0)}\n${t('common.total')} (${t('dashboard.actual')}): $${formatCost(stats?.total_actual_cost || 0)}\n${t('common.total')} (${t('dashboard.standard')}): $${formatCost(stats?.total_cost || 0)}`"
  />
  </div>
 
@@ -32,21 +32,18 @@
  <StatCard
  :label="t('dashboard.todayTokens')"
  :value="formatTokens(stats?.today_tokens || 0)"
- :sub="`${t('dashboard.input')}: ${formatTokens(stats?.today_input_tokens || 0)} / ${t('dashboard.output')}: ${formatTokens(stats?.today_output_tokens || 0)}`"
+ :sub="`${t('dashboard.input')}: ${formatTokens(stats?.today_input_tokens || 0)}\n${t('dashboard.output')}: ${formatTokens(stats?.today_output_tokens || 0)}\n${t('dashboard.cache')}: ${formatTokens((stats?.today_cache_creation_tokens || 0) + (stats?.today_cache_read_tokens || 0))}`"
  />
  <StatCard
  :label="t('dashboard.totalTokens')"
  :value="formatTokens(stats?.total_tokens || 0)"
- :sub="`${t('dashboard.input')}: ${formatTokens(stats?.total_input_tokens || 0)} / ${t('dashboard.output')}: ${formatTokens(stats?.total_output_tokens || 0)}`"
+ :sub="`${t('dashboard.input')}: ${formatTokens(stats?.total_input_tokens || 0)}\n${t('dashboard.output')}: ${formatTokens(stats?.total_output_tokens || 0)}\n${t('dashboard.cache')}: ${formatTokens((stats?.total_cache_creation_tokens || 0) + (stats?.total_cache_read_tokens || 0))}`"
  />
- <StatCard :label="t('dashboard.performance')" :value="liveRpmUsed" :sub="liveRpmLabel">
- <template #sparkline>
- <div class="dash-perf">
- <span>{{ formatTokens(stats?.rpm || 0) }} {{ t('dashboard.avgRpm') }}</span>
- <span>{{ currentConcurrency }} {{ t('dashboard.currentConcurrency') }}</span>
- </div>
- </template>
- </StatCard>
+ <StatCard
+ :label="t('dashboard.performance')"
+ :value="liveRpmUsed"
+ :sub="`${liveRpmLabel}\n${formatTokens(stats?.rpm || 0)} ${t('dashboard.avgRpm')}\n${currentConcurrency} ${t('dashboard.currentConcurrency')}\n${formatTokens(stats?.tpm || 0)} TPM`"
+ />
  <StatCard
  :label="t('dashboard.avgResponse')"
  :value="formatDuration(stats?.average_duration_ms || 0)"
@@ -320,22 +317,23 @@ const formatDuration = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s`
  grid-template-columns: repeat(4, minmax(0, 1fr));
  gap: 12px;
 }
-.dash-perf {
- display: flex;
- flex-direction: column;
- gap: 2px;
- font-size: 10px;
- color: var(--muted);
- width: 100%;
+.dash-stat-grid :deep(.ui-stat-card-sub) {
+ white-space: pre-line;
+ line-height: 1.6;
+}
+.dash-stat-grid :deep(.ui-stat-card-value),
+.dash-stat-grid :deep(.ui-stat-card-sub) {
+ min-width: 0;
+ overflow-wrap: anywhere;
 }
 @media (max-width: 1100px) {
  .dash-stat-grid {
- grid-template-columns: 1fr 1fr;
+ grid-template-columns: repeat(2, minmax(0, 1fr));
  }
 }
-@media (max-width: 767px) {
+@media (max-width: 480px) {
  .dash-stat-grid {
- grid-template-columns: 1fr 1fr;
+ grid-template-columns: minmax(0, 1fr);
  }
 }
 </style>

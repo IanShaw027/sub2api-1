@@ -1334,8 +1334,8 @@ const statusChipOptions = computed(() => [
 
 const userMiniStats = computed(() => [
   { label: t('common.total'), value: pagination.total },
-  { label: t('common.active'), value: users.value.filter((user) => user.status === 'active').length },
-  { label: t('admin.users.admin'), value: users.value.filter((user) => user.role === 'admin').length }
+  { label: t('common.currentPageLabel', { label: t('common.active') }), value: users.value.filter((user) => user.status === 'active').length },
+  { label: t('common.currentPageLabel', { label: t('admin.users.admin') }), value: users.value.filter((user) => user.role === 'admin').length }
 ])
 
 const onStatusChipChange = (value: string) => {
