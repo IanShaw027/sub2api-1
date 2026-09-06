@@ -14,7 +14,7 @@
  </button>
  </div>
 
- <div v-if="error" role="alert" class="mt-5 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+ <div v-if="error" role="alert" class="notice notice-danger mt-5 text-sm">
  {{ error }}
  </div>
  <div v-else-if="loading && !runtime" class="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" aria-busy="true">
@@ -57,11 +57,11 @@
  <p class="mt-2 text-sm text-muted">
  {{ runtime.last_processed_at ? formatDate(runtime.last_processed_at) : t('admin.promptAudit.common.never') }}
  </p>
- <p v-if="runtime.last_error_code" class="mt-1 break-words text-sm text-red-600">
+ <p v-if="runtime.last_error_code" class="mt-1 break-words text-sm text-danger-text">
  {{ runtime.last_error_code }}<span v-if="runtime.last_error_message"> · {{ runtime.last_error_message }}</span>
  </p>
  <div v-if="Object.keys(runtime.endpoints).length" class="mt-3 flex flex-wrap gap-2">
- <span v-for="(probe, id) in runtime.endpoints" :key="id" class="rounded-md px-2 py-1 text-xs" :class="probe.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'">
+ <span v-for="(probe, id) in runtime.endpoints" :key="id" class="rounded-md px-2 py-1 text-xs" :class="probe.ok ? 'bg-[color-mix(in_oklch,var(--success)_12%,transparent)] text-success-text' : 'bg-[color-mix(in_oklch,var(--danger)_12%,transparent)] text-danger-text'">
  {{ id }} · {{ probe.status }} · {{ probe.latency_ms }} ms
  </span>
  </div>
@@ -113,9 +113,9 @@ function formatDate(value: string): string {
 }
 
 function statusDot(status: string): string {
- if (status === 'running') return 'bg-emerald-500'
+ if (status === 'running') return 'bg-[var(--success)]'
  if (status === 'disabled') return 'bg-surface-3'
- if (status === 'degraded') return 'bg-amber-500'
- return 'bg-red-500'
+ if (status === 'degraded') return 'bg-[var(--warning)]'
+ return 'bg-[var(--danger)]'
 }
 </script>

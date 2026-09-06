@@ -26,15 +26,15 @@ export function getTicketStatusBadgeClass(status: TicketStatus): string {
     case 'processing':
       return 'badge-tone-warning'
     case 'waiting_user':
-      return 'bg-purple-500/15 text-purple-700'
+      return 'bg-accent-500/15 text-accent-700'
     case 'waiting_admin':
-      return 'bg-indigo-500/15 text-indigo-700'
+      return 'bg-accent-500/15 text-accent-700'
     case 'resolved':
       return 'badge-tone-success'
     case 'closed':
       return 'badge-tone-muted'
     case 'withdrawn':
-      return 'bg-rose-500/15 text-rose-700'
+      return 'bg-danger-500/15 text-danger-text'
     default:
       return 'badge-tone-muted'
   }

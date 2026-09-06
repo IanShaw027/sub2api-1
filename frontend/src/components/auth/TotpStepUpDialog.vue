@@ -40,7 +40,7 @@
  inputmode="numeric"
  pattern="[0-9]"
  autocomplete="off"
- class="h-12 w-10 rounded-lg border border-line text-center text-lg font-semibold focus:border-accent focus:ring-accent"
+ class="h-12 w-10 rounded-lg border border-line text-center text-[18px] font-semibold focus:border-accent focus:ring-accent"
  :disabled="verifying"
  @input="handleCodeInput($event, index)"
  @keydown="handleKeydown($event, index)"

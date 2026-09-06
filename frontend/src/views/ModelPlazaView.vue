@@ -4,19 +4,22 @@
  <ModelPlazaContent :response="data" :loading="loading" :error="loadFailed" embedded />
  </AppLayout>
 
- <!-- 独立形态:自带导航条(logo/站名 + 登录/回后台) -->
- <div v-else class="min-h-screen bg-background">
+ <!-- 独立形态:公开页壳(自带导航条 logo/站名 + 登录/回后台) -->
+ <PublicPageLayout v-else>
+ <template #nav>
  <PlazaNavBar />
- <main class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+ </template>
+ <main class="plaza-main">
  <ModelPlazaContent :response="data" :loading="loading" :error="loadFailed" />
  </main>
- </div>
+ </PublicPageLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import PublicPageLayout from '@/components/layout/PublicPageLayout.vue'
 import PlazaNavBar from '@/components/modelPlaza/PlazaNavBar.vue'
 import ModelPlazaContent from '@/components/modelPlaza/ModelPlazaContent.vue'
 import { getModelPlaza, type ModelPlazaResponse } from '@/api/modelPlaza'
@@ -46,3 +49,18 @@ onMounted(async () => {
   }
 })
 </script>
+
+<style scoped>
+.plaza-main {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+@media (max-width: 640px) {
+  .plaza-main {
+    padding: 16px;
+  }
+}
+</style>

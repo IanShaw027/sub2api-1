@@ -8,7 +8,7 @@
         v-if="open"
         ref="panelRef"
         class="ui-drawer-panel"
-        :class="side === 'left' ? 'is-left' : 'is-right'"
+        :class="[side === 'left' ? 'is-left' : 'is-right', width === 'md' ? 'is-md' : 'is-sm']"
         role="dialog"
         aria-modal="true"
         tabindex="-1"
@@ -43,12 +43,15 @@ const props = withDefaults(
     open: boolean
     title: string
     side?: DrawerSide
+    /** Panel width scale: sm = 480px, md = 640px. */
+    width?: 'sm' | 'md'
     closeOnOverlay?: boolean
     closeOnEscape?: boolean
     closeLabel?: string
   }>(),
   {
     side: 'right',
+    width: 'sm',
     closeOnOverlay: true,
     closeOnEscape: true,
     closeLabel: 'Close'
@@ -117,9 +120,9 @@ onBeforeUnmount(releaseOverlay)
   position: fixed;
   inset: 0;
   z-index: 55;
-  background: rgba(0, 0, 0, 0.28);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: color-mix(in oklch, var(--foreground) 40%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .ui-drawer-panel {
@@ -127,7 +130,7 @@ onBeforeUnmount(releaseOverlay)
   top: 0;
   bottom: 0;
   z-index: 56;
-  width: min(420px, 100vw);
+  width: min(480px, 100vw);
   display: flex;
   flex-direction: column;
   background: color-mix(in oklch, var(--background) 88%, transparent);
@@ -136,16 +139,26 @@ onBeforeUnmount(releaseOverlay)
   color: var(--foreground);
 }
 
+.ui-drawer-panel.is-md {
+  width: min(640px, 100vw);
+}
+
+@media (max-width: 767px) {
+  .ui-drawer-panel {
+    width: 100vw;
+  }
+}
+
 .ui-drawer-panel.is-right {
   right: 0;
   border-left: 1px solid var(--border);
-  box-shadow: -30px 0 60px -30px rgba(0, 0, 0, 0.5);
+  box-shadow: -30px 0 60px -30px color-mix(in oklch, black 50%, transparent);
 }
 
 .ui-drawer-panel.is-left {
   left: 0;
   border-right: 1px solid var(--border);
-  box-shadow: 30px 0 60px -30px rgba(0, 0, 0, 0.5);
+  box-shadow: 30px 0 60px -30px color-mix(in oklch, black 50%, transparent);
 }
 
 .ui-drawer-header {
@@ -153,13 +166,15 @@ onBeforeUnmount(releaseOverlay)
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ui-drawer-title {
-  font-size: 15px;
+  font-family: var(--display);
+  font-size: 16px;
   font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--foreground);
 }
 
@@ -167,10 +182,10 @@ onBeforeUnmount(releaseOverlay)
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: 0;
-  border-radius: var(--radius-btn);
+  border-radius: 9px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -184,12 +199,15 @@ onBeforeUnmount(releaseOverlay)
 .ui-drawer-body {
   flex: 1;
   overflow: auto;
-  padding: 16px 18px;
+  padding: 16px 20px;
 }
 
 .ui-drawer-footer {
-  padding: 12px 18px 16px;
-  border-top: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .ui-drawer-overlay-enter-active,

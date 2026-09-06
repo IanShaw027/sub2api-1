@@ -15,7 +15,7 @@ const badgeClass = computed(() => {
     return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
   }
   if (props.used >= props.limit * 0.8) {
-    return 'bg-yellow-100 text-yellow-700'
+    return 'bg-warning-100 text-warning-text'
   }
   return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 })

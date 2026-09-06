@@ -3,7 +3,7 @@
  <!-- Preview Box -->
  <div class="flex-shrink-0">
  <div
- class="flex items-center justify-center overflow-hidden rounded-xl border-2 border-dashed border-line bg-surface-2"
+ class="flex items-center justify-center overflow-hidden rounded-[12px] border border-dashed border-line bg-surface-2"
  :class="[previewSizeClass, { 'border-solid': !!modelValue }]"
  >
  <!-- SVG mode: render inline -->
@@ -55,15 +55,15 @@
  <button
  v-if="modelValue"
  type="button"
- class="btn btn-secondary btn-sm text-red-600 hover:text-red-700"
+ class="btn btn-secondary btn-sm text-danger-text"
  @click="$emit('update:modelValue', '')"
  >
  <Icon name="trash" size="sm" class="mr-1.5" :stroke-width="2" />
  {{ resolvedRemoveLabel }}
  </button>
  </div>
- <p v-if="hint" class="text-xs text-muted">{{ hint }}</p>
- <p v-if="error" class="text-xs text-red-500">{{ error }}</p>
+ <p v-if="hint" class="text-[12px] text-muted">{{ hint }}</p>
+ <p v-if="error" class="text-[12px] text-danger-text">{{ error }}</p>
  </div>
  </div>
 </template>

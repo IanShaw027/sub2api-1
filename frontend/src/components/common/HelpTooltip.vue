@@ -90,56 +90,102 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
- <div
- ref="trigger"
- class="group relative ml-1 inline-flex items-center align-middle"
- @mouseenter="onEnter"
- @mouseleave="onLeave"
- @click="onClick"
- >
- <!-- Trigger Icon -->
- <slot name="trigger">
- <svg
- class="h-4 w-4 cursor-help text-muted transition-colors hover:text-accent"
- fill="none"
- viewBox="0 0 24 24"
- stroke="currentColor"
- stroke-width="2"
- >
- <path
- stroke-linecap="round"
- stroke-linejoin="round"
- d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
- />
- </svg>
- </slot>
+  <div
+    ref="trigger"
+    class="group relative ml-1 inline-flex items-center align-middle"
+    @mouseenter="onEnter"
+    @mouseleave="onLeave"
+    @click="onClick"
+  >
+    <!-- Trigger · 15px circle, 1.5px muted ring, 10px/700 "?" -->
+    <slot name="trigger">
+      <span class="help-tooltip-mark" aria-hidden="true">?</span>
+    </slot>
 
- <!-- Teleport to body to escape modal overflow clipping -->
- <Teleport to="body">
- <div
- ref="tooltip"
- v-show="show"
- role="tooltip"
- :class="[
- 'fixed z-[99999] -translate-x-1/2 -translate-y-full rounded-lg bg-foreground p-3 text-xs leading-relaxed text-background shadow-xl ring-1 ring-background/10',
- props.widthClass,
- ]"
- :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
- >
- <button
- v-if="props.trigger === 'click'"
- type="button"
- class="absolute right-1.5 top-1.5 rounded p-1 text-background/70 transition-colors hover:bg-background/10 hover:text-background"
- aria-label="Close"
- @click.stop="closeTooltip"
- >
- <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
- </svg>
- </button>
- <slot>{{ content }}</slot>
- <div class="absolute -bottom-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-foreground"></div>
- </div>
- </Teleport>
- </div>
+    <!-- Teleport to body to escape modal overflow clipping -->
+    <Teleport to="body">
+      <div
+        ref="tooltip"
+        v-show="show"
+        role="tooltip"
+        :class="['help-tooltip-bubble tooltip-bubble', props.widthClass]"
+        :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
+      >
+        <button
+          v-if="props.trigger === 'click'"
+          type="button"
+          class="help-tooltip-close"
+          aria-label="Close"
+          @click.stop="closeTooltip"
+        >
+          <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+        <slot>{{ content }}</slot>
+        <span class="help-tooltip-arrow" aria-hidden="true"></span>
+      </div>
+    </Teleport>
+  </div>
 </template>
+
+<style scoped>
+.help-tooltip-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex: none;
+  border-radius: 999px;
+  border: 1.5px solid var(--muted);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.group:hover .help-tooltip-mark {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Bubble geometry comes from the global `.tooltip-bubble` recipe
+   (foreground bg / background text, 11.5/500, padding 6px 10px, radius 8). */
+.help-tooltip-bubble {
+  position: fixed;
+  z-index: 99999;
+  transform: translate(-50%, -100%);
+}
+
+.help-tooltip-arrow {
+  position: absolute;
+  bottom: -3px;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translateX(-50%) rotate(45deg);
+  background: var(--foreground);
+}
+
+.help-tooltip-close {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  color: color-mix(in oklch, var(--background) 70%, transparent);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.help-tooltip-close:hover {
+  background: color-mix(in oklch, var(--background) 14%, transparent);
+  color: var(--background);
+}
+</style>

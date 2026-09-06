@@ -1,19 +1,5 @@
 <template>
- <div class="fixed inset-0 z-50 overflow-y-auto" @click.self="$emit('close')">
- <div class="flex min-h-full items-center justify-center p-4">
- <div class="fixed inset-0 glass-modal-scrim transition-opacity" @click="$emit('close')"></div>
-
- <div class="relative w-full max-w-md transform glass-card-solid rounded-hero p-6 transition-all">
- <!-- Header -->
- <div class="mb-6 text-center">
- <h3 class="text-xl font-semibold text-foreground">
- {{ t('profile.totp.setupTitle') }}
- </h3>
- <p class="mt-2 text-sm text-muted">
- {{ stepDescription }}
- </p>
- </div>
-
+ <UiModal :open="props.open" :title="t('profile.totp.setupTitle')" :subtitle="stepDescription" @close="$emit('close')">
  <!-- Step 0: Identity Verification -->
  <div v-if="step === 0" class="space-y-6">
  <!-- Loading verification method -->
@@ -139,7 +125,7 @@
  maxlength="1"
  inputmode="numeric"
  pattern="[0-9]"
- class="h-12 w-10 rounded-lg border border-line text-center text-lg font-semibold focus:border-accent focus:ring-accent"
+ class="h-12 w-10 rounded-lg border border-line text-center text-lg font-bold focus:border-accent focus:ring-accent"
  @input="handleCodeInput($event, index)"
  @keydown="handleKeydown($event, index)"
  @paste="handlePaste"
@@ -161,18 +147,19 @@
  </div>
  </form>
  </div>
- </div>
- </div>
- </div>
+ </UiModal>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
+import { ref, onUnmounted, nextTick, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { totpAPI } from '@/api'
 import type { TotpSetupResponse } from '@/types'
 import QRCode from 'qrcode'
+import UiModal from '@/components/ui/UiModal.vue'
+
+const props = defineProps<{ open: boolean }>()
 
 const emit = defineEmits<{
  close: []
@@ -229,6 +216,10 @@ watch(
  qrCodeDataUrl.value = await QRCode.toDataURL(url, {
  width: 200,
  margin: 2,
+ // Pure black on white is a scanner requirement, not a theme choice: a
+ // tokenised QR code loses the contrast decoders rely on. The key stays
+ // bracketed because ui-lint reads the unquoted form as a Tailwind
+ // dark-variant prefix, which this is not.
  color: {
  ['dark']: '#000000',
  light: '#ffffff'
@@ -390,9 +381,29 @@ const handleVerify = async () => {
  }
 }
 
-onMounted(() => {
+// 弹窗现在常驻挂载（由 UiModal 的 open 控制显隐），每次打开都要重置向导状态并重新拉取验证方式，
+// 复现此前 v-if 挂载/卸载时天然获得的"每次重新打开都是全新流程"的行为。
+watch(
+ () => props.open,
+ (isOpen) => {
+ if (!isOpen) {
+ if (cooldownTimer.value) {
+ clearInterval(cooldownTimer.value)
+ cooldownTimer.value = null
+ }
+ return
+ }
+ step.value = 0
+ setupData.value = null
+ qrCodeDataUrl.value = ''
+ verifying.value = false
+ code.value = ['', '', '', '', '', '']
+ verifyForm.value = { emailCode: '', password: '' }
+ sendingCode.value = false
+ codeCooldown.value = 0
  loadVerificationMethod()
-})
+ }
+)
 
 onUnmounted(() => {
  if (cooldownTimer.value) {

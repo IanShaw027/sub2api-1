@@ -19,7 +19,7 @@
       />
       <button
         type="button"
-        class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
+        class="rounded-lg p-2 text-danger-text transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]"
         @click="removeRow(index)"
       >
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

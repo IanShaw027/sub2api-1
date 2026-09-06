@@ -41,7 +41,7 @@ const toneClass = computed(() => {
   flex: 1;
   height: 6px;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  background: var(--surface-tertiary);
   overflow: hidden;
 }
 
@@ -52,7 +52,7 @@ const toneClass = computed(() => {
 }
 
 .ui-progress-accent {
-  background: var(--accent);
+  background: linear-gradient(90deg, color-mix(in oklch, var(--accent) 70%, white), var(--accent));
 }
 
 .ui-progress-warning {

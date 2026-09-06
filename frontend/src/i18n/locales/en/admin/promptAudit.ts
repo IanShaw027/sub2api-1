@@ -63,7 +63,7 @@ export default {
     },
     events: {
       title: 'Audit events', description: 'Review events by identity, route, risk, hash, and time; the detail view shows the full prompt.', decision: 'Decision', risk: 'Risk level', endpoint: 'Endpoint', groupId: 'Group ID', userId: 'User ID', apiKeyId: 'API Key ID', keyword: 'Keyword',
-      startAt: 'Start time', endAt: 'End time', deleteSelected: 'Delete selected ({count})', deleteByFilter: 'Delete by filter',
+      startAt: 'Start time', endAt: 'End time', deleteSelected: 'Delete selected ({count})', deleteByFilter: 'Delete by filter', advancedFilters: 'Advanced filters',
       filterDeleteDialogTitle: 'Delete audit events by filter', filterDeleteDialogDesc: 'Choose the time range and risk criteria, then delete directly. Deletion is permanent. Generate a preview first if you want to see the match count.',
       filterTimeRange: 'Deletion time range', filterTimeRangeHint: 'Deletes events created before the selected cutoff. Events created after the preview are not affected.',
       timePresets: { '1d': 'Older than 1 day', '7d': 'Older than 7 days', '30d': 'Older than 30 days', '90d': 'Older than 90 days', all: 'All time', custom: 'Custom range' },

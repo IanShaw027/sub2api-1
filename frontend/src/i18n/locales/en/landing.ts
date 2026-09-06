@@ -60,6 +60,8 @@ export default {
     // Comparison section
     comparison: {
       title: 'Why Choose Us?',
+      heading: 'Compare vs. Official Subscriptions',
+      headingDesc: 'Smart routing across multiple upstream accounts with automatic failover and load balancing; usage-based billing with quota limits gives your team full visibility.',
       headers: {
         feature: 'Comparison',
         official: 'Official Subscriptions',
@@ -101,13 +103,71 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
-      more: 'More'
+      more: 'More',
+      line: 'Claude · OpenAI · Gemini · Antigravity · Grok'
     },
     // CTA section
     cta: {
       title: 'Ready to Get Started?',
       description: 'Sign up now and get free trial credits to experience seamless AI access',
       button: 'Sign Up Free'
+    },
+    // ---- Glass redesign additions ----
+    nav: {
+      modelPlaza: 'Models',
+      docs: 'Docs',
+      keyUsage: 'Key usage',
+      status: 'Status'
+    },
+    heroTitle1: 'One key,',
+    heroTitle2: 'every AI model',
+    heroDescriptionExt: 'Anthropic and OpenAI compatible — point Claude Code or Codex CLI at a new Base URL and keep working.',
+    socialProof: 'Built for developers using Claude Code · Codex CLI · Cursor',
+    console: {
+      url: 'console.sub2api.dev/dashboard',
+      uptimeLabel: 'Service status · 30-day uptime',
+      allOk: 'All systems normal',
+      rpmLabel: 'Requests / min · 24h',
+      firstToken: 'First token 620 ms',
+      stickyHit: 'Sticky-session hit 98.2%'
+    },
+    steps: {
+      kicker: 'Three steps to connect',
+      title: 'Change one Base URL, keep everything else',
+      items: {
+        create: { title: 'Sign up and create an API key', desc: 'Pick a model pool per group; set concurrency, rate limits and expiry' },
+        baseUrl: { title: 'Point the Base URL here', desc: 'Compatible with both /v1/messages and /v1/chat/completions' },
+        client: { title: 'Use it in any client', desc: 'Sticky sessions keep one conversation on the same upstream account' }
+      },
+      copy: 'Copy',
+      copied: 'Copied',
+      comment: {
+        shell: '# ~/.zshrc',
+        start: '# start',
+        codex: '# ~/.codex/config.toml'
+      }
+    },
+    pricing: {
+      kicker: 'Models & pricing',
+      title: 'Pay as you go, transparent pricing',
+      link: 'Open model plaza',
+      headers: {
+        model: 'Model',
+        vendor: 'Provider',
+        input: 'Input / 1M',
+        output: 'Output / 1M',
+        context: 'Context',
+        status: 'Status'
+      },
+      normal: 'Normal',
+      limited: 'Limited',
+      footnote: 'Prices per 1M tokens; cache reads bill at 10% of input. Peak and group multipliers follow the key\'s group.',
+      empty: 'No public pricing yet — sign in to browse the model plaza'
+    },
+    footerLinks: {
+      terms: 'Terms of Service',
+      privacy: 'Privacy Policy',
+      contact: 'Contact support'
     },
     footer: {
       allRightsReserved: 'All rights reserved.'
@@ -121,6 +181,8 @@ export default {
     placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',
     query: 'Query',
     querying: 'Querying...',
+    showKey: 'Show Key',
+    hideKey: 'Hide Key',
     privacyNote: 'Your Key is processed locally in the browser and will not be stored',
     dateRange: 'Date Range:',
     dateRangeToday: 'Today',
@@ -187,6 +249,13 @@ export default {
     queryFailed: 'Query failed',
     queryFailedRetry: 'Query failed, please try again later',
     noDailyUsage: 'No daily usage data',
+  },
+
+  // 404 Not Found Page
+  notFound: {
+    description: 'The page you are looking for doesn\'t exist or has been moved.',
+    backHome: 'Back to Home',
+    goBack: 'Go Back',
   },
 
   // Setup Wizard

@@ -8,26 +8,25 @@
         ></div>
       </div>
 
-      <GlassCard v-else-if="subscriptions.length === 0" padding="lg" class="text-center">
-        <div
-          class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2"
-        >
-          <Icon name="creditCard" size="xl" class="text-muted" />
-        </div>
-        <h3 class="mb-2 text-lg font-semibold text-foreground">
-          {{ t('userSubscriptions.noActiveSubscriptions') }}
-        </h3>
-        <p class="text-muted">
-          {{ t('userSubscriptions.noActiveSubscriptionsDesc') }}
-        </p>
-      </GlassCard>
+      <EmptyState
+        v-else-if="subscriptions.length === 0"
+        data-testid="subscriptions-empty"
+        :title="t('userSubscriptions.noActiveSubscriptions')"
+        :description="t('userSubscriptions.noActiveSubscriptionsDesc')"
+        size="lg"
+      />
 
-      <div v-else class="grid gap-6 lg:grid-cols-2">
+      <div v-else class="subscription-grid">
         <GlassCard
           v-for="subscription in subscriptions"
           :key="subscription.id"
           padding="sm"
-          :class="platformBorderClass(subscription.group?.platform || '')"
+          data-testid="subscription-card"
+          :class="[
+            'subscription-card',
+            platformBorderClass(subscription.group?.platform || ''),
+            subscription.status !== 'active' ? 'subscription-card-muted' : null
+          ]"
         >
           <div
             class="flex items-center justify-between border-b border-line p-4"
@@ -75,7 +74,7 @@
               <span class="text-muted">{{
                 t('userSubscriptions.expires')
               }}</span>
-              <span :class="getExpirationClass(subscription.expires_at)">
+              <span class="font-mono tabular-nums" :class="getExpirationClass(subscription.expires_at)">
                 {{ formatExpirationDate(subscription.expires_at) }}
               </span>
             </div>
@@ -93,15 +92,24 @@
                 <span class="text-sm font-medium text-foreground">
                   {{ t('userSubscriptions.daily') }}
                 </span>
-                <span class="text-sm text-muted">
+                <span class="font-mono tabular-nums text-sm text-muted">
                   ${{ (subscription.daily_usage_usd || 0).toFixed(2) }} / ${{
                     subscription.group.daily_limit_usd.toFixed(2)
                   }}
                 </span>
               </div>
-              <ProgressBar
-                :value="Math.min(((subscription.daily_usage_usd || 0) / subscription.group.daily_limit_usd) * 100, 100)"
-              />
+              <div
+                class="usage-progress-track"
+                role="progressbar"
+                :aria-valuenow="Math.round(dailyUsagePct(subscription))"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <div
+                  class="usage-progress-fill"
+                  :style="{ width: `${dailyUsagePct(subscription)}%`, background: usageProgressColor(dailyUsagePct(subscription)) }"
+                ></div>
+              </div>
               <p
                 v-if="subscription.daily_window_start"
                 class="text-xs text-muted"
@@ -115,15 +123,24 @@
                 <span class="text-sm font-medium text-foreground">
                   {{ t('userSubscriptions.weekly') }}
                 </span>
-                <span class="text-sm text-muted">
+                <span class="font-mono tabular-nums text-sm text-muted">
                   ${{ (subscription.weekly_usage_usd || 0).toFixed(2) }} / ${{
                     subscription.group.weekly_limit_usd.toFixed(2)
                   }}
                 </span>
               </div>
-              <ProgressBar
-                :value="Math.min(((subscription.weekly_usage_usd || 0) / subscription.group.weekly_limit_usd) * 100, 100)"
-              />
+              <div
+                class="usage-progress-track"
+                role="progressbar"
+                :aria-valuenow="Math.round(weeklyUsagePct(subscription))"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <div
+                  class="usage-progress-fill"
+                  :style="{ width: `${weeklyUsagePct(subscription)}%`, background: usageProgressColor(weeklyUsagePct(subscription)) }"
+                ></div>
+              </div>
               <p
                 v-if="subscription.weekly_window_start"
                 class="text-xs text-muted"
@@ -141,15 +158,24 @@
                 <span class="text-sm font-medium text-foreground">
                   {{ t('userSubscriptions.monthly') }}
                 </span>
-                <span class="text-sm text-muted">
+                <span class="font-mono tabular-nums text-sm text-muted">
                   ${{ (subscription.monthly_usage_usd || 0).toFixed(2) }} / ${{
                     subscription.group.monthly_limit_usd.toFixed(2)
                   }}
                 </span>
               </div>
-              <ProgressBar
-                :value="Math.min(((subscription.monthly_usage_usd || 0) / subscription.group.monthly_limit_usd) * 100, 100)"
-              />
+              <div
+                class="usage-progress-track"
+                role="progressbar"
+                :aria-valuenow="Math.round(monthlyUsagePct(subscription))"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <div
+                  class="usage-progress-fill"
+                  :style="{ width: `${monthlyUsagePct(subscription)}%`, background: usageProgressColor(monthlyUsagePct(subscription)) }"
+                ></div>
+              </div>
               <p
                 v-if="subscription.monthly_window_start"
                 class="text-xs text-muted"
@@ -201,8 +227,7 @@ import PageHeader from '@/components/ui/PageHeader.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import Button from '@/components/ui/Button.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
-import ProgressBar from '@/components/ui/ProgressBar.vue'
-import Icon from '@/components/icons/Icon.vue'
+import EmptyState from '@/components/common/EmptyState.vue'
 import { formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformBorderClass, platformBadgeClass, platformLabel } from '@/utils/platformColors'
@@ -215,10 +240,10 @@ import {
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
-    case 'anthropic': return 'bg-orange-500'
-    case 'openai': return 'bg-emerald-500'
-    case 'antigravity': return 'bg-purple-500'
-    case 'gemini': return 'bg-blue-500'
+    case 'anthropic': return 'bg-warning-500'
+    case 'openai': return 'bg-success-500'
+    case 'antigravity': return 'bg-accent-500'
+    case 'gemini': return 'bg-accent-500'
     default: return 'bg-surface-3'
   }
 }
@@ -229,6 +254,29 @@ const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)
+
+function usageProgressColor(pct: number): string {
+  if (pct > 95) return 'var(--danger)'
+  if (pct > 80) return 'var(--warning)'
+  return 'var(--accent)'
+}
+
+function usagePct(used: number | undefined, limit: number | undefined | null): number {
+  if (!limit) return 0
+  return Math.min(((used || 0) / limit) * 100, 100)
+}
+
+function dailyUsagePct(subscription: UserSubscription): number {
+  return usagePct(subscription.daily_usage_usd, subscription.group?.daily_limit_usd)
+}
+
+function weeklyUsagePct(subscription: UserSubscription): number {
+  return usagePct(subscription.weekly_usage_usd, subscription.group?.weekly_limit_usd)
+}
+
+function monthlyUsagePct(subscription: UserSubscription): number {
+  return usagePct(subscription.monthly_usage_usd, subscription.group?.monthly_limit_usd)
+}
 
 function subscriptionHasPeakRate(subscription: UserSubscription): boolean {
   return hasPeakRate(subscription.group)
@@ -325,3 +373,45 @@ onMounted(() => {
   loadSubscriptions()
 })
 </script>
+
+<style scoped>
+.subscription-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1024px) {
+  .subscription-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .subscription-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.subscription-card {
+  border-radius: var(--radius-hero);
+  overflow: hidden;
+}
+
+.subscription-card-muted {
+  opacity: 0.6;
+}
+
+.usage-progress-track {
+  height: 6px;
+  border-radius: var(--radius-card);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.usage-progress-fill {
+  height: 100%;
+  border-radius: var(--radius-card);
+  transition: width 0.3s ease;
+}
+</style>

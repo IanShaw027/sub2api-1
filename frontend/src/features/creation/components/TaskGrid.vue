@@ -12,8 +12,14 @@ const store = useCreationStore()
 </script>
 
 <template>
-  <div class="studio-task-grid">
-    <div v-if="store.imageTasksLoading && store.imageTasks.length === 0" class="text-sm text-muted">
+  <div class="studio-task-grid" :aria-busy="store.imageTasksLoading">
+    <div
+      v-if="store.imageTasksLoading && store.imageTasks.length === 0"
+      class="text-sm text-muted"
+      role="status"
+      aria-live="polite"
+      :aria-label="t('studio.a11y.loadingTasks')"
+    >
       {{ t('common.loading') }}
     </div>
 
@@ -45,6 +51,12 @@ const store = useCreationStore()
   min-height: 0;
   overflow: auto;
   max-height: min(62vh, 680px);
+}
+
+@media (min-width: 1101px) {
+  .studio-task-grid {
+    max-height: none;
+  }
 }
 
 .studio-task-grid-inner {

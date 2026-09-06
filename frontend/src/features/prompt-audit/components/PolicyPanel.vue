@@ -36,7 +36,7 @@
  </label>
  <p v-if="filteredGroups.length === 0" class="px-2 py-4 text-center text-sm text-muted">{{ t('admin.promptAudit.policy.noGroups') }}</p>
  </div>
- <div v-if="missingGroupIds.length" class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+ <div v-if="missingGroupIds.length" class="notice notice-warning mt-3 text-sm">
  {{ t('admin.promptAudit.policy.missingGroups') }}: {{ missingGroupIds.join(', ') }}
  </div>
  <p class="mt-2 text-xs text-muted">{{ t('admin.promptAudit.policy.selectedCount', { count: draft.group_ids.length }) }}</p>

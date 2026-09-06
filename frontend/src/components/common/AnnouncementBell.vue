@@ -3,84 +3,75 @@
  <!-- 铃铛按钮 -->
  <button
  @click="openModal"
- class="relative flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-all hover:bg-surface-2 hover:scale-105"
- :class="{ 'text-blue-600': unreadCount > 0 }"
+ class="header-icon-btn relative"
+ :class="{ 'text-accent': unreadCount > 0 }"
  :aria-label="t('announcements.title')"
  >
  <Icon name="bell" size="md" />
- <!-- 未读红点 -->
+ <!-- 未读计数徽章 -->
  <span
  v-if="unreadCount > 0"
- class="absolute right-1 top-1 flex h-2 w-2"
+ class="count-badge absolute -right-0.5 -top-0.5 shadow-[0_0_0_2px_var(--surface)]"
  >
- <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75"></span>
- <span class="relative inline-flex h-2 w-2 rounded-full bg-red-500"></span>
+ {{ unreadCount > 99 ? '99+' : unreadCount }}
  </span>
  </button>
 
  <!-- 公告列表 Modal -->
  <Teleport to="body">
- <Transition name="modal-fade">
+ <Transition name="modal">
  <div
  v-if="isModalOpen"
- class="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[8vh] backdrop-blur-md"
+ class="modal-overlay"
  @click="closeModal"
  >
  <div
- class="w-full max-w-[620px] overflow-hidden rounded-3xl bg-surface shadow-2xl ring-1 ring-black/5"
+ class="modal-content w-full max-w-[620px]"
  @click.stop
  >
- <!-- Header with Gradient -->
- <div class="relative overflow-hidden border-b border-line/80 bg-gradient-to-br from-blue-50/50 to-indigo-50/30 px-6 py-5">
- <div class="relative z-10 flex items-start justify-between">
- <div>
- <div class="flex items-center gap-2">
- <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30">
+ <!-- Header -->
+ <div class="modal-header">
+ <div class="flex items-center gap-2.5">
+ <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-[color-mix(in_oklch,var(--accent)_14%,transparent)] text-accent">
  <Icon name="bell" size="sm" />
  </div>
- <h2 class="text-lg font-semibold text-foreground">
- {{ t('announcements.title') }}
- </h2>
- </div>
- <p v-if="unreadCount > 0" class="mt-2 text-sm text-muted">
- <span class="font-medium text-blue-600">{{ unreadCount }}</span>
+ <div>
+ <h2 class="modal-title">{{ t('announcements.title') }}</h2>
+ <p v-if="unreadCount > 0" class="modal-subtitle">
+ <span class="font-medium text-accent">{{ unreadCount }}</span>
  {{ t('announcements.unread') }}
  </p>
+ </div>
  </div>
  <div class="flex items-center gap-2">
  <button
  v-if="unreadCount > 0"
  @click="markAllAsRead"
  :disabled="loading"
- class="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:bg-blue-700 hover:shadow-xl disabled:opacity-50"
+ class="btn btn-primary btn-sm"
  >
  {{ t('announcements.markAllRead') }}
  </button>
  <button
  @click="closeModal"
- class="flex h-9 w-9 items-center justify-center rounded-lg bg-surface/50 text-muted backdrop-blur-sm transition-all hover:bg-surface hover:text-foreground"
+ class="modal-close"
  :aria-label="t('common.close')"
  >
  <Icon name="x" size="sm" />
  </button>
  </div>
  </div>
- <!-- Decorative gradient -->
- <div class="absolute right-0 top-0 h-full w-48 bg-gradient-to-l from-indigo-100/20 to-transparent"></div>
- </div>
 
  <!-- Body -->
- <div class="max-h-[65vh] overflow-y-auto">
- <div class="sticky top-0 z-10 border-b border-line bg-surface/95 px-6 py-3 backdrop-blur">
- <div class="inline-flex rounded-xl bg-surface-2 p-1">
+ <div class="modal-body !p-0">
+ <div class="sticky top-0 z-10 border-b border-line bg-[color-mix(in_oklch,var(--surface)_95%,transparent)] px-5 py-3 backdrop-blur">
+ <div class="segmented">
  <button
  v-for="option in readStatusOptions"
  :key="option.value"
  @click="changeReadStatus(option.value)"
- class="rounded-lg px-3 py-1.5 text-sm font-medium transition-all"
- :class="selectedReadStatus === option.value
- ? 'bg-surface text-blue-600 shadow-sm'
- : 'text-muted hover:text-foreground'"
+ class="segmented-item"
+ :class="{ 'segmented-item-active': selectedReadStatus === option.value }"
  >
  {{ option.label }}
  </button>
@@ -89,10 +80,7 @@
 
  <!-- Loading -->
  <div v-if="loading" class="flex items-center justify-center py-16">
- <div class="relative">
- <div class="h-12 w-12 animate-spin rounded-full border-4 border-line border-t-blue-600"></div>
- <div class="absolute inset-0 h-12 w-12 animate-pulse rounded-full border-4 border-blue-400/30"></div>
- </div>
+ <LoadingSpinner size="lg" />
  </div>
 
  <!-- Announcements List -->
@@ -100,8 +88,8 @@
  <div
  v-for="item in announcements"
  :key="item.id"
- class="group relative flex items-center gap-4 border-b border-line px-6 py-4 transition-all hover:bg-surface-2"
- :class="{ 'bg-blue-50/30': !item.read_at }"
+ class="group relative flex items-center gap-4 border-b border-line px-5 py-4 transition-colors hover:bg-surface-2"
+ :class="{ 'bg-[color-mix(in_oklch,var(--accent)_5%,transparent)]': !item.read_at }"
  style="min-height: 72px"
  @click="openDetail(item)"
  >
@@ -109,22 +97,15 @@
  <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center">
  <div
  v-if="!item.read_at"
- class="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30"
+ class="flex h-10 w-10 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--accent)_14%,transparent)] text-accent"
  >
- <!-- Pulse ring -->
- <span class="absolute inline-flex h-full w-full animate-ping rounded-xl bg-blue-400 opacity-75"></span>
- <!-- Icon -->
- <svg class="relative z-10 h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
- <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
- </svg>
+ <Icon name="bell" size="sm" />
  </div>
  <div
  v-else
  class="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-2 text-muted"
  >
- <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
- </svg>
+ <Icon name="check" size="sm" />
  </div>
  </div>
 
@@ -138,52 +119,32 @@
  <time class="text-xs text-muted">
  {{ formatRelativeTime(item.created_at) }}
  </time>
- <span
- v-if="!item.read_at"
- class="inline-flex items-center gap-1 rounded-md bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700"
- >
- <span class="relative flex h-1.5 w-1.5">
- <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-75"></span>
- <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-600"></span>
- </span>
+ <span v-if="!item.read_at" class="tag tag-accent">
  {{ t('announcements.unread') }}
  </span>
  </div>
  </div>
 
  <!-- Arrow -->
- <div class="flex-shrink-0">
- <svg
- class="h-5 w-5 text-muted transition-transform group-hover:translate-x-1"
- fill="none"
- viewBox="0 0 24 24"
- stroke="currentColor"
- stroke-width="2"
- >
- <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
- </svg>
- </div>
+ <Icon
+ name="chevronRight"
+ size="sm"
+ class="flex-shrink-0 text-muted transition-transform group-hover:translate-x-1"
+ />
  </div>
 
  <!-- Unread indicator bar -->
  <div
  v-if="!item.read_at"
- class="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-blue-500 to-indigo-600"
+ class="absolute left-0 top-0 h-full w-[3px] rounded-full bg-accent"
  ></div>
  </div>
  </div>
 
  <!-- Empty State -->
  <div v-else class="flex flex-col items-center justify-center py-16">
- <div class="relative mb-4">
- <div class="flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-gray-100 to-gray-200">
+ <div class="mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
  <Icon name="inbox" size="xl" class="text-muted" />
- </div>
- <div class="absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-green-500 text-white">
- <svg class="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
- <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
- </svg>
- </div>
  </div>
  <p class="text-sm font-medium text-foreground">{{ emptyTitle }}</p>
  <p class="mt-1 text-xs text-muted">{{ emptyDescription }}</p>
@@ -196,128 +157,86 @@
 
  <!-- 公告详情 Modal -->
  <Teleport to="body">
- <Transition name="modal-fade">
+ <Transition name="modal">
  <div
  v-if="detailModalOpen && selectedAnnouncement"
- class="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-gradient-to-br from-black/70 via-black/60 to-black/70 p-4 pt-[6vh] backdrop-blur-md"
+ class="modal-overlay"
  @click="closeDetail"
  >
  <div
- class="w-full max-w-[780px] overflow-hidden rounded-3xl bg-surface shadow-2xl ring-1 ring-black/5"
+ class="modal-content w-full max-w-[780px]"
  @click.stop
  >
- <!-- Header with Decorative Elements -->
- <div class="relative overflow-hidden border-b border-line bg-gradient-to-br from-blue-50/80 via-indigo-50/50 to-purple-50/30 px-8 py-6">
- <!-- Decorative background elements -->
- <div class="absolute right-0 top-0 h-full w-64 bg-gradient-to-l from-indigo-100/30 to-transparent"></div>
- <div class="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br from-blue-400/20 to-indigo-500/20 blur-3xl"></div>
- <div class="absolute -left-4 -bottom-4 h-24 w-24 rounded-full bg-gradient-to-tr from-purple-400/20 to-pink-500/20 blur-2xl"></div>
-
- <div class="relative z-10 flex items-start justify-between gap-4">
- <div class="flex-1 min-w-0">
- <!-- Icon and Category -->
+ <!-- Header -->
+ <div class="modal-header items-start">
+ <div class="min-w-0 flex-1">
  <div class="mb-3 flex items-center gap-2">
- <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/30">
- <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
- </svg>
+ <div class="flex h-9 w-9 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--accent)_14%,transparent)] text-accent">
+ <Icon name="bell" size="sm" />
  </div>
- <div class="flex items-center gap-2">
- <span class="rounded-lg bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">
- {{ t('announcements.title') }}
- </span>
- <span
- v-if="!selectedAnnouncement.read_at"
- class="inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-2.5 py-1 text-xs font-medium text-white shadow-lg shadow-blue-500/30"
- >
- <span class="relative flex h-2 w-2">
- <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-surface opacity-75"></span>
- <span class="relative inline-flex h-2 w-2 rounded-full bg-surface"></span>
- </span>
+ <span class="tag">{{ t('announcements.title') }}</span>
+ <span v-if="!selectedAnnouncement.read_at" class="tag tag-accent">
  {{ t('announcements.unread') }}
  </span>
  </div>
- </div>
 
- <!-- Title -->
- <h2 class="mb-3 text-2xl font-bold leading-tight text-foreground">
+ <h2 class="mb-2 text-xl font-bold leading-tight text-foreground">
  {{ selectedAnnouncement.title }}
  </h2>
 
- <!-- Meta Info -->
  <div class="flex items-center gap-4 text-sm text-muted">
  <div class="flex items-center gap-1.5">
- <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
- </svg>
+ <Icon name="clock" size="sm" />
  <time>{{ formatRelativeWithDateTime(selectedAnnouncement.created_at) }}</time>
  </div>
  <div class="flex items-center gap-1.5">
- <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
- <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
- </svg>
+ <Icon name="eye" size="sm" />
  <span>{{ selectedAnnouncement.read_at ? t('announcements.read') : t('announcements.unread') }}</span>
  </div>
  </div>
  </div>
 
- <!-- Close button -->
  <button
  @click="closeDetail"
- class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-surface/50 text-muted backdrop-blur-sm transition-all hover:bg-surface hover:text-foreground hover:shadow-lg"
+ class="modal-close"
  :aria-label="t('common.close')"
  >
  <Icon name="x" size="md" />
  </button>
  </div>
- </div>
 
- <!-- Body with Enhanced Markdown -->
- <div class="max-h-[60vh] overflow-y-auto bg-surface px-8 py-8">
- <!-- Content with decorative border -->
- <div class="relative">
- <!-- Decorative left border -->
- <div class="absolute left-0 top-0 bottom-0 w-1 rounded-full bg-gradient-to-b from-blue-500 via-indigo-500 to-purple-500"></div>
-
- <div class="pl-6">
+ <!-- Body -->
+ <div class="modal-body">
+ <div class="relative pl-6">
+ <div class="absolute left-0 top-0 bottom-0 w-[3px] rounded-full bg-accent"></div>
  <div
  class="markdown-body prose prose-sm max-w-none"
  v-html="renderMarkdown(selectedAnnouncement.content)"
  ></div>
  </div>
  </div>
- </div>
 
- <!-- Footer with Actions -->
- <div class="border-t border-line bg-surface-2/50 px-8 py-5">
- <div class="flex items-center justify-between">
+ <!-- Footer -->
+ <div class="modal-footer !justify-between">
  <div class="flex items-center gap-2 text-xs text-muted">
- <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
- </svg>
+ <Icon name="bell" size="sm" />
  <span>{{ selectedAnnouncement.read_at ? t('announcements.readStatus') : t('announcements.markReadHint') }}</span>
  </div>
- <div class="flex items-center gap-3">
+ <div class="flex items-center gap-2">
  <button
  @click="closeDetail"
- class="rounded-xl border border-line bg-surface px-5 py-2.5 text-sm font-medium text-foreground shadow-sm transition-all hover:bg-surface-2 hover:shadow"
+ class="btn btn-secondary btn-sm"
  >
  {{ t('common.close') }}
  </button>
  <button
  v-if="!selectedAnnouncement.read_at"
  @click="markAsReadAndClose(selectedAnnouncement.id)"
- class="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-blue-500/30 transition-all hover:shadow-xl hover:scale-105"
+ class="btn btn-primary btn-sm"
  >
- <span class="flex items-center gap-2">
- <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
- <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
- </svg>
+ <Icon name="check" size="sm" />
  {{ t('announcements.markRead') }}
- </span>
  </button>
- </div>
  </div>
  </div>
  </div>
@@ -339,6 +258,7 @@ import { formatRelativeTime, formatRelativeWithDateTime } from '@/utils/format'
 import { acquireOverlayLock, releaseOverlayLock } from '@/components/ui/overlayLock'
 import type { AnnouncementReadStatusFilter, UserAnnouncement } from '@/types'
 import Icon from '@/components/icons/Icon.vue'
+import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import '@/styles/announcement-markdown.css'
 
 const { t } = useI18n()
@@ -491,31 +411,6 @@ watch(
 </script>
 
 <style scoped>
-/* Modal Animations */
-.modal-fade-enter-active {
- transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.modal-fade-leave-active {
- transition: all 0.2s cubic-bezier(0.4, 0, 1, 1);
-}
-
-.modal-fade-enter-from,
-.modal-fade-leave-to {
- opacity: 0;
-}
-
-.modal-fade-enter-from > div {
- transform: scale(0.94) translateY(-12px);
- opacity: 0;
-}
-
-.modal-fade-leave-to > div {
- transform: scale(0.96) translateY(-8px);
- opacity: 0;
-}
-
-/* Scrollbar Styling */
 .overflow-y-auto::-webkit-scrollbar {
  width: 8px;
 }
@@ -525,19 +420,11 @@ watch(
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
- background: linear-gradient(to bottom, #cbd5e1, #94a3b8);
+ background: color-mix(in oklch, var(--muted) 45%, transparent);
  border-radius: 4px;
 }
 
-:global([data-theme='glass-dark']) .overflow-y-auto::-webkit-scrollbar-thumb {
- background: linear-gradient(to bottom, #4b5563, #374151);
-}
-
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
- background: linear-gradient(to bottom, #94a3b8, #64748b);
-}
-
-:global([data-theme='glass-dark']) .overflow-y-auto::-webkit-scrollbar-thumb:hover {
- background: linear-gradient(to bottom, #6b7280, #4b5563);
+ background: color-mix(in oklch, var(--muted) 65%, transparent);
 }
 </style>

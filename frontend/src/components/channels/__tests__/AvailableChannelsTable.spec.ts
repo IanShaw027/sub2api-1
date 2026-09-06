@@ -1,7 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
-
 import { createPinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
@@ -14,21 +10,6 @@ vi.mock('vue-i18n', async () => {
     ...actual,
     useI18n: () => ({ t: (key: string) => key }),
   }
-})
-
-const componentPath = resolve(dirname(fileURLToPath(import.meta.url)), '../AvailableChannelsTable.vue')
-const componentSource = readFileSync(componentPath, 'utf8')
-
-describe('AvailableChannelsTable scroll integration', () => {
-  // #4555：根元素必须是 TablePageLayout 滚动链约定的 .table-wrapper，
-  // 否则内容超出视口高度时被外层 overflow-hidden 裁剪且没有滚动条。
-  it('mounts the table on the .table-wrapper scroll hook', () => {
-    expect(componentSource).toMatch(/<div class="table-wrapper">\s*<table/)
-  })
-
-  it('does not clip content with its own overflow-hidden card wrapper', () => {
-    expect(componentSource).not.toMatch(/<div class="card overflow-hidden">/)
-  })
 })
 
 const rows: UserAvailableChannel[] = [
@@ -64,7 +45,45 @@ const rows: UserAvailableChannel[] = [
             is_exclusive: false,
           },
         ],
-        supported_models: [{ name: 'claude-test', platform: 'anthropic', pricing: null }],
+        supported_models: [
+          { name: 'claude-test', platform: 'anthropic', pricing: null },
+          {
+            name: 'gemini-2.5-pro',
+            platform: 'anthropic',
+            pricing: {
+              billing_mode: 'token',
+              input_price: 1,
+              output_price: 2,
+              cache_write_price: null,
+              cache_read_price: null,
+              image_input_price: null,
+              image_output_price: null,
+              per_request_price: null,
+              intervals: [
+                {
+                  min_tokens: 0,
+                  max_tokens: 200000,
+                  tier_label: '<=200K',
+                  input_price: 1,
+                  output_price: 2,
+                  cache_write_price: null,
+                  cache_read_price: null,
+                  per_request_price: null,
+                },
+                {
+                  min_tokens: 200000,
+                  max_tokens: null,
+                  tier_label: '>200K',
+                  input_price: 1.5,
+                  output_price: 3,
+                  cache_write_price: null,
+                  cache_read_price: null,
+                  per_request_price: null,
+                },
+              ],
+            },
+          },
+        ],
       },
     ],
   },
@@ -109,45 +128,38 @@ function mountTable(props = {}) {
   })
 }
 
-describe('AvailableChannelsTable responsive surfaces', () => {
-  it('keeps the five-column table as the desktop-only surface', () => {
+describe('AvailableChannelsTable glass-card grid', () => {
+  it('renders one glass card per channel with name, description, groups and model chips', () => {
     const wrapper = mountTable()
-    const desktop = wrapper.get('[data-testid="desktop-channels"]')
+    const cards = wrapper.findAll('[data-testid="channel-card"]')
 
-    // TablePageLayout has a more-specific `display: table` rule for descendants,
-    // so these display utilities must remain important at both breakpoints.
-    expect(desktop.classes()).toContain('!hidden')
-    expect(desktop.classes()).toContain('lg:!table')
-    expect(desktop.findAll('thead th')).toHaveLength(5)
-    expect(desktop.text()).toContain('Primary channel')
-    expect(desktop.text()).toContain('Fast and reliable access')
-    expect(desktop.findAll('[data-group-badge]')).toHaveLength(2)
-    expect(desktop.get('[data-model-chip]').text()).toContain('claude-test:No pricing')
+    expect(cards).toHaveLength(1)
+    expect(cards[0].text()).toContain('Primary channel')
+    expect(cards[0].text()).toContain('Fast and reliable access')
+    expect(cards[0].text()).toContain('Groups and rates')
+    expect(cards[0].text()).toContain('Models and pricing')
+    expect(cards[0].text()).toContain('availableChannels.exclusive')
+    expect(cards[0].text()).toContain('availableChannels.public')
+    expect(cards[0].get('[data-group-badge]').text()).toBe('Exclusive Pro:1.2:0.8')
+    expect(cards[0].findAll('[data-group-badge]')).toHaveLength(2)
+    expect(cards[0].get('[data-icon="clock"]')).toBeTruthy()
+    expect(cards[0].text()).toContain('08:00')
+    expect(cards[0].text()).toContain('10:00')
+    expect(cards[0].text()).toContain('×1.5')
+    expect(cards[0].findAll('[data-model-chip]')).toHaveLength(2)
   })
 
-  it('renders a mobile-only readable surface with groups, rates, peaks, and model pricing chips', () => {
+  it('renders a collapsible tiered-pricing details block only for models with intervals', () => {
     const wrapper = mountTable()
-    const mobile = wrapper.get('[data-testid="mobile-channels"]')
+    const details = wrapper.findAll('.pricing-details')
 
-    expect(mobile.classes()).toContain('lg:hidden')
-    expect(mobile.classes()).toContain('overflow-x-hidden')
-    expect(mobile.text()).toContain('Primary channel')
-    expect(mobile.text()).toContain('Fast and reliable access')
-    expect(mobile.text()).toContain('Groups and rates')
-    expect(mobile.text()).toContain('Models and pricing')
-    expect(mobile.text()).toContain('availableChannels.exclusive')
-    expect(mobile.text()).toContain('availableChannels.public')
-    expect(mobile.get('[data-group-badge]').text()).toBe('Exclusive Pro:1.2:0.8')
-    expect(mobile.findAll('[data-group-badge]')).toHaveLength(2)
-    expect(mobile.get('[data-icon="clock"]')).toBeTruthy()
-    expect(mobile.text()).toContain('08:00')
-    expect(mobile.text()).toContain('10:00')
-    expect(mobile.text()).toContain('×1.5')
-    expect(mobile.get('[data-model-chip]').text()).toBe('claude-test:No pricing')
-    expect(mobile.findAll('.max-w-full')).not.toHaveLength(0)
+    expect(details).toHaveLength(1)
+    expect(details[0].text()).toContain('gemini-2.5-pro')
+    expect(details[0].text()).toContain('<=200K')
+    expect(details[0].text()).toContain('>200K')
   })
 
-  it('keeps the mobile placeholders when a platform has no groups or models', () => {
+  it('keeps the placeholder text when a platform has no groups or models', () => {
     const wrapper = mountTable({
       rows: [
         {
@@ -157,23 +169,20 @@ describe('AvailableChannelsTable responsive surfaces', () => {
         },
       ],
     })
-    const mobile = wrapper.get('[data-testid="mobile-channels"]')
+    const card = wrapper.get('[data-testid="channel-card"]')
 
-    expect(mobile.text()).toContain('Fallback channel')
-    expect(mobile.text()).toContain('openai')
-    expect(mobile.text()).toContain('No models')
-    expect(mobile.findAll('dd')[0].text()).toBe('-')
+    expect(card.text()).toContain('Fallback channel')
+    expect(card.text()).toContain('openai')
+    expect(card.text()).toContain('No models')
   })
 
-  it('provides loading and empty states on both responsive surfaces', async () => {
+  it('shows loading and empty states', async () => {
     const wrapper = mountTable({ loading: true, rows: [] })
 
-    expect(wrapper.get('[data-testid="desktop-channels"] [data-icon="refresh"]')).toBeTruthy()
-    expect(wrapper.get('[data-testid="mobile-loading"] [data-icon="refresh"]')).toBeTruthy()
+    expect(wrapper.get('[data-testid="channels-loading"] [data-icon="refresh"]')).toBeTruthy()
 
     await wrapper.setProps({ loading: false })
 
-    expect(wrapper.get('[data-testid="desktop-channels"]').text()).toContain('No channels')
-    expect(wrapper.get('[data-testid="mobile-empty"]').text()).toContain('No channels')
+    expect(wrapper.get('[data-testid="channels-empty"]').text()).toContain('No channels')
   })
 })

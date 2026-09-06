@@ -15,7 +15,8 @@ describe('FieldLabel', () => {
     expect(wrapper.find('.ui-field-label-required').exists()).toBe(true)
   })
 
-  it('uses 13px label type', () => {
-    expect(readUi('FieldLabel.vue')).toContain('font-size: 13px')
+  it('uses 12.5/600 label type and 12px muted hint per spec', () => {
+    expect(readUi('FieldLabel.vue')).toContain('font-size: 12.5px')
+    expect(readUi('FieldLabel.vue')).toContain('font-size: 12px')
   })
 })

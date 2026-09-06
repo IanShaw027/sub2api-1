@@ -1,117 +1,141 @@
-const tokenColor = (name) => ({ opacityValue }) =>
-  opacityValue === undefined
-    ? `var(--${name})`
-    : `color-mix(in oklch, var(--${name}) calc(${opacityValue} * 100%), transparent)`
-
 /** @type {import('tailwindcss').Config} */
+
+/*
+ * Glass theme bridge for Tailwind.
+ *
+ * Every colour utility resolves to a CSS token from `src/styles/tokens.css`, so
+ * the whole app — including legacy templates that still say `bg-red-50` or
+ * `text-emerald-600` — follows the five semantic tones of the design system
+ * (accent / success / warning / danger / muted) and flips correctly in dark mode.
+ *
+ * Colour values are functions so Tailwind's opacity modifier keeps working on tokens:
+ *   bg-red-500/15  →  color-mix(in oklch, var(--danger) calc(0.15 * 100%), transparent)
+ */
+
+const alpha =
+  (token) =>
+  ({ opacityValue } = {}) =>
+    opacityValue === undefined || opacityValue === '1' || opacityValue === 1
+      ? token
+      : `color-mix(in oklch, ${token} calc(${opacityValue} * 100%), transparent)`
+const tint = (token, pct) => alpha(`color-mix(in oklch, ${token} ${pct}%, var(--surface))`)
+const shade = (token, pct) => alpha(`color-mix(in oklch, ${token} ${pct}%, var(--foreground))`)
+
+/** Build a 50–950 scale from a tone (`--x`) and its text variant (`--x-text`). */
+function toneScale(base, text = base) {
+  return {
+    50: tint(base, 8),
+    100: tint(base, 14),
+    200: tint(base, 28),
+    300: tint(base, 45),
+    400: alpha(base),
+    500: alpha(base),
+    600: alpha(text),
+    700: alpha(text),
+    800: shade(text, 85),
+    900: shade(text, 70),
+    950: shade(text, 55),
+    DEFAULT: alpha(base)
+  }
+}
+
+const accentScale = toneScale('var(--accent)', 'var(--accent)')
+const successScale = toneScale('var(--success)', 'var(--success-text)')
+const warningScale = toneScale('var(--warning)', 'var(--warning-text)')
+const dangerScale = toneScale('var(--danger)', 'var(--danger-text)')
+
+const neutralScale = {
+  50: alpha('var(--surface-secondary)'),
+  100: alpha('var(--surface-secondary)'),
+  200: alpha('var(--surface-tertiary)'),
+  300: alpha('var(--border)'),
+  400: alpha('var(--muted)'),
+  500: alpha('var(--muted)'),
+  600: alpha('var(--muted)'),
+  700: shade('var(--muted)', 40),
+  800: alpha('var(--foreground)'),
+  900: alpha('var(--foreground)'),
+  950: alpha('var(--foreground)'),
+  DEFAULT: alpha('var(--muted)')
+}
+
 export default {
   content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // Complete OKLCH variables need color-mix to support opacity modifiers.
-        canvas: tokenColor('canvas'),
-        background: tokenColor('background'),
-        foreground: tokenColor('foreground'),
+        // Glass semantic tokens
+        canvas: alpha('var(--canvas)'),
+        background: alpha('var(--background)'),
+        foreground: alpha('var(--foreground)'),
         surface: {
-          DEFAULT: tokenColor('surface'),
-          2: tokenColor('surface-secondary'),
-          3: tokenColor('surface-tertiary')
+          DEFAULT: alpha('var(--surface)'),
+          2: alpha('var(--surface-secondary)'),
+          3: alpha('var(--surface-tertiary)')
         },
-        muted: tokenColor('muted'),
-        line: tokenColor('border'),
-        success: {
-          DEFAULT: tokenColor('success'),
-          text: tokenColor('success-text')
-        },
-        warning: {
-          DEFAULT: tokenColor('warning'),
-          text: tokenColor('warning-text')
-        },
-        danger: {
-          DEFAULT: tokenColor('danger'),
-          text: tokenColor('danger-text')
-        },
-        // 主色调 - Teal/Cyan 青色系
-        primary: {
-          50: '#f0fdfa',
-          100: '#ccfbf1',
-          200: '#99f6e4',
-          300: '#5eead4',
-          400: '#2dd4bf',
-          500: '#14b8a6',
-          600: '#0d9488',
-          700: '#0f766e',
-          800: '#115e59',
-          900: '#134e4a',
-          950: '#042f2e'
-        },
-        // 辅助色 - 深蓝灰. DEFAULT is the Glass accent token; numbered scale is legacy.
-        accent: {
-          DEFAULT: tokenColor('accent'),
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617'
-        },
-        // 深色模式背景
-        dark: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617'
-        }
+        muted: alpha('var(--muted)'),
+        line: alpha('var(--border)'),
+        success: { ...successScale, text: alpha('var(--success-text)') },
+        warning: { ...warningScale, text: alpha('var(--warning-text)') },
+        danger: { ...dangerScale, text: alpha('var(--danger-text)') },
+        accent: accentScale,
+        primary: accentScale,
+
+        // Legacy palette names → semantic tones
+        blue: accentScale,
+        indigo: accentScale,
+        sky: accentScale,
+        cyan: accentScale,
+        violet: accentScale,
+        purple: accentScale,
+        fuchsia: accentScale,
+        pink: accentScale,
+        teal: successScale,
+        emerald: successScale,
+        green: successScale,
+        lime: successScale,
+        amber: warningScale,
+        yellow: warningScale,
+        orange: warningScale,
+        red: dangerScale,
+        rose: dangerScale,
+        gray: neutralScale,
+        slate: neutralScale,
+        zinc: neutralScale,
+        neutral: neutralScale,
+        stone: neutralScale,
+        dark: neutralScale
       },
       fontFamily: {
-        sans: [
-          'system-ui',
-          '-apple-system',
-          'BlinkMacSystemFont',
-          'Segoe UI',
-          'Roboto',
-          'Helvetica Neue',
-          'Arial',
-          'PingFang SC',
-          'Hiragino Sans GB',
-          'Microsoft YaHei',
-          'sans-serif'
-        ],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+        sans: ['var(--font-body)'],
+        display: ['var(--display)'],
+        mono: ['var(--font-mono)']
       },
       boxShadow: {
         glass: 'var(--shadow)',
         'glass-hover': 'var(--shadow-hover)',
+        pop: 'var(--shadow-pop)',
         field: 'var(--field-shadow)',
-        'glass-sm': '0 4px 16px rgba(0, 0, 0, 0.06)',
-        glow: '0 0 20px rgba(20, 184, 166, 0.25)',
-        'glow-lg': '0 0 40px rgba(20, 184, 166, 0.35)',
-        card: '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06)',
-        'card-hover': '0 10px 40px rgba(0, 0, 0, 0.08)',
-        'inner-glow': 'inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+        'glass-sm': 'var(--shadow)',
+        glow: '0 8px 20px -10px var(--accent)',
+        'glow-lg': '0 12px 28px -12px var(--accent)',
+        card: 'var(--shadow)',
+        'card-hover': 'var(--shadow-hover)',
+        'inner-glow': 'inset 0 1px 0 var(--btn-hi)',
+        sm: '0 1px 2px rgba(16, 24, 40, 0.06)',
+        md: 'var(--shadow)',
+        lg: 'var(--shadow-pop)',
+        xl: 'var(--shadow-pop)',
+        '2xl': 'var(--shadow-pop)'
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-primary': 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-        'gradient-dark': 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
+        'gradient-primary': 'var(--brand-gradient)',
+        'gradient-dark': 'linear-gradient(135deg, var(--surface-secondary) 0%, var(--surface) 100%)',
         'gradient-glass':
           'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-        'mesh-gradient':
-          'radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%), radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%)'
+        'mesh-gradient': 'var(--bg-ambient)'
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',
@@ -149,8 +173,8 @@ export default {
           '100%': { backgroundPosition: '200% 0' }
         },
         glow: {
-          '0%': { boxShadow: '0 0 20px rgba(20, 184, 166, 0.25)' },
-          '100%': { boxShadow: '0 0 30px rgba(20, 184, 166, 0.4)' }
+          '0%': { boxShadow: '0 8px 20px -10px var(--accent)' },
+          '100%': { boxShadow: '0 12px 28px -8px var(--accent)' }
         }
       },
       backdropBlur: {
@@ -158,10 +182,12 @@ export default {
       },
       borderRadius: {
         '4xl': '2rem',
+        sm: 'var(--radius-sm)',
         btn: 'var(--radius-btn)',
         field: 'var(--radius-field)',
         card: 'var(--radius-card)',
-        hero: 'var(--radius-hero)'
+        hero: 'var(--radius-hero)',
+        panel: 'var(--radius-panel)'
       }
     }
   },

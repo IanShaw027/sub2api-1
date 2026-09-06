@@ -1,28 +1,26 @@
 <template>
- <div v-if="hasProviders" class="space-y-4">
- <div v-if="showDivider" class="flex items-center gap-3">
- <div class="h-px flex-1 bg-surface-2"></div>
- <span class="text-xs text-muted">
- {{ t('auth.oauthOrContinue') }}
- </span>
- <div class="h-px flex-1 bg-surface-2"></div>
- </div>
+  <div v-if="hasProviders" class="oauth-section">
+    <div v-if="showDivider" class="oauth-divider">
+      <span>{{ t('auth.oauthOrContinue') }}</span>
+    </div>
 
- <div :class="providerGridClass">
- <button
- v-for="provider in visibleProviders"
- :key="provider"
- type="button"
- :disabled="disabled"
- class="btn btn-secondary h-12 w-full justify-center gap-2"
- @click="startLogin(provider)"
- >
- <GitHubMark v-if="provider === 'github'" class="h-5 w-5 text-foreground" />
- <GoogleMark v-else class="h-5 w-5" />
- <span class="font-medium">{{ providerLabel(provider) }}</span>
- </button>
- </div>
- </div>
+    <div :class="providerGridClass">
+      <button
+        v-for="provider in visibleProviders"
+        :key="provider"
+        type="button"
+        :disabled="disabled"
+        class="btn btn-secondary oauth-btn"
+        @click="startLogin(provider)"
+      >
+        <span class="oauth-mark oauth-mark-plain" aria-hidden="true">
+          <GitHubMark v-if="provider === 'github'" class="oauth-mark-svg" />
+          <GoogleMark v-else class="oauth-mark-svg" />
+        </span>
+        <span class="oauth-btn-label">{{ providerLabel(provider) }}</span>
+      </button>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -65,10 +63,10 @@ const visibleProviders = computed<EmailOAuthProvider[]>(() => {
 const hasProviders = computed(() => visibleProviders.value.length > 0)
 const hasMultipleProviders = computed(() => visibleProviders.value.length > 1)
 const providerGridClass = computed(() => [
- 'grid',
- 'grid-cols-1',
- 'gap-3',
- hasMultipleProviders.value ? 'sm:grid-cols-2' : ''
+  'grid',
+  'oauth-grid',
+  'grid-cols-1',
+  hasMultipleProviders.value ? 'sm:grid-cols-2' : ''
 ])
 
 function providerLabel(provider: EmailOAuthProvider): string {
@@ -92,3 +90,72 @@ function startLogin(provider: EmailOAuthProvider): void {
  emit('start', { provider, params })
 }
 </script>
+
+<style scoped>
+.oauth-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.oauth-btn {
+  width: 100%;
+  height: 40px;
+  border-radius: 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  gap: 8px;
+  min-width: 0;
+}
+
+.oauth-btn > span:last-child,
+.oauth-btn-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.oauth-mark {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.oauth-divider::before,
+.oauth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.oauth-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.oauth-mark-plain {
+  background: transparent;
+  box-shadow: none;
+  color: var(--foreground);
+}
+
+.oauth-mark-svg {
+  width: 18px;
+  height: 18px;
+}
+</style>

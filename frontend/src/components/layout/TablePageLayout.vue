@@ -44,65 +44,74 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 桌面端：Flexbox 布局 */
+/* Desktop: fixed header/filters, scrolling table card, fixed pagination (design 04/05) */
 .table-page-layout {
- @apply flex flex-col gap-6;
- height: calc(100vh - 64px - 4rem); /* 减去 header + lg:p-8 的上下padding */
+ display: flex;
+ flex-direction: column;
+ gap: 14px;
+ /* viewport − topbar 66px − content padding (8px top + 24px bottom) */
+ height: calc(100vh - 98px);
 }
 
 .layout-section-fixed {
- @apply flex-shrink-0;
+ flex-shrink: 0;
 }
 
 .layout-section-scrollable {
- @apply flex-1 min-h-0 flex flex-col;
+ flex: 1;
+ min-height: 0;
+ display: flex;
+ flex-direction: column;
 }
 
-/* 表格滚动容器 - 增强版表体滚动方案 */
 .table-scroll-container {
- @apply flex flex-col overflow-hidden h-full bg-surface rounded-2xl border border-line shadow-sm;
+ display: flex;
+ flex-direction: column;
+ height: 100%;
+ overflow: hidden;
 }
 
 .table-scroll-container :deep(.table-wrapper) {
- @apply flex-1 overflow-x-auto overflow-y-auto;
- /* 确保横向滚动条显示在最底部 */
+ flex: 1;
+ overflow-x: auto;
+ overflow-y: auto;
  scrollbar-gutter: stable;
 }
 
 .table-scroll-container :deep(table) {
- @apply w-full;
- min-width: max-content; /* 关键：确保表格宽度根据内容撑开，从而触发横向滚动 */
- display: table; /* 使用标准 table 布局以支持 sticky 列 */
+ width: 100%;
+ min-width: max-content;
+ display: table;
 }
 
 .table-scroll-container :deep(thead) {
- background: color-mix(in oklch, var(--surface-secondary) 80%, transparent);
- @apply backdrop-blur-sm;
+ background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
+ backdrop-filter: blur(8px);
+ -webkit-backdrop-filter: blur(8px);
 }
 
-.table-scroll-container :deep(tbody) {
- /* 保持默认 table-row-group 显示，不使用 block */
+/* Mobile / tablet: natural page scroll, DataTable card mode */
+.table-page-layout.mobile-mode {
+ height: auto;
 }
 
-.table-scroll-container :deep(th) {
- @apply px-5 py-4 text-left text-sm font-medium text-muted border-b border-line;
-}
-
-.table-scroll-container :deep(td) {
- @apply px-5 py-4 text-sm text-foreground border-b border-line;
-}
-
-/* 移动端：恢复正常滚动 */
 .table-page-layout.mobile-mode .table-scroll-container {
- @apply h-auto overflow-visible border-none shadow-none bg-transparent;
+ height: auto;
+ overflow: visible;
+ border: 0;
+ box-shadow: none;
+ background: transparent;
+ backdrop-filter: none;
+ -webkit-backdrop-filter: none;
 }
 
 .table-page-layout.mobile-mode .layout-section-scrollable {
- @apply flex-none min-h-fit;
+ flex: none;
+ min-height: fit-content;
 }
 
 .table-page-layout.mobile-mode .table-scroll-container :deep(table) {
- @apply flex-none;
+ flex: none;
  display: table;
  min-width: 100%;
 }

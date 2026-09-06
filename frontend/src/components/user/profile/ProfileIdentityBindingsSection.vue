@@ -1,9 +1,6 @@
 <template>
- <div :class="props.embedded ? 'space-y-4' : 'card overflow-hidden'">
- <div
- v-if="!props.embedded"
- class="border-b border-line px-6 py-4"
- >
+ <div v-if="!props.embedded" class="card overflow-hidden">
+ <div class="border-b border-line px-6 py-4">
  <h2 class="text-lg font-medium text-foreground">
  {{ t('profile.authBindings.title') }}
  </h2>
@@ -12,16 +9,7 @@
  </p>
  </div>
 
- <div :class="props.embedded ? 'space-y-4' : 'divide-y divide-line'">
- <div v-if="props.embedded">
- <p class="text-sm font-semibold text-foreground">
- {{ t('profile.authBindings.title') }}
- </p>
- <p class="mt-1 text-sm text-muted">
- {{ t('profile.authBindings.description') }}
- </p>
- </div>
-
+ <div class="divide-y divide-line">
  <div
  v-for="item in providerItems"
  :key="item.provider"
@@ -31,7 +19,7 @@
  <div class="flex min-w-0 flex-1 items-start gap-4">
  <div
  :class="providerIconClass(item.provider)"
- class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-semibold"
+ class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sm font-semibold"
  >
  <Icon
  v-if="item.provider === 'email'"
@@ -190,6 +178,157 @@
  </div>
  </div>
  </div>
+
+ <template v-else>
+ <SettingRow
+ v-for="item in providerItems"
+ :key="item.provider"
+ :label="item.label"
+ >
+ <div class="flex flex-wrap items-center justify-between gap-3">
+ <div class="flex min-w-0 flex-1 flex-col gap-2">
+ <div class="flex flex-wrap items-center gap-2">
+ <span
+ :data-testid="`profile-binding-${item.provider}-status`"
+ :class="['badge', item.bound ? 'badge-success' : 'badge-gray']"
+ >
+ {{
+ item.bound
+ ? t('profile.authBindings.status.bound')
+ : t('profile.authBindings.status.notBound')
+ }}
+ </span>
+ </div>
+
+ <p
+ v-if="providerSummary(item.provider)"
+ class="text-sm text-muted"
+ >
+ {{ providerSummary(item.provider) }}
+ </p>
+
+ <div
+ v-if="hasBindingDetails(item.provider, item.details)"
+ class="grid gap-1 text-sm text-muted"
+ >
+ <p
+ v-if="item.provider !== 'email' && item.details?.display_name"
+ class="font-medium text-foreground"
+ >
+ {{ item.details.display_name }}
+ </p>
+ <p v-if="item.provider !== 'email' && item.details?.subject_hint">
+ {{ item.details.subject_hint }}
+ </p>
+ <p v-if="bindingCountLabel(item.details)">
+ {{ bindingCountLabel(item.details) }}
+ </p>
+ <p v-if="bindingNote(item.details)">
+ {{ bindingNote(item.details) }}
+ </p>
+ </div>
+
+ <div
+ v-if="item.provider === 'email' && showEmailForm"
+ data-testid="profile-binding-email-form"
+ class="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_auto]"
+ >
+ <input
+ v-model.trim="emailBindingForm.email"
+ data-testid="profile-binding-email-input"
+ type="email"
+ class="input"
+ :placeholder="t('profile.authBindings.emailPlaceholder')"
+ :disabled="isSendingEmailCode || isBindingEmail"
+ />
+ <button
+ data-testid="profile-binding-email-send-code"
+ type="button"
+ class="btn btn-secondary btn-sm"
+ :disabled="isSendingEmailCode || isBindingEmail"
+ @click="sendEmailCode"
+ >
+ {{
+ isSendingEmailCode
+ ? t('common.loading')
+ : t('profile.authBindings.sendCodeAction')
+ }}
+ </button>
+ <input
+ v-model.trim="emailBindingForm.verifyCode"
+ data-testid="profile-binding-email-code-input"
+ type="text"
+ inputmode="numeric"
+ maxlength="6"
+ class="input"
+ :placeholder="t('profile.authBindings.codePlaceholder')"
+ :disabled="isBindingEmail"
+ />
+ <input
+ v-model="emailBindingForm.password"
+ data-testid="profile-binding-email-password-input"
+ type="password"
+ class="input"
+ :placeholder="emailPasswordPlaceholder"
+ :disabled="isBindingEmail"
+ />
+ <button
+ data-testid="profile-binding-email-submit"
+ type="button"
+ class="btn btn-primary btn-sm sm:col-span-2"
+ :disabled="isBindingEmail"
+ @click="bindEmail"
+ >
+ {{
+ isBindingEmail
+ ? t('common.loading')
+ : emailSubmitActionLabel
+ }}
+ </button>
+ </div>
+ </div>
+
+ <div class="flex shrink-0 flex-wrap items-center gap-3">
+ <button
+ v-if="item.provider === 'email' && compact"
+ data-testid="profile-binding-email-toggle"
+ type="button"
+ class="btn btn-secondary btn-sm"
+ @click="toggleEmailForm"
+ >
+ {{
+ showEmailForm
+ ? t('profile.authBindings.hideEmailFormAction')
+ : t('profile.authBindings.manageEmailAction')
+ }}
+ </button>
+ <button
+ v-if="item.canBind"
+ :data-testid="`profile-binding-${item.provider}-action`"
+ type="button"
+ class="btn btn-primary btn-sm"
+ @click="startBinding(item.provider)"
+ >
+ {{ t('profile.authBindings.bindAction', { providerName: item.label }) }}
+ </button>
+ <button
+ v-if="item.canUnbind"
+ :data-testid="`profile-binding-${item.provider}-unbind`"
+ type="button"
+ class="btn btn-secondary btn-sm"
+ :disabled="unbindingProvider === item.provider"
+ @click="handleUnbindForItem(item.provider, item.label)"
+ >
+ {{
+ unbindingProvider === item.provider
+ ? t('common.loading')
+ : t('profile.authBindings.unbindAction')
+ }}
+ </button>
+ </div>
+ </div>
+ </SettingRow>
+ </template>
 </template>
 
 <script setup lang="ts">
@@ -208,6 +347,7 @@ import {
  unbindAuthIdentity,
 } from '@/api/user'
 import Icon from '@/components/icons/Icon.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import type { User, UserAuthBindingStatus, UserAuthProvider } from '@/types'
 
@@ -281,13 +421,9 @@ watch(
 
 const currentUser = computed(() => localUser.value ?? props.user)
 const compact = computed(() => props.compact)
-const rowClass = computed(() =>
- props.embedded
- ? compact.value
- ? 'rounded-2xl border border-line bg-surface p-4 shadow-sm'
- : 'rounded-2xl border border-line bg-surface-2/70 p-4'
- : 'px-6 py-5'
-)
+// 仅在 !props.embedded 分支（旧版一体式卡片，保留作向后兼容）中使用，
+// 该分支渲染时 props.embedded 恒为 false，因此这里始终返回同一个值。
+const rowClass = 'px-6 py-5'
 const emailBound = computed(() => getBindingStatus('email'))
 const showEmailForm = computed(() => !compact.value || isEmailFormExpanded.value)
 const emailPasswordPlaceholder = computed(() =>
@@ -490,16 +626,16 @@ function providerInitial(provider: UserAuthProvider): string {
 
 function providerIconClass(provider: UserAuthProvider): string {
  if (provider === 'linuxdo') {
- return 'bg-orange-100 text-orange-600'
+ return 'bg-warning-100 text-warning-600'
  }
  if (provider === 'dingtalk') {
- return 'bg-blue-100 text-blue-600'
+ return 'bg-accent-100 text-accent-600'
  }
  if (provider === 'wechat') {
- return 'bg-green-100 text-green-600'
+ return 'bg-success-100 text-success-600'
  }
  if (provider === 'oidc') {
- return 'bg-sky-100 text-sky-600'
+ return 'bg-accent-100 text-accent-600'
  }
  return 'bg-[color-mix(in_oklch,var(--accent)_16%,transparent)] text-accent'
 }

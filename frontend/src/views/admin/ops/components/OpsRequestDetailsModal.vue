@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores'
@@ -154,9 +154,9 @@ const kindBadgeClass = (kind: string) => {
 </script>
 
 <template>
-  <BaseDialog :show="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="full" @close="close">
+  <UiModal :open="modelValue" :title="props.preset.title || t('admin.ops.requestDetails.title')" width="xl" @close="close">
     <template #default>
-      <div class="flex h-full min-h-0 flex-col">
+      <div class="flex flex-col">
         <div class="mb-4 flex flex-shrink-0 items-center justify-between">
           <div class="text-xs text-muted ">
             {{ t('admin.ops.requestDetails.rangeLabel', { range: rangeLabel }) }}
@@ -173,7 +173,7 @@ const kindBadgeClass = (kind: string) => {
         <!-- Loading -->
         <div v-if="loading" class="flex flex-1 items-center justify-center py-16">
           <div class="flex flex-col items-center gap-3">
-            <svg class="h-8 w-8 animate-spin text-blue-500" fill="none" viewBox="0 0 24 24">
+            <svg class="h-8 w-8 animate-spin text-accent-500" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path
                 class="opacity-75"
@@ -186,14 +186,14 @@ const kindBadgeClass = (kind: string) => {
         </div>
 
         <!-- Table -->
-        <div v-else class="flex min-h-0 flex-1 flex-col">
+        <div v-else class="flex flex-col">
           <div v-if="items.length === 0" class="rounded-xl border border-dashed border-line p-10 text-center ">
             <div class="text-sm font-medium text-muted ">{{ t('admin.ops.requestDetails.empty') }}</div>
             <div class="mt-1 text-xs text-muted">{{ t('admin.ops.requestDetails.emptyHint') }}</div>
           </div>
 
-          <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line ">
-            <div class="min-h-0 flex-1 overflow-auto">
+          <div v-else class="flex flex-col overflow-hidden rounded-xl border border-line ">
+            <div class="max-h-[420px] overflow-auto">
               <div v-if="!isDesktopViewport" class="divide-y divide-line ">
                 <div v-for="(row, idx) in items" :key="idx" class="space-y-2 p-4">
                   <div class="flex flex-wrap items-center gap-2">
@@ -319,5 +319,5 @@ const kindBadgeClass = (kind: string) => {
         </div>
       </div>
     </template>
-  </BaseDialog>
+  </UiModal>
 </template>

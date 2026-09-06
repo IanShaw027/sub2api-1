@@ -391,7 +391,7 @@ function cancelDelete() {
 </script>
 
 <template>
-  <div class="rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <div class="mb-4 flex flex-wrap items-start justify-between gap-3 sm:gap-4">
       <div>
         <h3 class="text-sm font-bold text-foreground ">{{ t('admin.ops.alertRules.title') }}</h3>
@@ -478,12 +478,15 @@ function cancelDelete() {
           <tbody class="divide-y divide-line bg-surface  ">
             <tr v-for="row in sortedRules" :key="row.id" class="hover:bg-surface-2 ">
               <td class="px-4 py-3">
-                <div class="text-xs font-bold text-foreground ">{{ row.name }}</div>
-                <div v-if="row.description" class="mt-0.5 line-clamp-2 text-[11px] text-muted ">
-                  {{ row.description }}
-                </div>
-                <div v-if="row.updated_at" class="mt-1 text-[10px] text-muted">
-                  {{ formatDateTime(row.updated_at) }}
+                <div class="min-w-0 max-w-[240px]">
+                  <div class="truncate text-xs font-bold text-foreground " :title="row.name">{{ row.name }}</div>
+                  <div
+                    v-if="row.description || row.updated_at"
+                    class="mt-0.5 truncate text-[11px] text-muted "
+                    :title="[row.description, row.updated_at ? formatDateTime(row.updated_at) : ''].filter(Boolean).join(' · ')"
+                  >
+                    {{ [row.description, row.updated_at ? formatDateTime(row.updated_at) : ''].filter(Boolean).join(' · ') }}
+                  </div>
                 </div>
               </td>
               <td class="whitespace-nowrap px-4 py-3 text-xs text-foreground ">
@@ -557,7 +560,7 @@ function cancelDelete() {
           <div class="md:col-span-2">
             <label class="input-label">
               {{ t('admin.ops.alertRules.form.groupId') }}
-              <span v-if="isGroupMetricSelected" class="ml-1 text-red-500">*</span>
+              <span v-if="isGroupMetricSelected" class="ml-1 text-danger-500">*</span>
             </label>
             <Select
               v-model="draftGroupId"

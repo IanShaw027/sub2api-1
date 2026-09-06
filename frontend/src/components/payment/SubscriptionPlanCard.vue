@@ -1,16 +1,17 @@
 <template>
  <div
  :class="[
- 'group relative flex flex-col overflow-hidden rounded-2xl border transition-all',
- 'hover:shadow-xl hover:-translate-y-0.5',
+ 'plan-card group relative flex flex-col overflow-hidden border transition-all',
+ 'hover:shadow-pop hover:-translate-y-0.5',
  borderClass,
  'bg-surface',
+ { 'glass-ring': selected },
  ]"
  >
  <!-- Colored top accent bar -->
  <div :class="['h-1.5', accentClass]" />
 
- <div class="flex flex-1 flex-col p-4">
+ <div class="plan-card-body flex flex-1 flex-col">
  <!-- Header: name + badge + price -->
  <div class="mb-3 flex items-start justify-between gap-2">
  <div class="min-w-0 flex-1">
@@ -27,7 +28,7 @@
  <div class="shrink-0 text-right">
  <div class="flex items-baseline gap-1">
  <span class="text-xs text-muted">{{ planCurrencySymbol }}</span>
- <span :class="['text-2xl font-extrabold tracking-tight', textClass]">{{ plan.price }}</span>
+ <span :class="['plan-price', textClass]">{{ plan.price }}</span>
  <span v-if="plan.currency" class="text-xs font-medium text-muted">{{ plan.currency }}</span>
  </div>
  <div class="flex items-center justify-end gap-1">
@@ -51,7 +52,7 @@
  </div>
  <div v-if="hasPeakRate" class="col-span-2 flex items-center justify-between gap-2">
  <span class="text-muted">{{ t('payment.planCard.peakRate') }}</span>
- <span class="text-right font-medium text-amber-700">{{ peakRateDisplay }}</span>
+ <span class="text-right font-medium text-warning-text">{{ peakRateDisplay }}</span>
  </div>
  <div v-if="plan.daily_limit_usd != null" class="flex items-center justify-between">
  <span class="text-muted">{{ t('payment.planCard.dailyLimit') }}</span>
@@ -83,10 +84,10 @@
  <!-- Features list (compact) -->
  <div v-if="plan.features.length > 0" class="mb-3 space-y-1">
  <div v-for="feature in plan.features" :key="feature" class="flex items-start gap-1.5">
- <svg :class="['mt-0.5 h-3.5 w-3.5 flex-shrink-0', iconClass]" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+ <svg class="plan-feature-icon mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
  <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
  </svg>
- <span class="text-xs text-muted">{{ feature }}</span>
+ <span class="plan-feature-text text-muted">{{ feature }}</span>
  </div>
  </div>
 
@@ -95,7 +96,7 @@
  <!-- Subscribe Button -->
  <button
  type="button"
- :class="['w-full rounded-xl py-2.5 text-sm font-semibold transition-all active:scale-[0.98]', btnClass]"
+ :class="['plan-card-cta w-full text-sm font-semibold transition-all active:scale-[0.98]', btnClass]"
  @click="emit('select', plan)"
  >
  {{ isRenewal ? t('payment.renewNow') : t('payment.subscribeNow') }}
@@ -118,13 +119,12 @@ import {
  platformBadgeLightClass,
  platformBorderClass,
  platformTextClass,
- platformIconClass,
  platformButtonClass,
  platformDiscountClass,
  platformLabel,
 } from '@/utils/platformColors'
 
-const props = defineProps<{ plan: SubscriptionPlan; activeSubscriptions?: UserSubscription[] }>()
+const props = defineProps<{ plan: SubscriptionPlan; activeSubscriptions?: UserSubscription[]; selected?: boolean }>()
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
 const { t } = useI18n()
 
@@ -138,7 +138,6 @@ const accentClass = computed(() => platformAccentBarClass(platform.value))
 const borderClass = computed(() => platformBorderClass(platform.value))
 const badgeLightClass = computed(() => platformBadgeLightClass(platform.value))
 const textClass = computed(() => platformTextClass(platform.value))
-const iconClass = computed(() => platformIconClass(platform.value))
 const btnClass = computed(() => platformButtonClass(platform.value))
 const discountClass = computed(() => platformDiscountClass(platform.value))
 const pLabel = computed(() => platformLabel(platform.value))
@@ -178,3 +177,35 @@ const modelScopeLabels = computed(() => {
 
 const validitySuffix = computed(() => planValiditySuffix(props.plan, t))
 </script>
+
+<style scoped>
+.plan-card {
+  border-radius: var(--radius-hero);
+}
+
+.plan-card-body {
+  padding: 20px;
+}
+
+.plan-price {
+  font-size: 28px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.plan-feature-text {
+  font-size: 13px;
+}
+
+.plan-feature-icon {
+  width: 12px;
+  height: 12px;
+  color: var(--success-text);
+}
+
+.plan-card-cta {
+  height: 42px;
+  border-radius: var(--radius-field);
+}
+</style>

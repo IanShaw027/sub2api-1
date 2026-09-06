@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AffiliateView from '../AffiliateView.vue'
+import EndpointCard from '@/components/ui/EndpointCard.vue'
 
 const { copyToClipboard, getAffiliateDetail } = vi.hoisted(() => ({
   copyToClipboard: vi.fn(),
@@ -61,7 +62,7 @@ describe('AffiliateView', () => {
     })
   })
 
-  it('stacks long values and copy controls on mobile while retaining desktop rows', async () => {
+  it('renders the invite code and invite link as EndpointCard copy rows', async () => {
     const wrapper = mount(AffiliateView, {
       global: {
         stubs: {
@@ -73,37 +74,19 @@ describe('AffiliateView', () => {
 
     await flushPromises()
 
-    const values = wrapper.findAll('code')
-    expect(values).toHaveLength(2)
-    for (const value of values) {
-      expect(value.classes()).toEqual(expect.arrayContaining([
-        'min-w-0',
-        'break-all',
-        'sm:flex-1',
-        'sm:truncate',
-      ]))
-      expect(Array.from(value.element.parentElement?.classList ?? [])).toEqual(expect.arrayContaining([
-        'flex-col',
-        'items-stretch',
-        'sm:flex-row',
-        'sm:items-center',
-      ]))
-    }
+    // EndpointCard is the shared ActionPage copy-row primitive: it already
+    // handles text truncation/overflow responsively on its own, so the page
+    // only needs to wire label/url/copy-label and forward the `copy` event.
+    const cards = wrapper.findAllComponents(EndpointCard)
+    expect(cards).toHaveLength(2)
 
-    const copyButtons = wrapper.findAll('button').filter((button) =>
-      ['affiliate.copyCode', 'affiliate.copyLink'].includes(button.text()),
-    )
-    expect(copyButtons).toHaveLength(2)
-    for (const button of copyButtons) {
-      expect(button.classes()).toEqual(expect.arrayContaining([
-        'w-full',
-        'sm:w-auto',
-        'sm:shrink-0',
-      ]))
-    }
+    expect(cards[0].props('label')).toBe('affiliate.yourCode')
+    expect(cards[0].props('url')).toBe(affiliateCode)
+    expect(cards[1].props('label')).toBe('affiliate.inviteLink')
+    expect(cards[1].props('url')).toBe(`${window.location.origin}/register?aff=${encodeURIComponent(affiliateCode)}`)
 
-    await copyButtons[0].trigger('click')
-    await copyButtons[1].trigger('click')
+    await cards[0].vm.$emit('copy', cards[0].props('url'))
+    await cards[1].vm.$emit('copy', cards[1].props('url'))
     await flushPromises()
 
     expect(copyToClipboard).toHaveBeenNthCalledWith(1, affiliateCode, 'affiliate.codeCopied')

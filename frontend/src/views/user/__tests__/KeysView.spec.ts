@@ -233,7 +233,6 @@ const mountView = async () => {
         SearchInput: SearchInputStub,
         Icon: IconStub,
         UseKeyModal: true,
-        EndpointPopover: true,
         GroupBadge: true,
         GroupOptionItem: true,
         Teleport: true,
@@ -293,9 +292,9 @@ describe('user KeysView column settings', () => {
     getDashboardApiKeysUsage.mockResolvedValue({ stats: { 1: { today_actual_cost: 1.5 } } })
     const wrapper = await mountView()
     expect(wrapper.getComponent(MiniStatCard).props('items')).toEqual([
-      { label: 'common.total', value: 21 },
-      { label: 'This page: common.active', value: 1 },
-      { label: 'This page: keys.today', value: '$1.50' }
+      { label: 'keys.miniStats.total', value: 21 },
+      { label: 'This page: keys.miniStats.active', value: 1 },
+      { label: 'This page: keys.miniStats.todaySpend', value: '$1.50' }
     ])
     wrapper.unmount()
   })
@@ -309,13 +308,13 @@ describe('user KeysView column settings', () => {
       'group',
       'current_concurrency',
       'usage',
+      'rate_limit',
       'expires_at',
+      'last_used_at',
       'status',
-      'created_at',
       'actions',
     ])
-    expect(visibleColumnKeys(wrapper)).not.toContain('rate_limit')
-    expect(visibleColumnKeys(wrapper)).not.toContain('last_used_at')
+    expect(visibleColumnKeys(wrapper)).not.toContain('created_at')
     expect(visibleColumnKeys(wrapper)).not.toContain('last_used_ip')
     expect(visibleColumnKeys(wrapper)).not.toContain('id')
   })
@@ -324,14 +323,14 @@ describe('user KeysView column settings', () => {
     const wrapper = await mountView()
 
     await wrapper.get('button[title="Column Settings"]').trigger('click')
-    await getButtonByText(wrapper, 'Rate Limit').trigger('click')
+    await getButtonByText(wrapper, 'Created').trigger('click')
     await nextTick()
 
-    expect(visibleColumnKeys(wrapper)).toContain('rate_limit')
+    expect(visibleColumnKeys(wrapper)).toContain('created_at')
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
-      JSON.stringify(['id', 'last_used_at', 'last_used_ip'])
+      JSON.stringify(['id', 'last_used_ip'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('3')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
   })
 
   it('shows the API key ID column when toggled', async () => {
@@ -377,14 +376,14 @@ describe('user KeysView column settings', () => {
       'usage',
       'rate_limit',
       'expires_at',
-      'status',
       'last_used_at',
+      'status',
       'actions',
     ])
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
       JSON.stringify(['group', 'created_at', 'last_used_ip', 'id'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('3')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
   })
 
   it('does not include always-visible columns in the toggleable menu', async () => {
@@ -432,7 +431,9 @@ describe('user KeysView column settings', () => {
     const selects = wrapper.findAllComponents({ name: 'Select' })
     await selects[0].vm.$emit('update:modelValue', 42)
     await flushPromises()
-    await selects[1].vm.$emit('update:modelValue', 'active')
+
+    // Status filtering now uses the segmented control instead of a second Select.
+    await getButtonByText(wrapper, 'Active').trigger('click')
     await flushPromises()
 
     listKeys.mockClear()

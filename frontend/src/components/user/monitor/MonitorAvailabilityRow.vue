@@ -27,7 +27,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { hslForPct } from '@/composables/useChannelMonitorFormat'
+import { tokenColorForPct } from '@/composables/useChannelMonitorFormat'
 
 const props = defineProps<{
  windowLabel: string
@@ -43,7 +43,7 @@ const displayValue = computed(() => {
 })
 
 const colorStyle = computed(() => {
- const colour = hslForPct(props.value)
- return colour ? { color: colour } : { color: 'rgb(156 163 175)' }
+ const colour = tokenColorForPct(props.value)
+ return { color: colour || 'var(--muted)' }
 })
 </script>

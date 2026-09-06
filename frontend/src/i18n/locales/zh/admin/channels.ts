@@ -486,6 +486,7 @@ export default {
         actionMeta: '处置',
         latency: '上游耗时',
         input: '输入摘要',
+        scrollHint: '左右滑动查看完整表格',
       },
       result: {
         all: '全部结果',
@@ -520,6 +521,7 @@ export default {
       runFailed: '检测失败',
       duplicate: '复制',
       duplicating: '复制中',
+      viewDetails: '查看详情',
       duplicateSuccess: '监控已复制为「{name}」，已默认停用，请确认配置后再启用',
       duplicateFailed: '复制监控失败',
       duplicateKeyUnavailable: 'API Key 无法解密，请先编辑并重新填写 Key 后再复制',
@@ -649,6 +651,13 @@ export default {
           description: '说明',
           descriptionPlaceholder: '可选：说明这个模板的用途和来源（抓包日期等）'
         }
+      },
+      detail: {
+        title: '监控详情 — {name}',
+        noHistory: '该模型暂无检测历史',
+        loadError: '加载监控历史失败',
+        latestCheck: '最近一次检测：{time}',
+        checksCount: '共记录 {n} 次检测'
       }
     },
 

@@ -1,25 +1,25 @@
 <template>
  <BaseDialog :show="show" :title="t('usage.exporting')" width="narrow" @close="handleCancel">
  <div class="space-y-4">
- <div class="text-sm text-muted">
+ <div class="text-[12.5px] text-muted">
  {{ t('usage.exportingProgress') }}
  </div>
- <div class="flex items-center justify-between text-sm text-foreground">
+ <div class="flex items-center justify-between text-[13px] text-foreground">
  <span>{{ t('usage.exportedCount', { current, total }) }}</span>
  <span class="font-medium text-foreground">{{ normalizedProgress }}%</span>
  </div>
- <div class="h-2 w-full rounded-full bg-surface-2">
+ <div class="progress">
  <div
  role="progressbar"
  :aria-valuenow="normalizedProgress"
  aria-valuemin="0"
  aria-valuemax="100"
  :aria-label="`${t('usage.exportingProgress')}: ${normalizedProgress}%`"
- class="h-2 rounded-full bg-accent transition-all"
+ class="progress-bar"
  :style="{ width: `${normalizedProgress}%` }"
  ></div>
  </div>
- <div v-if="estimatedTime" class="text-xs text-muted" aria-live="polite" aria-atomic="true">
+ <div v-if="estimatedTime" class="text-[11.5px] text-muted" aria-live="polite" aria-atomic="true">
  {{ t('usage.estimatedTime', { time: estimatedTime }) }}
  </div>
  </div>
@@ -28,7 +28,7 @@
  <button
  @click="handleCancel"
  type="button"
- class="rounded-md border border-line bg-surface px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
+ class="btn btn-secondary btn-sm"
  >
  {{ t('usage.cancelExport') }}
  </button>

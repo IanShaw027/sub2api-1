@@ -41,6 +41,15 @@ const flushPromises = async () => {
   await Promise.resolve()
 }
 
+// UiModal 现为常驻挂载组件，内部通过 <Teleport to="body"> 渲染面板；
+// 单测只关心弹窗内部的定时器/表单逻辑，因此用透传插槽的桩替换 UiModal，
+// 避免因 Teleport 导致 wrapper.find/get 找不到已被移动到 document.body 的节点。
+const globalStubs = {
+  UiModal: {
+    template: '<div><slot /></div>'
+  }
+}
+
 describe('TOTP 弹窗定时器清理', () => {
   let intervalSeed = 1000
   let setIntervalSpy: ReturnType<typeof vi.spyOn>
@@ -80,7 +89,11 @@ describe('TOTP 弹窗定时器清理', () => {
   })
 
   it('TotpSetupModal 卸载时清理倒计时定时器', async () => {
-    const wrapper = mount(TotpSetupModal)
+    const wrapper = mount(TotpSetupModal, {
+      props: { open: false },
+      global: { stubs: globalStubs }
+    })
+    await wrapper.setProps({ open: true })
     await flushPromises()
 
     const sendButton = wrapper
@@ -100,7 +113,11 @@ describe('TOTP 弹窗定时器清理', () => {
   })
 
   it('TotpDisableDialog 卸载时清理倒计时定时器', async () => {
-    const wrapper = mount(TotpDisableDialog)
+    const wrapper = mount(TotpDisableDialog, {
+      props: { open: false },
+      global: { stubs: globalStubs }
+    })
+    await wrapper.setProps({ open: true })
     await flushPromises()
 
     const sendButton = wrapper
@@ -125,7 +142,11 @@ describe('TOTP 弹窗定时器清理', () => {
       response: { data: { message: 'setup failed' } }
     })
 
-    const wrapper = mount(TotpSetupModal)
+    const wrapper = mount(TotpSetupModal, {
+      props: { open: false },
+      global: { stubs: globalStubs }
+    })
+    await wrapper.setProps({ open: true })
     await flushPromises()
 
     await wrapper.get('input[type="password"]').setValue('correct horse battery staple')
@@ -143,7 +164,11 @@ describe('TOTP 弹窗定时器清理', () => {
       response: { data: { message: 'disable failed' } }
     })
 
-    const wrapper = mount(TotpDisableDialog)
+    const wrapper = mount(TotpDisableDialog, {
+      props: { open: false },
+      global: { stubs: globalStubs }
+    })
+    await wrapper.setProps({ open: true })
     await flushPromises()
 
     await wrapper.get('input[type="password"]').setValue('correct horse battery staple')

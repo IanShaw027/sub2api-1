@@ -1,46 +1,29 @@
 <template>
- <div class="space-y-6">
- <section
- data-testid="profile-overview-hero"
- class="glass-card overflow-hidden border border-[color-mix(in_oklch,var(--accent)_16%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--accent)_12%,transparent)] via-surface to-[color-mix(in_oklch,var(--warning)_12%,transparent)]"
+ <SettingsSection
+ :title="t('profile.basicsTitle')"
+ :description="t('profile.basicsDescription')"
  >
- <div class="px-6 py-6 md:px-8">
- <div class="flex flex-col gap-6 lg:flex-row lg:items-start">
- <div
- class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-[1.75rem] bg-gradient-to-br from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-2xl font-bold text-white shadow-lg shadow-[color-mix(in_oklch,var(--accent)_20%,transparent)]"
+ <SettingRow
+ :label="t('profile.avatar.title')"
+ :description="t('profile.avatar.uploadHint')"
  >
- <img
- v-if="avatarUrl"
- :src="avatarUrl"
- :alt="displayName"
- class="h-full w-full object-cover"
- >
- <span v-else>{{ avatarInitial }}</span>
- </div>
+ <ProfileAvatarCard
+ :user="user"
+ embedded
+ />
+ </SettingRow>
 
- <div class="min-w-0 flex-1 space-y-5">
- <div class="space-y-3">
- <div class="flex flex-wrap items-center gap-2">
- <h2 class="truncate text-2xl font-semibold text-foreground">
- {{ displayName }}
- </h2>
- <span :class="['badge', user?.role === 'admin' ? 'badge-primary' : 'badge-gray']">
- {{ user?.role === 'admin' ? t('profile.administrator') : t('profile.user') }}
- </span>
- <span
- :class="['badge', user?.status === 'active' ? 'badge-success' : 'badge-danger']"
- >
- {{
- user?.status === 'active'
- ? t('common.active')
- : t('common.disabled')
- }}
- </span>
- </div>
+ <SettingRow :label="t('profile.username')">
+ <ProfileEditForm
+ :initial-username="user?.username || ''"
+ embedded
+ />
+ </SettingRow>
 
- <div class="space-y-1">
- <p class="truncate text-sm text-muted">
- {{ primaryEmailDisplay }}
+ <SettingRow :label="t('profile.email')">
+ <div class="space-y-2">
+ <p class="text-sm text-foreground">
+ {{ primaryEmailDisplay || t('profile.authBindings.status.notBound') }}
  </p>
  <div
  v-if="sourceHints.length"
@@ -49,162 +32,32 @@
  <span
  v-for="hint in sourceHints"
  :key="hint.key"
- class="inline-flex items-center gap-1 rounded-full bg-surface/80 px-3 py-1 ring-1 ring-[color-mix(in_oklch,var(--accent)_16%,transparent)]"
+ class="inline-flex items-center gap-1 rounded-full bg-surface-2 px-3 py-1"
  >
  <Icon name="link" size="sm" />
  {{ hint.text }}
  </span>
  </div>
  </div>
- </div>
-
- <div class="grid gap-3 sm:grid-cols-3">
- <div
- data-testid="profile-overview-metric-balance"
- class="rounded-2xl bg-surface/85 px-4 py-3 shadow-sm ring-1 ring-white/70"
- >
- <p class="text-xs font-medium uppercase tracking-[0.16em] text-muted">
- {{ t('profile.accountBalance') }}
- </p>
- <p class="mt-1 text-lg font-semibold text-foreground">
- {{ formatCurrency(user?.balance || 0) }}
- </p>
- </div>
- <div
- data-testid="profile-overview-metric-concurrency"
- class="rounded-2xl bg-surface/85 px-4 py-3 shadow-sm ring-1 ring-white/70"
- >
- <p class="text-xs font-medium uppercase tracking-[0.16em] text-muted">
- {{ t('profile.concurrencyLimit') }}
- </p>
- <p class="mt-1 text-lg font-semibold text-foreground">
- {{ user?.concurrency || 0 }}
- </p>
- </div>
- <div
- data-testid="profile-overview-metric-member-since"
- class="rounded-2xl bg-surface/85 px-4 py-3 shadow-sm ring-1 ring-white/70"
- >
- <p class="text-xs font-medium uppercase tracking-[0.16em] text-muted">
- {{ t('profile.memberSince') }}
- </p>
- <p class="mt-1 text-lg font-semibold text-foreground">
- {{ memberSinceLabel }}
- </p>
- </div>
- </div>
- </div>
- </div>
- </div>
- </section>
-
- <div class="space-y-6">
- <div data-testid="profile-main-column" class="space-y-6">
- <section
- data-testid="profile-basics-panel"
- class="glass-card border border-line bg-surface/90 p-6"
- >
- <div class="mb-5 flex items-start justify-between gap-4">
- <div>
- <h3 class="text-lg font-semibold text-foreground">
- {{ t('profile.basicsTitle') }}
- </h3>
- <p class="mt-1 text-sm text-muted">
- {{ t('profile.basicsDescription') }}
- </p>
- </div>
- </div>
-
- <div class="grid gap-6 sm:grid-cols-1 md:grid-cols-2">
- <div class="rounded-3xl border border-line bg-surface-2/80 p-5">
- <ProfileAvatarCard
- :user="user"
- embedded
- />
- </div>
-
- <div class="rounded-3xl border border-line bg-surface-2/80 p-5">
- <ProfileEditForm
- :initial-username="user?.username || ''"
- embedded
- />
- </div>
- </div>
- </section>
-
- <section
- data-testid="profile-auth-bindings-panel"
- class="glass-card border border-line bg-surface/90 p-6"
- >
- <ProfileIdentityBindingsSection
- :user="user"
- :linuxdo-enabled="linuxdoEnabled"
- :dingtalk-enabled="dingtalkEnabled"
- :oidc-enabled="oidcEnabled"
- :oidc-provider-name="oidcProviderName"
- :wechat-enabled="wechatEnabled"
- :wechat-open-enabled="wechatOpenEnabled"
- :wechat-mp-enabled="wechatMpEnabled"
- embedded
- compact
- />
- </section>
- </div>
-
- <div data-testid="profile-side-column" class="space-y-6">
- <section
- v-if="sourceHints.length"
- class="glass-card border border-line bg-surface/90 p-6"
- >
- <h3 class="text-lg font-semibold text-foreground">
- {{ t('profile.linkedProfileSources') }}
- </h3>
- <p class="mt-1 text-sm text-muted">
- {{ t('profile.linkedProfileSourcesDescription') }}
- </p>
-
- <div class="mt-5 grid gap-3">
- <div
- v-for="hint in sourceHints"
- :key="hint.key"
- class="flex items-start gap-3 rounded-2xl border border-line bg-surface-2/80 px-4 py-3 text-sm text-muted"
- >
- <Icon name="link" size="sm" class="mt-0.5 text-muted" />
- <span>{{ hint.text }}</span>
- </div>
- </div>
- </section>
- </div>
- </div>
- </div>
+ </SettingRow>
+ </SettingsSection>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import SettingsSection from '@/components/ui/SettingsSection.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
-import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
 
 const props = withDefaults(defineProps<{
  user: User | null
- linuxdoEnabled?: boolean
- dingtalkEnabled?: boolean
- oidcEnabled?: boolean
  oidcProviderName?: string
- wechatEnabled?: boolean
- wechatOpenEnabled?: boolean
- wechatMpEnabled?: boolean
 }>(), {
- linuxdoEnabled: false,
- dingtalkEnabled: false,
- oidcEnabled: false,
  oidcProviderName: 'OIDC',
- wechatEnabled: false,
- wechatOpenEnabled: undefined,
- wechatMpEnabled: undefined,
 })
 
 const { t } = useI18n()
@@ -232,8 +85,6 @@ function isEmailBound(user: User | null | undefined): boolean {
  return normalized ?? false
 }
 
-const avatarUrl = computed(() => props.user?.avatar_url?.trim() || '')
-const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
 const primaryEmailDisplay = computed(() => {
  const email = props.user?.email?.trim() || ''
  if (!email) {
@@ -243,23 +94,6 @@ const primaryEmailDisplay = computed(() => {
  return ''
  }
  return email
-})
-const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
-const memberSinceLabel = computed(() => {
- const raw = props.user?.created_at?.trim()
- if (!raw) {
- return '-'
- }
-
- const date = new Date(raw)
- if (Number.isNaN(date.getTime())) {
- return '-'
- }
-
- return new Intl.DateTimeFormat(undefined, {
- year: 'numeric',
- month: 'short',
- }).format(date)
 })
 
 const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
@@ -271,10 +105,6 @@ const providerLabels = computed<Record<UserAuthProvider, string>>(() => ({
  github: 'GitHub',
  google: 'Google'
 }))
-
-function formatCurrency(value: number): string {
- return `$${value.toFixed(2)}`
-}
 
 function normalizeProvider(value: string): UserAuthProvider | null {
  const normalized = value.trim().toLowerCase()

@@ -7,7 +7,7 @@ import type { OpsErrorDistributionResponse } from '@/api/admin/ops'
 import type { ChartState } from '../types'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { useTheme } from '@/composables/useTheme'
+import { pieChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
@@ -21,13 +21,13 @@ const emit = defineEmits<{
   (e: 'openDetails'): void
 }>()
 const { t } = useI18n()
-const { isDark: isDarkMode } = useTheme()
+const theme = useChartTheme()
 const colors = computed(() => ({
-  blue: '#3b82f6',
-  red: '#ef4444',
-  orange: '#f59e0b',
-  gray: '#9ca3af',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  blue: theme.value.accent,
+  red: theme.value.danger,
+  orange: theme.value.warning,
+  gray: theme.value.text,
+  text: theme.value.text
 }))
 
 const totalSlaErrors = computed(() =>
@@ -94,25 +94,20 @@ const chartData = computed(() => {
   }
 })
 
-const options = computed(() => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-      titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-      bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563'
-    }
+const options = computed(() => {
+  const base = pieChartOptions(theme.value)
+  return {
+    ...base,
+    plugins: { ...base.plugins, legend: { display: false } }
   }
-}))
+})
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="flex h-full flex-col rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <div class="mb-4 flex items-center justify-between">
       <h3 class="flex items-center gap-2 text-sm font-bold text-foreground ">
-        <svg class="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg class="h-4 w-4 text-danger-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
             stroke-linejoin="round"

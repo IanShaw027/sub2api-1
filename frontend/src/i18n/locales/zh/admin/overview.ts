@@ -45,6 +45,9 @@ export default {
       metricTokens: '按 Token',
       metricActualCost: '按实际消费',
       tokenUsageTrend: 'Token 使用趋势',
+      trendCacheCreation: '缓存创建',
+      trendCacheRead: '缓存读取',
+      trendCacheHitRate: '缓存命中率',
       userUsageTrend: '用户使用趋势（Top 12）',
       noDataAvailable: '暂无数据',
       model: '模型',
@@ -81,7 +84,44 @@ export default {
       groupPricingDesc: '设置批量折扣和冻结比例',
       systemSettings: '系统设置',
       configureSystem: '配置系统设置',
-      failedToLoad: '加载仪表盘数据失败'
+      failedToLoad: '加载仪表盘数据失败',
+      heroGreetingMorning: '早上好',
+      heroGreetingAfternoon: '下午好',
+      heroGreetingEvening: '晚上好',
+      heroTitleLead: '一切正常，',
+      heroTitleAlertLead: '需要关注，',
+      heroTitleTail: ' 个账号在线',
+      heroSummary: '今日请求 {requests} 次，消耗 {tokens} tokens，预计花费 ${cost}，平均响应 {duration}',
+      heroAllHealthy: '，服务运行正常。',
+      heroIssues: '，{error} 个错误、{ratelimit} 个限流账号待处理。',
+      viewOpsMonitor: '查看运维监控',
+      handleAbnormalAccounts: '处理异常账号',
+      serviceStatus: '服务状态',
+      realtimeRpm: '实时 RPM',
+      realtimeTpm: '实时 TPM',
+      todayNew: '今日新增 {count}',
+      activeRatio: '活跃占比 {rate}%',
+      abnormalCount: '{count} 个异常',
+      accountsHealthy: '账号健康',
+      statusError: '异常',
+      statusRateLimited: '限流中',
+      cacheHitRate: '缓存命中 {rate}%',
+      requestTrend: '请求趋势',
+      trendSubtitle: '近 {count} {unit}，共 {total}',
+      unitHour: '小时',
+      unitDay: '天',
+      costShort: '费用',
+      platformHealth: '平台健康度',
+      recentEvents: '最近事件',
+      noPlatformHealth: '暂无平台数据',
+      noPlatformHealthDesc: '尚未接入任何平台账号',
+      noEvents: '暂无事件',
+      noEventsDesc: '系统运行平稳，暂无异常事件',
+      healthOk: '{ok}/{total} 正常',
+      healthRateLimited: '{count} 限流',
+      healthError: '{count} 错误',
+      todayLabel: '今天',
+      vsPrevPeriod: '较上一时段'
     },
 
     backup: {
@@ -446,6 +486,7 @@ export default {
       title: '用户管理',
       description: '管理用户账户和权限',
       createUser: '创建用户',
+      selectedOfTotal: '已选',
       bulkLimits: {
         action: '批量设置限制（{count}）',
         title: '批量设置用户限制',
@@ -1222,14 +1263,6 @@ export default {
         selectAccounts: '选择账号',
         noAccounts: '此分组暂无账号',
         loadingAccounts: '加载账号中...',
-      claudeMaxSimulation: {
-        title: 'Claude Max 用量模拟',
-        tooltip:
-          '启用后，对于没有上游缓存写入用量的 Claude 模型，系统会确定性地将 token 映射为少量输入加 1h 缓存创建，同时保持总 token 不变。',
-        enabled: '已启用（模拟 1h 缓存）',
-        disabled: '已禁用',
-        hint: '仅调整用量计费日志中的 token 类别。不会持久化每个请求的映射状态。'
-      },
         removeRule: '删除规则',
         noRules: '暂无路由规则',
         noRulesHint: '添加路由规则以将特定模型请求优先路由到指定账号',
@@ -1241,6 +1274,14 @@ export default {
         tooltip: '启用后，当请求包含 MCP 工具时，会在 system prompt 中注入 XML 格式调用协议提示词。关闭此选项可避免对某些客户端造成干扰。',
         enabled: '已启用',
         disabled: '已禁用'
+      },
+      claudeMaxSimulation: {
+        title: 'Claude Max 用量模拟',
+        tooltip:
+          '启用后，对于没有上游缓存写入用量的 Claude 模型，系统会确定性地将 token 映射为少量输入加 1h 缓存创建，同时保持总 token 不变。',
+        enabled: '已启用（模拟 1h 缓存）',
+        disabled: '已禁用',
+        hint: '仅调整用量计费日志中的 token 类别。不会持久化每个请求的映射状态。'
       },
       supportedScopes: {
         title: '支持的模型系列',

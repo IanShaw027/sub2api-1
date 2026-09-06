@@ -14,7 +14,11 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <FilterBar :search-placeholder="t('admin.promo.searchCodes')">
+          <FilterBar
+            :search-placeholder="t('admin.promo.searchCodes')"
+            :filter-label="t('common.filter')"
+
+          >
             <template #search>
               <input
                 v-model="searchQuery"
@@ -59,7 +63,7 @@
                 :class="[
  'flex items-center transition-colors',
  copiedCode === value
- ? 'text-green-500'
+ ? 'text-success-text'
  : 'text-muted hover:text-foreground'
  ]"
                 :title="copiedCode === value ? t('admin.promo.copied') : t('keys.copyToClipboard')"
@@ -767,6 +771,11 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
+.promo-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .promo-fab { display: none; }
 @media (max-width: 767px) {
   .promo-create-desktop { display: none; }

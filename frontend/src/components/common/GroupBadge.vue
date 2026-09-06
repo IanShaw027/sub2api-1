@@ -1,29 +1,24 @@
 <template>
- <span
- :class="[
- 'inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium transition-colors',
- badgeClass
- ]"
- >
- <!-- Platform logo -->
- <PlatformIcon v-if="platform" :platform="platform" size="sm" />
- <!-- Group name -->
- <span class="truncate">{{ name }}</span>
- <!-- Right side label -->
- <span v-if="showLabel" :class="labelClass">
- <template v-if="hasCustomRate">
- <!-- 原倍率删除线 + 专属倍率高亮 -->
- <span class="line-through opacity-50 mr-0.5">{{ rateMultiplier }}x</span>
- <span class="font-bold">{{ userRateMultiplier }}x</span>
- </template>
- <template v-else>
- {{ labelText }}
- </template>
- </span>
- <span v-if="hasPeakRate" :class="peakRateClass" :title="peakRateTitle">
- {{ peakRateText }}
- </span>
- </span>
+  <span class="group-badge" :style="badgeStyle">
+    <!-- Hue dot · 6px -->
+    <span class="group-badge-dot" :style="{ background: hueColor }" aria-hidden="true"></span>
+    <!-- Group name -->
+    <span class="truncate">{{ name }}</span>
+    <!-- Right side label -->
+    <span v-if="showLabel" :class="labelClass">
+      <template v-if="hasCustomRate">
+        <!-- 原倍率删除线 + 专属倍率高亮 -->
+        <span class="mr-0.5 line-through opacity-50">{{ rateMultiplier }}x</span>
+        <span class="font-bold">{{ userRateMultiplier }}x</span>
+      </template>
+      <template v-else>
+        {{ labelText }}
+      </template>
+    </span>
+    <span v-if="hasPeakRate" :class="peakRateClass" :title="peakRateTitle">
+      {{ peakRateText }}
+    </span>
+  </span>
 </template>
 
 <script setup lang="ts">
@@ -32,7 +27,6 @@ import { useI18n } from 'vue-i18n'
 import type { SubscriptionType, GroupPlatform } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
-import PlatformIcon from './PlatformIcon.vue'
 
 interface Props {
  name: string
@@ -126,112 +120,97 @@ const labelText = computed(() => {
 })
 
 // Label style based on type and days remaining
+// Label style based on type and days remaining
 const labelClass = computed(() => {
- const base = 'px-1.5 py-0.5 rounded text-[10px] font-semibold'
+  const base = 'group-badge-chip'
 
- if (!isSubscription.value) {
- // Standard: subtle background (不再为专属倍率使用不同的背景色)
- return `${base} bg-black/10`
- }
+  if (!isSubscription.value) {
+    return base
+  }
 
- // 订阅类型：根据剩余天数显示不同颜色
- if (props.daysRemaining !== null && props.daysRemaining !== undefined) {
- if (props.daysRemaining <= 0 || props.daysRemaining <= 3) {
- // 已过期或紧急（<=3天）：红色
- return `${base} bg-red-200/80 text-red-800`
- }
- if (props.daysRemaining <= 7) {
- // 警告（<=7天）：橙色
- return `${base} bg-amber-200/80 text-amber-800`
- }
- }
+  // 订阅类型：根据剩余天数提示紧急程度
+  if (props.daysRemaining !== null && props.daysRemaining !== undefined) {
+    if (props.daysRemaining <= 0 || props.daysRemaining <= 3) {
+      return `${base} group-badge-chip-danger`
+    }
+    if (props.daysRemaining <= 7) {
+      return `${base} group-badge-chip-warning`
+    }
+  }
 
- // 正常状态或无天数：根据平台显示主题色
- if (props.platform === 'anthropic') {
- return `${base} bg-orange-200/60 text-orange-800`
- }
- if (props.platform === 'openai') {
- return `${base} bg-emerald-200/60 text-emerald-800`
- }
- if (props.platform === 'gemini') {
- return `${base} bg-blue-200/60 text-blue-800`
- }
- if (props.platform === 'antigravity') {
- return `${base} bg-purple-200/60 text-purple-800`
- }
- if (props.platform === 'grok') {
- return `${base} bg-zinc-300/70 text-zinc-800`
- }
- if (props.platform === 'kimi') {
- return `${base} bg-pink-200/60 text-pink-800`
- }
- if (props.platform === 'zhipu') {
- return `${base} bg-indigo-200/60 text-indigo-800`
- }
- if (props.platform === 'deepseek') {
- return `${base} bg-teal-200/60 text-teal-800`
- }
- if (props.platform === 'composite') {
- return `${base} bg-cyan-200/70 text-cyan-900`
- }
- return `${base} bg-violet-200/60 text-violet-800`
+  return base
 })
 
-const peakRateClass = computed(() => {
- return 'px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700'
-})
+const peakRateClass = computed(() => 'group-badge-chip group-badge-chip-warning')
 
-// Badge color based on platform and subscription type
-const badgeClass = computed(() => {
- if (props.platform === 'anthropic') {
- // Claude: orange theme
- return isSubscription.value
- ? 'bg-orange-100 text-orange-700'
- : 'bg-amber-50 text-amber-700'
- } else if (props.platform === 'openai') {
- // OpenAI: green theme
- return isSubscription.value
- ? 'bg-emerald-100 text-emerald-700'
- : 'bg-green-50 text-green-700'
- }
- if (props.platform === 'gemini') {
- return isSubscription.value
- ? 'bg-blue-100 text-blue-700'
- : 'bg-sky-50 text-sky-700'
- }
- if (props.platform === 'antigravity') {
- return isSubscription.value
- ? 'bg-purple-100 text-purple-700'
- : 'bg-fuchsia-50 text-fuchsia-700'
- }
- if (props.platform === 'grok') {
- return isSubscription.value
- ? 'bg-zinc-200 text-zinc-800'
- : 'bg-zinc-100 text-zinc-700'
- }
- if (props.platform === 'kimi') {
- return isSubscription.value
- ? 'bg-pink-100 text-pink-700'
- : 'bg-pink-50 text-pink-700'
- }
- if (props.platform === 'zhipu') {
- return isSubscription.value
- ? 'bg-indigo-100 text-indigo-700'
- : 'bg-indigo-50 text-indigo-700'
- }
- if (props.platform === 'deepseek') {
- return isSubscription.value
- ? 'bg-teal-100 text-teal-700'
- : 'bg-teal-50 text-teal-700'
- }
- if (props.platform === 'composite') {
- return isSubscription.value
- ? 'bg-cyan-100 text-cyan-800'
- : 'bg-cyan-50 text-cyan-800'
- }
- // Fallback: original colors
- return isSubscription.value
- ? 'bg-violet-100 text-violet-700'
- : 'bg-emerald-100 text-emerald-700'
-})
+/**
+ * 分组配色：保留「每个平台一个色相」的逻辑，但统一按原型 07 的公式派生
+ * 底色 color-mix(hue 16%) / 文字 color-mix(hue 70%, foreground)。
+ */
+const PLATFORM_HUE: Record<string, number> = {
+  anthropic: 45,
+  openai: 160,
+  gemini: 262,
+  antigravity: 300,
+  grok: 285,
+  kimi: 350,
+  zhipu: 275,
+  deepseek: 195,
+  composite: 190
+}
+
+const hue = computed(() => PLATFORM_HUE[props.platform ?? ''] ?? 300)
+const chroma = computed(() => (props.platform === 'grok' ? 0.03 : 0.15))
+const hueColor = computed(() => `oklch(68% ${chroma.value} ${hue.value})`)
+
+const badgeStyle = computed(() => ({
+  background: `color-mix(in oklch, oklch(68% ${chroma.value} ${hue.value}) ${
+    isSubscription.value ? 22 : 16
+  }%, transparent)`,
+  color: `color-mix(in oklch, oklch(62% ${chroma.value} ${hue.value}) 70%, var(--foreground))`
+}))
 </script>
+
+<style scoped>
+/* 22px 药丸 · currentColor 22% 内描边（原型 07 StatusBadge / 分组标签） */
+.group-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  max-width: 100%;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, currentColor 22%, transparent);
+}
+
+.group-badge-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 999px;
+}
+
+.group-badge-chip {
+  flex: none;
+  padding: 0 4px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: color-mix(in oklch, currentColor 14%, transparent);
+}
+
+.group-badge-chip-warning {
+  background: color-mix(in oklch, var(--warning) 20%, transparent);
+  color: var(--warning-text);
+}
+
+.group-badge-chip-danger {
+  background: color-mix(in oklch, var(--danger) 16%, transparent);
+  color: var(--danger-text);
+}
+</style>

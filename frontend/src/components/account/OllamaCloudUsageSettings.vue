@@ -23,7 +23,7 @@
       <Icon name="refresh" size="sm" class="animate-spin" />
     </div>
     <template v-else>
-      <div v-if="!state.encryption_key_configured" class="rounded border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-amber-800">
+      <div v-if="!state.encryption_key_configured" class="notice notice-warning">
         {{ t('admin.accounts.ollamaCloud.encryptionKeyRequired') }}
       </div>
 
@@ -48,7 +48,7 @@
           <span class="text-muted">{{ t('admin.accounts.ollamaCloud.updatedAt') }}</span>
           <span class="break-words text-foreground">{{ formatDate(snapshot.fetched_at || snapshot.last_attempt_at) }}</span>
         </div>
-        <p v-if="snapshot.last_error" class="mt-2 break-words border-t border-line pt-2 text-xs text-amber-700">
+        <p v-if="snapshot.last_error" class="mt-2 break-words border-t border-line pt-2 text-xs text-warning-text">
           {{ t(`admin.accounts.ollamaCloud.errors.${snapshot.last_error}`, snapshot.last_error) }}
         </p>
       </div>

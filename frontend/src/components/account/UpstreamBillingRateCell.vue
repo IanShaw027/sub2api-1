@@ -51,7 +51,7 @@
         </p>
         <p class="mt-2 border-t border-white/15 pt-2" data-testid="upstream-billing-probe-state">
           {{ t('admin.accounts.upstreamBilling.accountProbeState') }}
-          <span :class="probeEnabled ? 'text-emerald-400' : 'text-red-400'">
+          <span :class="probeEnabled ? 'text-success-400' : 'text-danger-400'">
             {{ probeEnabled ? t('admin.accounts.upstreamBilling.enabled') : t('admin.accounts.upstreamBilling.disabled') }}
           </span>
         </p>
@@ -61,7 +61,7 @@
           data-testid="upstream-billing-global-probe-state"
         >
           {{ t('admin.accounts.upstreamBilling.globalProbeState') }}
-          <span class="text-red-400">{{ t('admin.accounts.upstreamBilling.disabled') }}</span>
+          <span class="text-danger-400">{{ t('admin.accounts.upstreamBilling.disabled') }}</span>
         </p>
       </div>
     </HelpTooltip>

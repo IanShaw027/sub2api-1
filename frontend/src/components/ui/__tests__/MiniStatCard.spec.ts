@@ -11,7 +11,7 @@ describe('MiniStatCard', () => {
     expect(wrapper.classes()).toContain('glass-card')
   })
 
-  it('renders a 3-column group with 20px values', () => {
+  it('renders a 3-column group with 22px values', () => {
     const wrapper = mount(MiniStatCard, {
       props: {
         items: [
@@ -26,7 +26,7 @@ describe('MiniStatCard', () => {
     expect(wrapper.text()).toContain('10')
     const src = readUi('MiniStatCard.vue')
     expect(src).toContain('repeat(3, minmax(0, 1fr))')
-    expect(src).toContain('font-size: 20px')
+    expect(src).toContain('font-size: 22px')
     expect(src).toContain('padding: 10px 12px')
   })
 })

@@ -1,11 +1,11 @@
 <template>
  <section class="mx-auto w-full max-w-6xl space-y-5 px-1 py-2 sm:px-2">
  <header
- class="page-header mb-0 flex flex-wrap items-center justify-between gap-3 rounded-3xl bg-surface p-5 shadow-sm ring-1 ring-line/5 sm:p-6"
+ class="page-header mb-0 flex flex-wrap items-center justify-between gap-3 bg-surface p-5 sm:p-6"
  >
  <div class="min-w-0">
  <h2 class="page-title flex items-center gap-2 text-xl font-black text-foreground">
- <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-blue-50 text-blue-500">
+ <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent">
  <Icon name="chart" size="sm" />
  </span>
  {{ t('channelMonitorV2.settings.title') }}
@@ -27,7 +27,7 @@
 
  <div
  v-if="!systemModeV2"
- class="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-900"
+ class="rounded-[var(--radius-card)] border border-[color-mix(in_oklch,var(--warning)_35%,transparent)] bg-[color-mix(in_oklch,var(--warning)_12%,transparent)] px-4 py-3 text-sm text-[var(--warning-text)]"
  role="status"
  >
  {{
@@ -41,49 +41,32 @@
 
  <div
  v-if="loading"
- class="glass-card flex min-h-[200px] items-center justify-center !rounded-3xl !border-0 text-sm text-muted shadow-sm ring-1 ring-line/5"
+ class="glass-card flex min-h-[200px] items-center justify-center text-sm text-muted"
  >
  <span class="animate-pulse">{{ t('channelMonitorV2.settings.loading') }}</span>
  </div>
 
  <template v-else-if="draft">
- <div class="glass-card divide-y divide-line !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
- <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
- <div>
- <strong class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.enableTitle') }}</strong>
- <p class="mt-0.5 text-xs text-muted">
- {{ t('channelMonitorV2.settings.enableHint') }}
- </p>
- </div>
+ <div class="glass-card overflow-hidden">
+ <SettingRow
+ :label="t('channelMonitorV2.settings.enableTitle')"
+ :description="t('channelMonitorV2.settings.enableHint')"
+ >
  <Toggle v-model="draft.enabled" />
- </div>
- <div class="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
- <div>
- <strong class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.refreshTitle') }}</strong>
- <p class="mt-0.5 text-xs text-muted">{{ t('channelMonitorV2.settings.refreshHint') }}</p>
- </div>
- <div class="tabs inline-flex w-auto" role="group" :aria-label="t('channelMonitorV2.settings.refreshAria')">
- <button
- type="button"
- class="tab"
- :class="draft.refresh_interval_seconds === 60 ? 'tab-active' : ''"
- @click="draft.refresh_interval_seconds = 60"
+ </SettingRow>
+ <SettingRow
+ :label="t('channelMonitorV2.settings.refreshTitle')"
+ :description="t('channelMonitorV2.settings.refreshHint')"
  >
- 1 min
- </button>
- <button
- type="button"
- class="tab"
- :class="draft.refresh_interval_seconds === 300 ? 'tab-active' : ''"
- @click="draft.refresh_interval_seconds = 300"
- >
- 5 min
- </button>
- </div>
- </div>
+ <SegmentedControl
+ v-model="refreshIntervalOption"
+ :options="refreshIntervalOptions"
+ size="sm"
+ />
+ </SettingRow>
  </div>
 
- <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card overflow-hidden">
  <div class="glass-card-header !py-3">
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.platformsTitle') }}</h3>
  <p class="mt-0.5 text-xs text-muted">
@@ -115,7 +98,7 @@
  </div>
  </div>
 
- <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card overflow-hidden">
  <div class="glass-card-header flex flex-wrap items-center justify-between gap-2 !py-3">
  <div>
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.groupsTitle') }}</h3>
@@ -157,7 +140,7 @@
  </div>
  </div>
 
- <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card overflow-hidden">
  <div class="glass-card-header !py-3">
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.errorsTitle') }}</h3>
  <p class="mt-0.5 text-xs text-muted">
@@ -194,7 +177,7 @@
  </div>
  </div>
 
- <div class="glass-card overflow-hidden !rounded-3xl !border-0 shadow-sm ring-1 ring-line/5">
+ <div class="glass-card overflow-hidden">
  <div class="glass-card-header !py-3">
  <h3 class="text-sm font-semibold text-foreground">{{ t('channelMonitorV2.settings.healthTitle') }}</h3>
  <p class="mt-0.5 text-xs text-muted">
@@ -238,7 +221,7 @@
  </div>
 
  <div class="space-y-2">
- <div class="rounded-2xl border border-[color-mix(in_oklch,var(--accent)_20%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-4 py-3 text-sm text-accent">
+ <div class="rounded-[var(--radius-card)] border border-[color-mix(in_oklch,var(--accent)_20%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] px-4 py-3 text-sm text-accent">
  <template v-if="namedModelCount === 0">
  {{ t('channelMonitorV2.settings.namedModelsEmpty') }}
  </template>
@@ -246,7 +229,7 @@
  {{ t('channelMonitorV2.settings.namedModelsCount', { count: namedModelCount }) }}
  </template>
  </div>
- <div class="rounded-2xl border border-line bg-surface-2/80 px-4 py-3 text-xs text-muted">
+ <div class="rounded-[var(--radius-card)] border border-line bg-surface-2/80 px-4 py-3 text-xs text-muted">
  <p class="font-medium text-foreground">{{ t('channelMonitorV2.settings.userContractTitle') }}</p>
  <ul class="mt-1.5 list-disc space-y-0.5 pl-4">
  <li>{{ t('channelMonitorV2.settings.userContract.health') }}</li>
@@ -265,6 +248,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Toggle from '@/components/common/Toggle.vue'
 import Icon from '@/components/icons/Icon.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { getChannelMonitorMode, isChannelMonitorV2Mode } from '@/utils/featureFlags'
@@ -342,6 +327,19 @@ const warningErrorPercent = percentModel('warning_error_rate')
 const criticalErrorPercent = percentModel('critical_error_rate')
 const warningCachePercent = percentModel('warning_cache_rate')
 const criticalCachePercent = percentModel('critical_cache_rate')
+
+/** SegmentedControl requires string values; proxy the numeric seconds field. */
+const refreshIntervalOptions = computed(() => [
+ { value: '60', label: t('channelMonitorV2.settings.refreshOneMinute') },
+ { value: '300', label: t('channelMonitorV2.settings.refreshFiveMinutes') },
+])
+const refreshIntervalOption = computed({
+ get: () => String(draft.value?.refresh_interval_seconds ?? 60),
+ set: (value: string) => {
+ if (!draft.value) return
+ draft.value.refresh_interval_seconds = value === '300' ? 300 : 60
+ },
+})
 
 function setModels(platform: MonitorConfig['platforms'][number], event: Event) {
  platform.models = [

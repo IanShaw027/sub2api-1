@@ -1,4 +1,12 @@
 <template>
+  <div class="acct-usage-cell-wrap" :class="{ 'is-compact': compact }">
+    <UsageWindowCell
+      v-if="compact"
+      class="acct-usage-cell-summary"
+      :windows="summaryWindows"
+    />
+    <span v-if="compact && summaryWindows.length === 0" class="acct-usage-cell-empty">-</span>
+    <div class="acct-usage-cell-detail">
   <div ref="rootRef" v-if="showUsageWindows">
     <!-- Anthropic OAuth and Setup Token accounts: fetch real usage data -->
     <template
@@ -30,7 +38,7 @@
       </div>
 
       <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
+      <div v-else-if="error" class="text-xs text-danger-500">
         {{ error }}
       </div>
 
@@ -196,280 +204,17 @@
 
     <!-- Antigravity OAuth accounts: fetch usage from API -->
     <template v-else-if="account.platform === 'antigravity' && account.type === 'oauth'">
-      <!-- 账户类型徽章 -->
-      <div v-if="antigravityTierLabel" class="mb-1 flex items-center gap-1">
-        <span
-          :class="[
-            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-            antigravityTierClass
-          ]"
-        >
-          {{ antigravityTierLabel }}
-        </span>
-        <!-- 不合格账户警告图标 -->
-        <span
-          v-if="hasIneligibleTiers"
-          class="group relative cursor-help"
-        >
-          <svg
-            class="h-3.5 w-3.5 text-red-500"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-[var(--code-bg)] px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
-          >
-            {{ t('admin.accounts.ineligibleWarning') }}
-          </span>
-        </span>
-      </div>
-
-      <!-- Forbidden state (403) -->
-      <div v-if="isForbidden" class="space-y-1">
-        <span
-          :class="[
-            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-            forbiddenBadgeClass
-          ]"
-        >
-          {{ forbiddenLabel }}
-        </span>
-        <div v-if="validationURL" class="flex items-center gap-1">
-          <a
-            :href="validationURL"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-[10px] text-accent hover:text-blue-800 hover:underline"
-            :title="t('admin.accounts.openVerification')"
-          >
-            {{ t('admin.accounts.openVerification') }}
-          </a>
-          <button
-            type="button"
-            class="text-[10px] text-muted hover:text-foreground"
-            :title="t('admin.accounts.copyLink')"
-            @click="copyValidationURL"
-          >
-            {{ linkCopied ? t('admin.accounts.linkCopied') : t('admin.accounts.copyLink') }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Needs reauth (401) -->
-      <div v-else-if="needsReauth" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text">
-          {{ t('admin.accounts.needsReauth') }}
-        </span>
-      </div>
-
-      <!-- Degraded error (non-403, non-401) -->
-      <div v-else-if="usageInfo?.error" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700">
-          {{ usageErrorLabel }}
-        </span>
-      </div>
-
-      <!-- Loading state -->
-      <div v-else-if="loading" class="space-y-1.5">
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-surface-3"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-        </div>
-      </div>
-
-      <!-- Error state -->
-      <div v-else-if="error" class="text-xs text-red-500">
-        {{ error }}
-      </div>
-
-      <!-- Usage data from API -->
-      <div v-else-if="hasAntigravityQuotaFromAPI" class="space-y-1">
-        <!-- Gemini 3 Pro -->
-        <UsageProgressBar
-          v-if="antigravity3ProUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.gemini3Pro')"
-          :utilization="antigravity3ProUsageFromAPI.utilization"
-          :resets-at="antigravity3ProUsageFromAPI.resetTime"
-          color="indigo"
-        />
-
-        <!-- Gemini 3 Flash -->
-        <UsageProgressBar
-          v-if="antigravity3FlashUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.gemini3Flash')"
-          :utilization="antigravity3FlashUsageFromAPI.utilization"
-          :resets-at="antigravity3FlashUsageFromAPI.resetTime"
-          color="emerald"
-        />
-
-        <!-- Gemini 3 Image -->
-        <UsageProgressBar
-          v-if="antigravity3ImageUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.gemini3Image')"
-          :utilization="antigravity3ImageUsageFromAPI.utilization"
-          :resets-at="antigravity3ImageUsageFromAPI.resetTime"
-          color="purple"
-        />
-
-        <!-- Claude -->
-        <UsageProgressBar
-          v-if="antigravityClaudeUsageFromAPI !== null"
-          :label="t('admin.accounts.usageWindow.claude')"
-          :utilization="antigravityClaudeUsageFromAPI.utilization"
-          :resets-at="antigravityClaudeUsageFromAPI.resetTime"
-          color="amber"
-        />
-
-        <div v-if="aiCreditsDisplay" class="mt-1 text-[10px] text-muted">
-          💳 {{ t('admin.accounts.aiCreditsBalance') }}: {{ aiCreditsDisplay }}
-        </div>
-      </div>
-      <div v-else-if="aiCreditsDisplay" class="text-[10px] text-muted">
-        💳 {{ t('admin.accounts.aiCreditsBalance') }}: {{ aiCreditsDisplay }}
-      </div>
-      <div v-else class="text-xs text-muted">-</div>
+      <AntigravityUsageBlock :account="account" :usage-info="usageInfo" :loading="loading" :error="error" />
     </template>
 
     <!-- Kiro OAuth accounts: 30-day subscription quota -->
     <template v-else-if="account.platform === 'kiro' && account.type === 'oauth'">
-      <div v-if="loading" class="space-y-1.5">
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-surface-3"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-        </div>
-      </div>
-      <div v-else-if="error" class="text-xs text-red-500">
-        {{ error }}
-      </div>
-      <div v-else-if="usageInfo?.error" class="text-xs text-warning-text truncate max-w-[220px]" :title="usageInfo.error">
-        {{ usageInfo.error }}
-      </div>
-      <div v-else-if="needsReauth" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text">
-          {{ t('admin.accounts.needsReauth') }}
-        </span>
-      </div>
-      <div v-else-if="usageInfo?.kiro_quota" class="space-y-1">
-        <UsageProgressBar
-          label="30d"
-          :utilization="usageInfo.kiro_quota.utilization"
-          :resets-at="usageInfo.kiro_quota.resets_at"
-          :window-stats="kiroQuotaStats"
-          :show-empty-window-stats="true"
-          color="cyan"
-        />
-        <div class="whitespace-nowrap text-[10px] text-muted">
-          {{ t('admin.accounts.kiro.quotaCompact', {
-            limit: formatKiroMoney(usageInfo.kiro_usage_limit),
-            overage: kiroOverageDisplay,
-            used: formatKiroMoney(usageInfo.kiro_current_usage)
-          }) }}
-        </div>
-      </div>
-      <div v-else class="text-xs text-muted">-</div>
+      <KiroUsageBlock :usage-info="usageInfo" :loading="loading" :error="error" />
     </template>
 
     <!-- Grok OAuth accounts: passive xAI quota headers + local Sub2API usage -->
     <template v-else-if="account.platform === 'grok' && account.type === 'oauth'">
-      <div v-if="loading" class="space-y-1.5">
-        <div class="flex items-center gap-1">
-          <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-          <div class="h-1.5 w-8 animate-pulse rounded-full bg-surface-3"></div>
-          <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-        </div>
-      </div>
-      <div v-else-if="error" class="text-xs text-red-500">
-        {{ error }}
-      </div>
-      <div v-else-if="needsReauth" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text">
-          {{ t('admin.accounts.needsReauth') }}
-        </span>
-      </div>
-      <div v-else-if="isForbidden" class="space-y-1">
-        <span class="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text">
-          {{ usageInfo?.grok_entitlement_status || t('admin.accounts.forbidden') }}
-        </span>
-      </div>
-      <div v-else-if="usageInfo" class="space-y-1">
-        <!-- Free: only rolling 24h soft-gate bar. Paid: 7d + 30d + prepaid money. -->
-        <template v-if="grokIsFree">
-          <UsageProgressBar
-            v-if="grokFreeTokenBar"
-            label="24h"
-            :title="t('admin.accounts.usageWindow.grokFreeQuota24hHint', { limit: formatCompactNumber(grokFreeTokenBar.limit) })"
-            :utilization="grokFreeTokenBar.utilization"
-            :window-stats="grokFreeQuotaUsage"
-            :show-now-when-idle="true"
-            color="emerald"
-          />
-          <div v-else-if="grokQuotaUnknown" class="text-[10px] text-muted">
-            {{ grokQuotaUnknownLabel }}
-          </div>
-        </template>
-        <template v-else>
-          <UsageProgressBar
-            v-if="grokWeeklyBillingBar"
-            label="7d"
-            :utilization="grokWeeklyBillingBar.utilization"
-            :resets-at="grokWeeklyBillingBar.resetsAt"
-            :window-stats="grokWeeklyBillingBar.windowStats"
-            :predicted-total-cost="grokWeeklyBillingBar.predictedTotalCost"
-            :show-now-when-idle="true"
-            color="indigo"
-          />
-          <UsageProgressBar
-            v-if="grokMonthlyBillingBar"
-            label="30d"
-            :utilization="grokMonthlyBillingBar.utilization"
-            :resets-at="grokMonthlyBillingBar.resetsAt"
-            :window-stats="grokMonthlyBillingBar.windowStats"
-            :show-now-when-idle="true"
-            color="indigo"
-          />
-          <div
-            v-if="grokPrepaidMoneyLine"
-            class="flex flex-wrap items-center gap-1 text-[10px] text-muted"
-          >
-            <span
-              v-if="grokPrepaidMoneyLine.showPrepaid"
-              class="rounded bg-[color-mix(in_oklch,var(--success)_16%,transparent)] px-1 py-0.5 text-success-text"
-              :title="t('admin.accounts.usageWindow.grokPrepaid')"
-            >
-              {{ t('admin.accounts.usageWindow.grokPrepaid') }} ${{ grokPrepaidMoneyLine.prepaid }}
-            </span>
-            <span
-              v-if="grokPrepaidMoneyLine.showUsedLimit"
-              :title="t('admin.accounts.usageWindow.grokMonthlyLimit')"
-            >
-              {{ t('admin.accounts.usageWindow.grokUsed') }}
-              {{ grokPrepaidMoneyLine.used }}/{{ grokPrepaidMoneyLine.limit }}
-            </span>
-          </div>
-          <div v-if="grokQuotaUnknown" class="text-[10px] text-muted">
-            {{ grokQuotaUnknownLabel }}
-          </div>
-        </template>
-        <div v-if="usageInfo.error" class="truncate text-xs text-warning-text max-w-[200px]" :title="usageInfo.error">
-          {{ usageErrorLabel }}
-        </div>
-        <div v-if="grokRetryAfterLabel" class="text-[10px] text-warning-text">
-          {{ t('admin.accounts.usageWindow.grokRetryAfter', { time: grokRetryAfterLabel }) }}
-        </div>
-        <GrokQuotaProbeCell :account="account" compact @probed="handleGrokProbed" />
-      </div>
-      <div v-else class="space-y-1">
-        <div class="text-xs text-muted">-</div>
-        <GrokQuotaProbeCell :account="account" compact @probed="handleGrokProbed" />
-      </div>
+      <GrokUsageBlock :account="account" :usage-info="usageInfo" :loading="loading" :error="error" @probed="handleGrokProbed" />
     </template>
 
     <!-- CN providers (Kimi / Zhipu / DeepSeek): coding-plan quota or payg balance -->
@@ -498,112 +243,14 @@
 
     <!-- Gemini platform: show quota + local usage window -->
     <template v-else-if="account.platform === 'gemini'">
-      <!-- Auth Type + Tier Badge (first line) -->
-      <div v-if="geminiAuthTypeLabel" class="mb-1 flex items-center gap-1">
-        <span
-          :class="[
-            'inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-            geminiTierClass
-          ]"
-        >
-          {{ geminiAuthTypeLabel }}
-        </span>
-        <!-- Help icon -->
-        <span
-          class="group relative cursor-help"
-        >
-          <svg
-            class="h-3.5 w-3.5 text-muted hover:text-muted"
-            fill="currentColor"
-            viewBox="0 0 20 20"
-          >
-            <path
-              fill-rule="evenodd"
-              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z"
-              clip-rule="evenodd"
-            />
-          </svg>
-          <span
-            class="pointer-events-none absolute left-0 top-full z-50 mt-1 w-80 whitespace-normal break-words rounded bg-[var(--code-bg)] px-3 py-2 text-xs leading-relaxed text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100"
-          >
-            <div class="font-semibold mb-1">{{ t('admin.accounts.gemini.quotaPolicy.title') }}</div>
-            <div class="mb-2 text-muted">{{ t('admin.accounts.gemini.quotaPolicy.note') }}</div>
-            <div class="space-y-1">
-              <div><strong>{{ geminiQuotaPolicyChannel }}:</strong></div>
-              <div class="pl-2">• {{ geminiQuotaPolicyLimits }}</div>
-              <div class="mt-2">
-                <a :href="geminiQuotaPolicyDocsUrl" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">
-                  {{ t('admin.accounts.gemini.quotaPolicy.columns.docs') }} →
-                </a>
-              </div>
-            </div>
-          </span>
-        </span>
-      </div>
-
-      <!-- Usage data or unlimited flow -->
-      <div class="space-y-1">
-        <div
-          v-if="showGeminiTodayStats && todayStats"
-          class="mb-0.5 flex items-center"
-        >
-          <div class="flex items-center gap-1.5 text-[9px] text-muted">
-            <span class="rounded bg-surface-2 px-1.5 py-0.5">
-              {{ formatKeyRequests }} req
-            </span>
-            <span class="rounded bg-surface-2 px-1.5 py-0.5">
-              {{ formatKeyTokens }}
-            </span>
-            <span class="rounded bg-surface-2 px-1.5 py-0.5" :title="t('usage.accountBilled')">
-              A ${{ formatKeyCost }}
-            </span>
-            <span
-              v-if="todayStats.user_cost != null"
-              class="rounded bg-surface-2 px-1.5 py-0.5"
-              :title="t('usage.userBilled')"
-            >
-              U ${{ formatKeyUserCost }}
-            </span>
-          </div>
-        </div>
-        <div
-          v-else-if="showGeminiTodayStats && todayStatsLoading"
-          class="mb-0.5 flex items-center gap-1"
-        >
-          <div class="h-3 w-10 animate-pulse rounded bg-surface-3"></div>
-          <div class="h-3 w-8 animate-pulse rounded bg-surface-3"></div>
-          <div class="h-3 w-12 animate-pulse rounded bg-surface-3"></div>
-        </div>
-        <div v-if="loading" class="space-y-1">
-          <div class="flex items-center gap-1">
-            <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-            <div class="h-1.5 w-8 animate-pulse rounded-full bg-surface-3"></div>
-            <div class="h-3 w-[32px] animate-pulse rounded bg-surface-3"></div>
-          </div>
-        </div>
-        <div v-else-if="error" class="text-xs text-red-500">
-          {{ error }}
-        </div>
-        <!-- Gemini: show daily usage bars when available -->
-        <div v-else-if="geminiUsageAvailable" class="space-y-1">
-          <UsageProgressBar
-            v-for="bar in geminiUsageBars"
-            :key="bar.key"
-            :label="bar.label"
-            :utilization="bar.utilization"
-            :resets-at="bar.resetsAt"
-            :window-stats="bar.windowStats"
-            :color="bar.color"
-          />
-          <p class="mt-1 text-[9px] leading-tight text-muted italic">
-            * {{ t('admin.accounts.gemini.quotaPolicy.simulatedNote') || 'Simulated quota' }}
-          </p>
-        </div>
-        <!-- AI Studio Client OAuth: show unlimited flow (no usage tracking) -->
-        <div v-else class="text-xs text-muted">
-          {{ t('admin.accounts.gemini.rateLimit.unlimited') }}
-        </div>
-      </div>
+      <GeminiUsageBlock
+        :account="account"
+        :usage-info="usageInfo"
+        :loading="loading"
+        :error="error"
+        :today-stats="todayStats"
+        :today-stats-loading="todayStatsLoading"
+      />
     </template>
 
     <!-- Other accounts: no usage window -->
@@ -686,24 +333,32 @@
       >-</div>
     </div>
   </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
-import type { Account, AccountUsageInfo, GeminiCredentials, WindowStats } from '@/types'
+import type { Account, AccountUsageInfo, WindowStats } from '@/types'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { enqueueUsageRequest } from '@/utils/usageLoadQueue'
-import { formatCompactNumber } from '@/utils/format'
 import UsageProgressBar from './UsageProgressBar.vue'
 import AccountQuotaInfo from './AccountQuotaInfo.vue'
 import OpenAIQuotaResetCell from './OpenAIQuotaResetCell.vue'
-import GrokQuotaProbeCell from './GrokQuotaProbeCell.vue'
 import CNProviderQuotaCell from './CNProviderQuotaCell.vue'
 import CNProviderBalanceCell from './CNProviderBalanceCell.vue'
 import OllamaCloudUsageCell from './OllamaCloudUsageCell.vue'
 import { cnQuotaCellVisible as cnQuotaCellVisibleFn, cnBalanceCellVisible as cnBalanceCellVisibleFn } from './credentialsBuilder'
+import UsageWindowCell, { type UsageWindow } from '@/components/common/cells/UsageWindowCell.vue'
+import AntigravityUsageBlock from './usage/AntigravityUsageBlock.vue'
+import KiroUsageBlock from './usage/KiroUsageBlock.vue'
+import GrokUsageBlock from './usage/GrokUsageBlock.vue'
+import GeminiUsageBlock from './usage/GeminiUsageBlock.vue'
+import { useApiKeyQuota } from './usage/useApiKeyQuota'
+import { useAntigravityUsage } from './usage/useAntigravityUsage'
+import { useTodayStatsFormat } from './usage/useTodayStatsFormat'
 
 // Module-level cache shared across all AccountUsageCell instances
 const _usageCache = new Map<number, { data: AccountUsageInfo; ts: number }>()
@@ -719,6 +374,10 @@ const props = withDefaults(
     batchedUsageError?: string | null
     batchedUsageLoading?: boolean
     requestBatchedUsage?: ((account: Account, options?: { force?: boolean }) => void) | null
+    /** Render a compact 2-line summary (5h/7d or 1d/7d) with the full detail moved into a hover popover.
+     * Used by the accounts table (glass-04) to keep row height fixed; other consumers (e.g. the
+     * account monitor view) keep the full always-expanded layout by leaving this false. */
+    compact?: boolean
   }>(),
   {
     todayStats: null,
@@ -727,7 +386,8 @@ const props = withDefaults(
     batchedUsage: null,
     batchedUsageError: null,
     batchedUsageLoading: false,
-    requestBatchedUsage: null
+    requestBatchedUsage: null,
+    compact: false
   }
 )
 
@@ -810,42 +470,6 @@ const cnBalanceCellVisible = computed(() => cnBalanceCellVisibleFn(props.account
 
 const isBatchManaged = computed(() => typeof props.requestBatchedUsage === 'function')
 
-const kiroQuotaStats = computed<WindowStats | null>(() => {
-  if (props.account.platform !== 'kiro') return null
-  if (usageInfo.value?.kiro_quota?.window_stats) return usageInfo.value.kiro_quota.window_stats
-  return { requests: 0, tokens: 0, cost: 0, standard_cost: 0, user_cost: 0 }
-})
-
-const kiroOverageCapabilityValue = computed(() => (usageInfo.value?.kiro_overage_capability || '').trim().toUpperCase())
-
-const kiroOverageDisplay = computed(() => {
-  if (usageInfo.value?.kiro_overage_enabled === true) return 'true'
-  if (usageInfo.value?.kiro_overage_enabled === false) return 'false'
-  const capability = kiroOverageCapabilityValue.value
-  if (['SUPPORTED', 'ENABLED', 'AVAILABLE', 'CAPABLE'].includes(capability)) return 'false'
-  return 'null'
-})
-
-const formatKiroMoney = (value?: number | null): string => {
-  if (value == null || Number.isNaN(value)) return '0.00'
-  return value.toFixed(2)
-}
-
-const showGeminiTodayStats = computed(() => {
-  return props.account.platform === 'gemini' && props.account.type === 'service_account'
-})
-
-const geminiUsageAvailable = computed(() => {
-  return (
-    !!usageInfo.value?.gemini_shared_daily ||
-    !!usageInfo.value?.gemini_pro_daily ||
-    !!usageInfo.value?.gemini_flash_daily ||
-    !!usageInfo.value?.gemini_shared_minute ||
-    !!usageInfo.value?.gemini_pro_minute ||
-    !!usageInfo.value?.gemini_flash_minute
-  )
-})
-
 const hasOpenAIUsageFallback = computed(() => {
   if (props.account.platform !== 'openai' || props.account.type !== 'oauth') return false
   return !!usageInfo.value?.five_hour || !!usageInfo.value?.seven_day
@@ -861,559 +485,24 @@ const shouldLazyLoadOnMobile = computed(() => {
   return shouldFetchUsage.value && !isDesktopViewport.value
 })
 
-// Antigravity quota types (用于 API 返回的数据)
-interface AntigravityUsageResult {
-  utilization: number
-  resetTime: string | null
-}
-
-// ===== Antigravity quota from API (usageInfo.antigravity_quota) =====
-
-// 检查是否有从 API 获取的配额数据
-const hasAntigravityQuotaFromAPI = computed(() => {
-  return usageInfo.value?.antigravity_quota && Object.keys(usageInfo.value.antigravity_quota).length > 0
-})
-
-// 从 API 配额数据中获取使用率（多模型取最高使用率）
-const getAntigravityUsageFromAPI = (
-  modelNames: string[]
-): AntigravityUsageResult | null => {
-  const quota = usageInfo.value?.antigravity_quota
-  if (!quota) return null
-
-  let maxUtilization = 0
-  let earliestReset: string | null = null
-
-  for (const model of modelNames) {
-    const modelQuota = quota[model]
-    if (!modelQuota) continue
-
-    if (modelQuota.utilization > maxUtilization) {
-      maxUtilization = modelQuota.utilization
-    }
-    if (modelQuota.reset_time) {
-      if (!earliestReset || modelQuota.reset_time < earliestReset) {
-        earliestReset = modelQuota.reset_time
-      }
-    }
-  }
-
-  // 如果没有找到任何匹配的模型
-  if (maxUtilization === 0 && earliestReset === null) {
-    const hasAnyData = modelNames.some((m) => quota[m])
-    if (!hasAnyData) return null
-  }
-
-  return {
-    utilization: maxUtilization,
-    resetTime: earliestReset
-  }
-}
-
-// Gemini 3 Pro from API
-const antigravity3ProUsageFromAPI = computed(() =>
-  getAntigravityUsageFromAPI(['gemini-3-pro-low', 'gemini-3-pro-high', 'gemini-3-pro-preview'])
+const { hasApiKeyQuota, quotaDailyBar, quotaWeeklyBar, quotaTotalBar } = useApiKeyQuota(
+  computed(() => props.account)
 )
 
-// Gemini 3 Flash from API
-const antigravity3FlashUsageFromAPI = computed(() => getAntigravityUsageFromAPI(['gemini-3-flash']))
-
-// Gemini Image from API
-const antigravity3ImageUsageFromAPI = computed(() =>
-  getAntigravityUsageFromAPI(['gemini-2.5-flash-image', 'gemini-3.1-flash-image', 'gemini-3-pro-image'])
+const {
+  hasAntigravityQuotaFromAPI,
+  antigravity3ProUsageFromAPI,
+  antigravity3FlashUsageFromAPI,
+  antigravity3ImageUsageFromAPI,
+  antigravityClaudeUsageFromAPI
+} = useAntigravityUsage(
+  computed(() => props.account),
+  usageInfo
 )
 
-// Claude from API (all Claude model variants)
-const antigravityClaudeUsageFromAPI = computed(() =>
-  getAntigravityUsageFromAPI([
-    'claude-fable-5-1',
-    'claude-fable-5',
-    'claude-sonnet-4-5', 'claude-opus-4-5-thinking',
-    'claude-sonnet-4-6', 'claude-opus-4-6', 'claude-opus-4-6-thinking',
-    'claude-opus-4-7', 'claude-opus-4-8',
-  ])
+const { formatKeyRequests, formatKeyTokens, formatKeyCost, formatKeyUserCost } = useTodayStatsFormat(
+  computed(() => props.todayStats)
 )
-
-const aiCreditsDisplay = computed(() => {
-  const credits = usageInfo.value?.ai_credits
-  if (!credits || credits.length === 0) return null
-  const total = credits.reduce((sum, credit) => sum + (credit.amount ?? 0), 0)
-  if (total <= 0) return null
-  return total.toFixed(0)
-})
-
-// Antigravity 账户类型（从 load_code_assist 响应中提取）
-const antigravityTier = computed(() => {
-  const extra = props.account.extra as Record<string, unknown> | undefined
-  if (!extra) return null
-
-  const loadCodeAssist = extra.load_code_assist as Record<string, unknown> | undefined
-  if (!loadCodeAssist) return null
-
-  // 优先取 paidTier，否则取 currentTier
-  const paidTier = loadCodeAssist.paidTier as Record<string, unknown> | undefined
-  if (paidTier && typeof paidTier.id === 'string') {
-    return paidTier.id
-  }
-
-  const currentTier = loadCodeAssist.currentTier as Record<string, unknown> | undefined
-  if (currentTier && typeof currentTier.id === 'string') {
-    return currentTier.id
-  }
-
-  return null
-})
-
-// Gemini 账户类型（从 credentials 中提取）
-const geminiTier = computed(() => {
-  if (props.account.platform !== 'gemini') return null
-  const creds = props.account.credentials as GeminiCredentials | undefined
-  return creds?.tier_id || null
-})
-
-const geminiOAuthType = computed(() => {
-  if (props.account.platform !== 'gemini') return null
-  const creds = props.account.credentials as GeminiCredentials | undefined
-  return (creds?.oauth_type || '').trim() || null
-})
-
-// Gemini 是否为 Code Assist OAuth
-const isGeminiCodeAssist = computed(() => {
-  if (props.account.platform !== 'gemini') return false
-  const creds = props.account.credentials as GeminiCredentials | undefined
-  return creds?.oauth_type === 'code_assist' || (!creds?.oauth_type && !!creds?.project_id)
-})
-
-const geminiChannelShort = computed((): 'ai studio' | 'gcp' | 'google one' | 'client' | null => {
-  if (props.account.platform !== 'gemini') return null
-
-  // API Key accounts are AI Studio.
-  if (props.account.type === 'apikey') return 'ai studio'
-
-  if (geminiOAuthType.value === 'google_one') return 'google one'
-  if (isGeminiCodeAssist.value) return 'gcp'
-  if (geminiOAuthType.value === 'ai_studio') return 'client'
-
-  // Fallback (unknown legacy data): treat as AI Studio.
-  return 'ai studio'
-})
-
-const geminiUserLevel = computed((): string | null => {
-  if (props.account.platform !== 'gemini') return null
-
-  const tier = (geminiTier.value || '').toString().trim()
-  const tierLower = tier.toLowerCase()
-  const tierUpper = tier.toUpperCase()
-
-  // Google One: free / pro / ultra
-  if (geminiOAuthType.value === 'google_one') {
-    if (tierLower === 'google_one_free') return 'free'
-    if (tierLower === 'google_ai_pro') return 'pro'
-    if (tierLower === 'google_ai_ultra') return 'ultra'
-
-    // Backward compatibility (legacy tier markers)
-    if (tierUpper === 'AI_PREMIUM' || tierUpper === 'GOOGLE_ONE_STANDARD') return 'pro'
-    if (tierUpper === 'GOOGLE_ONE_UNLIMITED') return 'ultra'
-    if (tierUpper === 'FREE' || tierUpper === 'GOOGLE_ONE_BASIC' || tierUpper === 'GOOGLE_ONE_UNKNOWN' || tierUpper === '') return 'free'
-
-    return null
-  }
-
-  // GCP Code Assist: standard / enterprise
-  if (isGeminiCodeAssist.value) {
-    if (tierLower === 'gcp_enterprise') return 'enterprise'
-    if (tierLower === 'gcp_standard') return 'standard'
-
-    // Backward compatibility
-    if (tierUpper.includes('ULTRA') || tierUpper.includes('ENTERPRISE')) return 'enterprise'
-    return 'standard'
-  }
-
-  // AI Studio (API Key) and Client OAuth: free / paid
-  if (props.account.type === 'apikey' || geminiOAuthType.value === 'ai_studio') {
-    if (tierLower === 'aistudio_paid') return 'paid'
-    if (tierLower === 'aistudio_free') return 'free'
-
-    // Backward compatibility
-    if (tierUpper.includes('PAID') || tierUpper.includes('PAYG') || tierUpper.includes('PAY')) return 'paid'
-    if (tierUpper.includes('FREE')) return 'free'
-    if (props.account.type === 'apikey') return 'free'
-    return null
-  }
-
-  return null
-})
-
-// Gemini 认证类型（按要求：授权方式简称 + 用户等级）
-const geminiAuthTypeLabel = computed(() => {
-  if (props.account.platform !== 'gemini') return null
-  if (!geminiChannelShort.value) return null
-  return geminiUserLevel.value ? `${geminiChannelShort.value} ${geminiUserLevel.value}` : geminiChannelShort.value
-})
-
-// Gemini 账户类型徽章样式（统一样式）
-const geminiTierClass = computed(() => {
-  // Use channel+level to choose a stable color without depending on raw tier_id variants.
-  const channel = geminiChannelShort.value
-  const level = geminiUserLevel.value
-
-  if (channel === 'client' || channel === 'ai studio') {
-    return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
-  }
-
-  if (channel === 'google one') {
-    if (level === 'ultra') return 'bg-purple-100 text-purple-600'
-    if (level === 'pro') return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
-    return 'bg-surface-2 text-muted'
-  }
-
-  if (channel === 'gcp') {
-    if (level === 'enterprise') return 'bg-purple-100 text-purple-600'
-    return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
-  }
-
-  return ''
-})
-
-// Gemini 配额政策信息
-const geminiQuotaPolicyChannel = computed(() => {
-  if (geminiOAuthType.value === 'google_one') {
-    return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.channel')
-  }
-  if (isGeminiCodeAssist.value) {
-    return t('admin.accounts.gemini.quotaPolicy.rows.gcp.channel')
-  }
-  return t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.channel')
-})
-
-const geminiQuotaPolicyLimits = computed(() => {
-  const tierLower = (geminiTier.value || '').toString().trim().toLowerCase()
-
-  if (geminiOAuthType.value === 'google_one') {
-    if (tierLower === 'google_ai_ultra' || geminiUserLevel.value === 'ultra') {
-      return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsUltra')
-    }
-    if (tierLower === 'google_ai_pro' || geminiUserLevel.value === 'pro') {
-      return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsPro')
-    }
-    return t('admin.accounts.gemini.quotaPolicy.rows.googleOne.limitsFree')
-  }
-
-  if (isGeminiCodeAssist.value) {
-    if (tierLower === 'gcp_enterprise' || geminiUserLevel.value === 'enterprise') {
-      return t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsEnterprise')
-    }
-    return t('admin.accounts.gemini.quotaPolicy.rows.gcp.limitsStandard')
-  }
-
-  // AI Studio (API Key / custom OAuth)
-  if (tierLower === 'aistudio_paid' || geminiUserLevel.value === 'paid') {
-    return t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsPaid')
-  }
-  return t('admin.accounts.gemini.quotaPolicy.rows.aiStudio.limitsFree')
-})
-
-const geminiQuotaPolicyDocsUrl = computed(() => {
-  if (geminiOAuthType.value === 'google_one' || isGeminiCodeAssist.value) {
-    return 'https://developers.google.com/gemini-code-assist/resources/quotas'
-  }
-  return 'https://ai.google.dev/pricing'
-})
-
-const geminiUsesSharedDaily = computed(() => {
-  if (props.account.platform !== 'gemini') return false
-  // Per requirement: Google One & GCP are shared RPD pools (no per-model breakdown).
-  return (
-    !!usageInfo.value?.gemini_shared_daily ||
-    !!usageInfo.value?.gemini_shared_minute ||
-    geminiOAuthType.value === 'google_one' ||
-    isGeminiCodeAssist.value
-  )
-})
-
-const geminiUsageBars = computed(() => {
-  if (props.account.platform !== 'gemini') return []
-  if (!usageInfo.value) return []
-
-  const bars: Array<{
-    key: string
-    label: string
-    utilization: number
-    resetsAt: string | null
-    windowStats?: WindowStats | null
-    color: 'indigo' | 'emerald'
-  }> = []
-
-  if (geminiUsesSharedDaily.value) {
-    const sharedDaily = usageInfo.value.gemini_shared_daily
-    if (sharedDaily) {
-      bars.push({
-        key: 'shared_daily',
-        label: '1d',
-        utilization: sharedDaily.utilization,
-        resetsAt: sharedDaily.resets_at,
-        windowStats: sharedDaily.window_stats,
-        color: 'indigo'
-      })
-    }
-    return bars
-  }
-
-  const pro = usageInfo.value.gemini_pro_daily
-  if (pro) {
-    bars.push({
-      key: 'pro_daily',
-      label: 'pro',
-      utilization: pro.utilization,
-      resetsAt: pro.resets_at,
-      windowStats: pro.window_stats,
-      color: 'indigo'
-      })
-  }
-
-  const flash = usageInfo.value.gemini_flash_daily
-  if (flash) {
-    bars.push({
-      key: 'flash_daily',
-      label: 'flash',
-      utilization: flash.utilization,
-      resetsAt: flash.resets_at,
-      windowStats: flash.window_stats,
-      color: 'emerald'
-    })
-  }
-
-  return bars
-})
-
-interface GrokQuotaBarInfo {
-  utilization: number
-  resetsAt: string | null
-  windowStats?: WindowStats | null
-  predictedTotalCost?: number | null
-}
-
-const grokBilling = computed(() => usageInfo.value?.grok_billing || null)
-const grokLocalUsage7d = computed(() => (
-  usageInfo.value?.grok_local_usage_7d || usageInfo.value?.seven_day?.window_stats || null
-))
-const grokLocalUsageMonthly = computed(() => (
-  usageInfo.value?.grok_local_usage_monthly || usageInfo.value?.thirty_day?.window_stats || null
-))
-const grokWeeklyBillingBar = computed((): GrokQuotaBarInfo | null => {
-  const billing = grokBilling.value
-  if (billing?.period_type?.toLowerCase() !== 'weekly' || billing.usage_percent == null) {
-    return null
-  }
-  return {
-    utilization: Math.min(100, Math.max(0, billing.usage_percent)),
-    resetsAt: billing.period_end || null,
-    windowStats: grokLocalUsage7d.value,
-    predictedTotalCost: grokLocalUsage7d.value && billing.usage_percent > 0
-      ? grokLocalUsage7d.value.cost * 100 / billing.usage_percent
-      : null
-  }
-})
-// Monthly used/limit % from billing probe (used_percent or derived from cents).
-const grokMonthlyBillingBar = computed((): GrokQuotaBarInfo | null => {
-  const billing = grokBilling.value
-  if (!billing) return null
-  let utilization: number | null = null
-  if (billing.used_percent != null && Number.isFinite(billing.used_percent)) {
-    utilization = billing.used_percent
-  } else if (
-    billing.monthly_limit_cents != null &&
-    billing.monthly_limit_cents > 0 &&
-    billing.used_cents != null
-  ) {
-    utilization = (billing.used_cents / billing.monthly_limit_cents) * 100
-  }
-  if (utilization == null) return null
-  // Avoid duplicating the weekly bar when period_type is weekly-only without monthly.
-  if (billing.period_type?.toLowerCase() === 'weekly' && billing.monthly_limit_cents == null) {
-    return null
-  }
-  return {
-    utilization: Math.min(100, Math.max(0, utilization)),
-    resetsAt: billing.billing_period_end || billing.period_end || null,
-    windowStats: grokLocalUsageMonthly.value
-  }
-})
-const formatGrokMoney = (value?: number | null) => {
-  if (value == null || Number.isNaN(value)) return '0'
-  if (value >= 1000) return formatCompactNumber(value)
-  if (value >= 100) return value.toFixed(0)
-  if (value >= 10) return value.toFixed(1)
-  return value.toFixed(2)
-}
-// Prepaid chip only when there is a positive prepaid balance.
-// Used/limit only when monthly limit is a positive number (0 means unlimited / unset).
-const grokPrepaidMoneyLine = computed(() => {
-  const billing = grokBilling.value
-  if (!billing) return null
-  const prepaid = billing.prepaid_balance
-  const showPrepaid = prepaid != null && Number.isFinite(prepaid) && prepaid > 0
-  const limitRaw =
-    billing.monthly_limit != null
-      ? billing.monthly_limit
-      : billing.monthly_limit_cents != null
-        ? billing.monthly_limit_cents / 100
-        : null
-  const showUsedLimit = limitRaw != null && Number.isFinite(limitRaw) && limitRaw > 0
-  if (!showPrepaid && !showUsedLimit) return null
-  const used =
-    billing.monthly_used != null
-      ? billing.monthly_used
-      : billing.used_cents != null
-        ? billing.used_cents / 100
-        : 0
-  return {
-    showPrepaid,
-    showUsedLimit,
-    prepaid: showPrepaid ? formatGrokMoney(prepaid) : null,
-    used: showUsedLimit ? formatGrokMoney(used) : null,
-    limit: showUsedLimit ? formatGrokMoney(limitRaw) : null
-  }
-})
-const grokPlanLabelIsFree = (value: string) => value.includes('free') || value.includes('basic')
-const grokPlanLabelIsPaid = (value: string) => {
-  return value !== '' && !grokPlanLabelIsFree(value) && !value.includes('unknown')
-}
-const grokIsFree = computed(() => {
-  if (props.account.platform !== 'grok' || props.account.type !== 'oauth') return false
-  const billing = grokBilling.value
-  const plan = (billing?.plan || '').trim().toLowerCase()
-  const tier = (usageInfo.value?.subscription_tier || '').trim().toLowerCase()
-  const entitlement = (usageInfo.value?.grok_entitlement_status || '').toLowerCase()
-  if (grokPlanLabelIsFree(tier)) return true
-  if (grokPlanLabelIsPaid(tier)) return false
-  if (
-    billing?.usage_percent != null ||
-    billing?.used_percent != null ||
-    (billing?.monthly_limit_cents != null && billing.monthly_limit_cents > 0)
-  ) return false
-  if (grokPlanLabelIsPaid(plan)) return false
-  if (
-    grokPlanLabelIsFree(plan) ||
-    grokPlanLabelIsFree(entitlement)
-  ) return true
-  return billing != null
-})
-const grokFreeQuotaUsage = computed(() => usageInfo.value?.grok_local_usage_24h || null)
-const grokFreeTokenBar = computed(() => {
-  if (!grokIsFree.value || !grokFreeQuotaUsage.value) return null
-  const limit = usageInfo.value?.grok_free_token_limit
-  if (typeof limit !== 'number' || limit <= 0) return null
-  const used = Math.max(0, grokFreeQuotaUsage.value.tokens || 0)
-  return { utilization: Math.min(100, (used / limit) * 100), limit }
-})
-const grokQuotaUnknown = computed(() => {
-  if (props.account.platform !== 'grok') return false
-  if (grokIsFree.value) {
-    return !grokFreeTokenBar.value
-  }
-  if (grokWeeklyBillingBar.value || grokMonthlyBillingBar.value || grokPrepaidMoneyLine.value) {
-    return false
-  }
-  return usageInfo.value?.grok_quota_snapshot_state !== 'observed'
-})
-const grokQuotaUnknownLabel = computed(() => {
-  return usageInfo.value?.grok_quota_snapshot_state === 'no_headers'
-    ? t('admin.accounts.usageWindow.grokNoHeaders')
-    : t('admin.accounts.usageWindow.grokUnknown')
-})
-const grokRetryAfterLabel = computed(() => {
-  const seconds = usageInfo.value?.grok_retry_after_seconds
-  if (seconds == null || seconds <= 0) return null
-  if (seconds < 60) return `${seconds}s`
-  const minutes = Math.ceil(seconds / 60)
-  return `${minutes}m`
-})
-
-// 账户类型显示标签
-const antigravityTierLabel = computed(() => {
-  switch (antigravityTier.value) {
-    case 'free-tier':
-      return t('admin.accounts.tier.free')
-    case 'g1-pro-tier':
-      return t('admin.accounts.tier.pro')
-    case 'g1-ultra-tier':
-      return t('admin.accounts.tier.ultra')
-    default:
-      return null
-  }
-})
-
-// 账户类型徽章样式
-const antigravityTierClass = computed(() => {
-  switch (antigravityTier.value) {
-    case 'free-tier':
-      return 'bg-surface-2 text-muted'
-    case 'g1-pro-tier':
-      return 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
-    case 'g1-ultra-tier':
-      return 'bg-purple-100 text-purple-600'
-    default:
-      return ''
-  }
-})
-
-// 检测账户是否有不合格状态（ineligibleTiers）
-const hasIneligibleTiers = computed(() => {
-  const extra = props.account.extra as Record<string, unknown> | undefined
-  if (!extra) return false
-
-  const loadCodeAssist = extra.load_code_assist as Record<string, unknown> | undefined
-  if (!loadCodeAssist) return false
-
-  const ineligibleTiers = loadCodeAssist.ineligibleTiers as unknown[] | undefined
-  return Array.isArray(ineligibleTiers) && ineligibleTiers.length > 0
-})
-
-// Antigravity 403 forbidden 状态
-const isForbidden = computed(() => !!usageInfo.value?.is_forbidden)
-const forbiddenType = computed(() => usageInfo.value?.forbidden_type || 'forbidden')
-const validationURL = computed(() => usageInfo.value?.validation_url || '')
-
-// 需要重新授权（401）
-const needsReauth = computed(() => !!usageInfo.value?.needs_reauth)
-
-// 降级错误标签（rate_limited / network_error）
-const usageErrorLabel = computed(() => {
-  const code = usageInfo.value?.error_code
-  if (code === 'rate_limited') return t('admin.accounts.rateLimited')
-  return t('admin.accounts.usageError')
-})
-
-const forbiddenLabel = computed(() => {
-  switch (forbiddenType.value) {
-    case 'validation':
-      return t('admin.accounts.forbiddenValidation')
-    case 'violation':
-      return t('admin.accounts.forbiddenViolation')
-    default:
-      return t('admin.accounts.forbidden')
-  }
-})
-
-const forbiddenBadgeClass = computed(() => {
-  if (forbiddenType.value === 'validation') {
-    return 'bg-yellow-100 text-yellow-700'
-  }
-  return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
-})
-
-const linkCopied = ref(false)
-const copyValidationURL = async () => {
-  if (!validationURL.value) return
-  try {
-    await navigator.clipboard.writeText(validationURL.value)
-    linkCopied.value = true
-    setTimeout(() => { linkCopied.value = false }, 2000)
-  } catch {
-    // fallback: ignore
-  }
-}
 
 const isAnthropicOAuthOrSetupToken = computed(() => {
   return props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token')
@@ -1537,69 +626,42 @@ const handleGrokProbed = async () => {
   await loadUsage({ source: 'active', bypassCache: true })
 }
 
-// ===== API Key quota progress bars =====
-
-interface QuotaBarInfo {
-  utilization: number
-  resetsAt: string | null
-}
-
-const makeQuotaBar = (
-  used: number,
-  limit: number,
-  startKey?: string
-): QuotaBarInfo => {
-  const utilization = limit > 0 ? (used / limit) * 100 : 0
-  let resetsAt: string | null = null
-  if (startKey) {
-    const extra = props.account.extra as Record<string, unknown> | undefined
-    const isDaily = startKey.includes('daily')
-    const mode = isDaily
-      ? (extra?.quota_daily_reset_mode as string) || 'rolling'
-      : (extra?.quota_weekly_reset_mode as string) || 'rolling'
-
-    if (mode === 'fixed') {
-      // Use pre-computed next reset time for fixed mode
-      const resetAtKey = isDaily ? 'quota_daily_reset_at' : 'quota_weekly_reset_at'
-      resetsAt = (extra?.[resetAtKey] as string) || null
-    } else {
-      // Rolling mode: compute from start + period
-      const startStr = extra?.[startKey] as string | undefined
-      if (startStr) {
-        const startDate = new Date(startStr)
-        const periodMs = isDaily ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000
-        resetsAt = new Date(startDate.getTime() + periodMs).toISOString()
-      }
-    }
+/** Compact-mode summary rows (glass-04 table). Prefers the Anthropic-style 5h/7d windows,
+ * falls back to the API-key style 1d/7d/total quota bars, otherwise renders empty (the
+ * compact trigger then shows a plain "-" and the full detail still covers every other case). */
+const summaryWindows = computed((): UsageWindow[] => {
+  if (usageInfo.value?.five_hour || usageInfo.value?.seven_day) {
+    const windows: UsageWindow[] = []
+    if (usageInfo.value.five_hour) windows.push({ label: '5h', percent: usageInfo.value.five_hour.utilization })
+    if (usageInfo.value.seven_day) windows.push({ label: '7d', percent: usageInfo.value.seven_day.utilization })
+    return windows
   }
-  return { utilization, resetsAt }
-}
-
-const hasApiKeyQuota = computed(() => {
-  if (props.account.type !== 'apikey' && props.account.type !== 'bedrock') return false
-  return (
-    (props.account.quota_daily_limit ?? 0) > 0 ||
-    (props.account.quota_weekly_limit ?? 0) > 0 ||
-    (props.account.quota_limit ?? 0) > 0
-  )
-})
-
-const quotaDailyBar = computed((): QuotaBarInfo | null => {
-  const limit = props.account.quota_daily_limit ?? 0
-  if (limit <= 0) return null
-  return makeQuotaBar(props.account.quota_daily_used ?? 0, limit, 'quota_daily_start')
-})
-
-const quotaWeeklyBar = computed((): QuotaBarInfo | null => {
-  const limit = props.account.quota_weekly_limit ?? 0
-  if (limit <= 0) return null
-  return makeQuotaBar(props.account.quota_weekly_used ?? 0, limit, 'quota_weekly_start')
-})
-
-const quotaTotalBar = computed((): QuotaBarInfo | null => {
-  const limit = props.account.quota_limit ?? 0
-  if (limit <= 0) return null
-  return makeQuotaBar(props.account.quota_used ?? 0, limit)
+  if (quotaDailyBar.value || quotaWeeklyBar.value || quotaTotalBar.value) {
+    const windows: UsageWindow[] = []
+    if (quotaDailyBar.value) windows.push({ label: '1d', percent: quotaDailyBar.value.utilization })
+    if (quotaWeeklyBar.value) windows.push({ label: '7d', percent: quotaWeeklyBar.value.utilization })
+    if (!quotaDailyBar.value && !quotaWeeklyBar.value && quotaTotalBar.value) {
+      windows.push({ label: 'total', percent: quotaTotalBar.value.utilization })
+    }
+    return windows
+  }
+  if (hasAntigravityQuotaFromAPI.value) {
+    const windows: UsageWindow[] = []
+    if (antigravityClaudeUsageFromAPI.value) {
+      windows.push({ label: 'Claude', percent: antigravityClaudeUsageFromAPI.value.utilization })
+    }
+    if (antigravity3ProUsageFromAPI.value) {
+      windows.push({ label: 'G3Pro', percent: antigravity3ProUsageFromAPI.value.utilization })
+    }
+    if (windows.length < 2 && antigravity3FlashUsageFromAPI.value) {
+      windows.push({ label: 'Flash', percent: antigravity3FlashUsageFromAPI.value.utilization })
+    }
+    if (windows.length < 2 && antigravity3ImageUsageFromAPI.value) {
+      windows.push({ label: 'Img', percent: antigravity3ImageUsageFromAPI.value.utilization })
+    }
+    if (windows.length > 0) return windows.slice(0, 2)
+  }
+  return []
 })
 
 const handleQuotaResetAccountUpdated = (account: Account) => {
@@ -1609,28 +671,6 @@ const handleQuotaResetAccountUpdated = (account: Account) => {
 const handleOllamaCloudUsageUpdated = (state: NonNullable<Account['ollama_cloud_usage']>) => {
   emit('account-updated', { ...props.account, ollama_cloud_usage: state })
 }
-
-// ===== Key account today stats formatters =====
-
-const formatKeyRequests = computed(() => {
-  if (!props.todayStats) return ''
-  return formatCompactNumber(props.todayStats.requests, { allowBillions: false })
-})
-
-const formatKeyTokens = computed(() => {
-  if (!props.todayStats) return ''
-  return formatCompactNumber(props.todayStats.tokens)
-})
-
-const formatKeyCost = computed(() => {
-  if (!props.todayStats) return '0.00'
-  return props.todayStats.cost.toFixed(2)
-})
-
-const formatKeyUserCost = computed(() => {
-  if (!props.todayStats || props.todayStats.user_cost == null) return '0.00'
-  return props.todayStats.user_cost.toFixed(2)
-})
 
 onMounted(() => {
   if (typeof window !== 'undefined') {
@@ -1757,3 +797,49 @@ onUnmounted(() => {
   desktopViewportMediaQuery = null
 })
 </script>
+
+<style scoped>
+/* Non-compact consumers (e.g. the account monitor view) render exactly as before: a plain
+ * always-visible block with no positioning changes. */
+.acct-usage-cell-detail {
+  min-width: 0;
+}
+
+.acct-usage-cell-empty {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Compact mode (glass-04 accounts table): show only the 2-line summary inline, and reveal the
+ * full detail (every branch above, unchanged) as a floating panel on hover/focus so it never
+ * grows the table row. */
+.acct-usage-cell-wrap.is-compact {
+  position: relative;
+  min-width: 0;
+}
+
+.acct-usage-cell-wrap.is-compact .acct-usage-cell-detail {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  margin-top: 4px;
+  width: max-content;
+  min-width: 220px;
+  max-width: 280px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.acct-usage-cell-wrap.is-compact:hover .acct-usage-cell-detail,
+.acct-usage-cell-wrap.is-compact:focus-within .acct-usage-cell-detail {
+  opacity: 1;
+  pointer-events: auto;
+}
+</style>

@@ -2,7 +2,9 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import FilterBar from '../FilterBar.vue'
-import { readUi } from './source'
+import { readUi, uiDir } from './source'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const originalMatchMedia = window.matchMedia
 
@@ -36,6 +38,18 @@ afterEach(() => {
 })
 
 describe('FilterBar', () => {
+  it.each([
+    'admin/PromoCodesView.vue', 'admin/ProxiesView.vue', 'admin/AnnouncementsView.vue',
+    'admin/AuditLogView.vue', 'admin/affiliates/AdminAffiliateRecordsTable.vue',
+    'admin/ChannelsView.vue', 'admin/SubscriptionsView.vue',
+    'user/KeysView.vue', 'user/UserInvoicesView.vue'
+  ])('uses the shared mobile filter panel without a duplicate parent panel in %s', (file) => {
+    const source = readFileSync(resolve(uiDir, '../../views', file), 'utf8')
+    expect(source).toContain('<FilterBar')
+    expect(source).toContain('<template #filters>')
+    expect(source).not.toContain('showMobileFilters')
+  })
+
   it('renders search and filter slots on desktop', async () => {
     mockTabletUp(true)
     const wrapper = mount(FilterBar, {

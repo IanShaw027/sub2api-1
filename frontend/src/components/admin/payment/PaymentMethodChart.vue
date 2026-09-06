@@ -53,19 +53,19 @@ const props = defineProps<{
 }>()
 
 const colorMap: Record<string, string> = {
-  alipay: 'bg-blue-500',
-  wxpay: 'bg-green-500',
-  alipay_direct: 'bg-blue-400',
-  wxpay_direct: 'bg-green-400',
-  stripe: 'bg-purple-500',
+  alipay: 'bg-accent-500',
+  wxpay: 'bg-success-500',
+  alipay_direct: 'bg-accent-400',
+  wxpay_direct: 'bg-success-400',
+  stripe: 'bg-accent-500',
 }
 
 const barColorMap: Record<string, string> = {
-  alipay: 'bg-blue-500',
-  wxpay: 'bg-green-500',
-  alipay_direct: 'bg-blue-400',
-  wxpay_direct: 'bg-green-400',
-  stripe: 'bg-purple-500',
+  alipay: 'bg-accent-500',
+  wxpay: 'bg-success-500',
+  alipay_direct: 'bg-accent-400',
+  wxpay_direct: 'bg-success-400',
+  stripe: 'bg-accent-500',
 }
 
 const maxAmounts = computed<CurrencyAmounts>(() => {

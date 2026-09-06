@@ -1,6 +1,10 @@
 /*
- * Glass design tokens.
- * OKLCH values are defined locally; do not load webfonts.
+ * Glass design tokens — shared with the "Sub2API Redesign" design canvas.
+ * Names match AgentBox glass-color.css so the theme can be swapped 1:1.
+ *
+ * Mount points:
+ *   html[data-theme="glass-light" | "glass-dark"]
+ *   html[data-accent="blue" | "sky" | "indigo" | "teal" | "violet"]
  */
 
 :root,
@@ -12,30 +16,124 @@
   --surface: oklch(100% 0 0);
   --surface-secondary: oklch(95.24% 0.0023 262.89);
   --surface-tertiary: oklch(92.5% 0.003 262.89);
-  --muted: oklch(55.17% 0.006 259.82);
+  /* 51.19% is the minimum L that clears 4.5:1 against --canvas (the darkest of the
+     light-theme surfaces muted text sits on); 50% keeps a small safety margin. */
+  --muted: oklch(50% 0.006 259.82);
   --border: oklch(90% 0.003 259.82);
+  /* Prototype hairline above stays for decorative card/table edges. Controls whose border is
+     their only boundary (checkbox, switch, radio) and the keyboard focus outline use these two,
+     tuned to ≥3:1 against --canvas (WCAG 1.4.11): 59% L → 3.2:1 / 3.3:1 on canvas. */
+  --border-strong: oklch(59% 0.006 259.82);
   --accent: oklch(62.31% 0.1881 259.82);
+  --focus-ring: oklch(59% 0.1881 259.82);
   --success: oklch(73.29% 0.1946 151.55);
   --success-text: oklch(45% 0.15 151.55);
   --warning: oklch(78.19% 0.1593 73.04);
-  --warning-text: oklch(52% 0.14 73.04);
+  --warning-text: oklch(49% 0.14 73.04);
   --danger: oklch(65.32% 0.2342 26.45);
-  --danger-text: oklch(52% 0.2 26.45);
+  --danger-text: oklch(49% 0.2 26.45);
+  --info: var(--accent);
+  --info-text: color-mix(in oklch, var(--accent) 64%, var(--foreground));
   --code-bg: oklch(20% 0.01 262);
   --shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.75), 0 1px 2px rgba(16, 24, 40, 0.04),
     0 20px 40px -24px rgba(16, 24, 40, 0.16);
   --shadow-hover: inset 0 1px 0 0 rgba(255, 255, 255, 0.75), 0 2px 4px rgba(16, 24, 40, 0.05),
     0 28px 48px -24px rgba(16, 24, 40, 0.24);
+  --shadow-pop: 0 1px 2px rgba(16, 24, 40, 0.06), 0 24px 48px -16px rgba(16, 24, 40, 0.28);
   --btn-hi: rgba(255, 255, 255, 0.65);
   --field-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.05);
-  --display: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-    'Microsoft YaHei', 'Noto Sans SC', sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --thumb: linear-gradient(180deg, #fff, #eef0f4);
+  --scrim: rgba(0, 0, 0, 0.28);
+
+  /* Typography */
+  --display: 'Manrope', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Radii */
   --radius-sm: 8px;
   --radius-btn: 10px;
   --radius-field: 12px;
   --radius-card: 14px;
   --radius-hero: 16px;
+  --radius-panel: 20px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+  --radius-5: 5px;
+  --radius-6: 6px;
+  --radius-7: 7px;
+  --radius-18: 18px;
+  --radius-bar: 6px 6px 3px 3px; /* chart bar tops */
+  --radius-bar-sm: 3px 3px 1px 1px;
+
+  /* Type scale — the prototype's px sizes for page-level cells and headings; the shared
+     surface classes in style.css carry their own sizes, these are for views/** scoped styles
+     (ui-lint --scoped only accepts var() for font-size/font-weight/border-radius there). */
+  --fs-9-5: 9.5px;
+  --fs-10-5: 10.5px;
+  --fs-11: 11px;
+  --fs-11-5: 11.5px;
+  --fs-12: 12px;
+  --fs-12-5: 12.5px;
+  --fs-13: 13px;
+  --fs-13-5: 13.5px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-17: 17px;
+  --fs-22: 22px;
+  --fs-24: 24px;
+  --fs-30: 30px;
+  --fs-40: 40px;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  /* Text and inset ring on solid tone fills (accent/success/danger buttons and pills) */
+  --on-tone: #fff;
+  --ring-on-tone: color-mix(in oklch, white 14%, transparent);
+
+  /* Layout */
+  --sidebar-width: 212px;
+  --sidebar-width-collapsed: 60px;
+  --sidebar-gutter: 12px;
+  --topbar-height: 60px;
+  --content-pad: 8px 24px 24px 20px;
+  /* ActionPage (redeem / affiliate): one content-column width, left-aligned with the h1 */
+  --action-page-max: 960px;
+
+  /* Public page backgrounds (home / auth): 48px grid + ambient light */
+  --bg-grid: linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px)
+      0 0 / 48px 48px,
+    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px)
+      0 0 / 48px 48px;
+  --bg-ambient: radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 22%, transparent) 0%, transparent 30rem),
+    radial-gradient(circle at 18% 100%, color-mix(in oklch, var(--accent) 10%, transparent) 0%, transparent 30rem),
+    radial-gradient(circle at 100% 0%, color-mix(in oklch, var(--success) 14%, transparent) 0%, transparent 24rem),
+    radial-gradient(circle at 50% 42%, color-mix(in oklch, var(--accent) 9%, transparent) 0%, transparent 32rem);
+  --bg-public: var(--bg-grid), var(--bg-ambient), var(--background);
+  --bg-workspace: var(--bg-ambient), var(--background);
+
+  /* Brand mark gradient (logo tile) */
+  --brand-gradient: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent) 70%, white) 0%,
+    var(--accent) 55%,
+    color-mix(in oklch, var(--accent) 80%, black) 100%
+  );
+  --brand-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 6px 14px -6px var(--accent);
+
+  /* Gradient hairline ring used on hero cards (mask trick) */
+  --ring-gradient: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--accent) 55%, transparent),
+    transparent 35%,
+    transparent 65%,
+    color-mix(in oklch, var(--success) 45%, transparent)
+  );
 }
 
 [data-theme='glass-dark'] {
@@ -47,19 +145,28 @@
   --surface-secondary: oklch(25.7% 0.0023 262.89);
   --surface-tertiary: oklch(30% 0.003 262.89);
   --muted: oklch(70.5% 0.006 259.82);
-  --border: oklch(28% 0.003 259.82);
+  /* 50.38% is the minimum L that clears 3:1 against --surface (the closest-in-lightness
+     of the surfaces --border is drawn against in dark mode: canvas/background/surface);
+     51% keeps a small safety margin so input/field borders are perceivable (WCAG 1.4.11). */
+  --border: oklch(51% 0.003 259.82);
+  --border-strong: var(--border);
   --accent: oklch(62.31% 0.1881 259.82);
+  --focus-ring: var(--accent);
   --success: oklch(73.29% 0.1946 151.55);
   --success-text: var(--success);
   --warning: oklch(78.19% 0.1593 73.04);
   --warning-text: var(--warning);
   --danger: oklch(65.32% 0.2342 26.45);
   --danger-text: oklch(72% 0.2 26.45);
+  --info-text: color-mix(in oklch, var(--accent) 64%, var(--foreground));
   --code-bg: oklch(15% 0.008 262);
   --shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07), 0 20px 40px -24px rgba(0, 0, 0, 0.6);
   --shadow-hover: inset 0 1px 0 0 rgba(255, 255, 255, 0.09), 0 28px 48px -24px rgba(0, 0, 0, 0.8);
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.4), 0 24px 48px -16px rgba(0, 0, 0, 0.7);
   --btn-hi: rgba(255, 255, 255, 0.06);
   --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  --thumb: linear-gradient(180deg, #fff, #e6e8ee);
+  --scrim: rgba(0, 0, 0, 0.5);
 }
 
 [data-accent='sky'] {
@@ -80,7 +187,9 @@
 
 html,
 body {
-  font-family: var(--display);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 code,
@@ -92,4 +201,14 @@ samp {
 
 ::selection {
   background: color-mix(in oklch, var(--accent) 22%, transparent);
+}
+
+@keyframes s2a-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--success) 60%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
 }

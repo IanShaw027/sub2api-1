@@ -13,7 +13,7 @@
         <span
           class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium ring-1 ring-inset"
           :class="summary?.pin_known_ips
- ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-amber-700 ring-amber-200'
+ ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-700 ring-warning-200'
  : 'bg-surface-2 text-muted ring-line'"
         >
           {{ summary?.pin_known_ips ? t('admin.usage.ipPin.enabled') : t('admin.usage.ipPin.disabled') }}
@@ -151,9 +151,9 @@ function statusLabel(item: UserIPSummaryItem): string {
 }
 
 function statusClass(item: UserIPSummaryItem): string {
-  if (item.ban_status === 'active') return 'bg-rose-50 text-rose-700 ring-rose-200'
-  if (item.ban_status === 'whitelisted') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-emerald-200'
-  if (item.ban_status === 'released') return 'bg-slate-50 text-slate-600 ring-slate-200'
+  if (item.ban_status === 'active') return 'bg-danger-50 text-danger-700 ring-danger-200'
+  if (item.ban_status === 'whitelisted') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-success-200'
+  if (item.ban_status === 'released') return 'bg-surface-2 text-muted ring-surface-3'
   return 'bg-surface-2 text-muted ring-line'
 }
 

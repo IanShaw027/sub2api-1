@@ -15,9 +15,14 @@ const { t } = useI18n()
 </script>
 
 <template>
-  <UiModal :open="open" :title="t('studio.preview')" @close="emit('close')">
+  <UiModal
+    :open="open"
+    :title="t('studio.preview')"
+    :close-label="t('studio.a11y.closePreview')"
+    @close="emit('close')"
+  >
     <div v-if="imageUrl" class="studio-preview-wrap">
-      <img :src="imageUrl" alt="" class="studio-preview-image" />
+      <img :src="imageUrl" :alt="t('studio.a11y.previewImage')" class="studio-preview-image" />
     </div>
   </UiModal>
 </template>

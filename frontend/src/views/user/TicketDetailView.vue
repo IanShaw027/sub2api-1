@@ -1,61 +1,71 @@
 <template>
- <AppLayout>
- <PageHeader :title="ticket?.title || t('tickets.title')" :description="ticket?.ticket_no || t('tickets.detailConversationTitle')" />
- <GlassCard v-if="loading" class="p-10 text-center text-sm text-muted">
- {{ t('common.loading') }}
- </GlassCard>
- <div v-else-if="ticket" class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
- <div v-if="editing" class="min-h-0 xl:col-span-2">
- <TicketEditorCard
- :category="ticket.category"
- :title="ticket.title"
- :payload="ticket.current_form_payload || {}"
- :disable-category="true"
- :submit-label="t('tickets.resubmit')"
- :submitting="submittingEdit"
- :show-cancel="true"
- :user-concurrency="authStore.user?.concurrency ?? null"
- :rate-groups="rateGroups"
- @submit="saveAndSubmit"
- @cancel="exitEditMode"
- />
- </div>
+  <AppLayout>
+    <PageHeader
+      :title="ticket?.title || ticket?.ticket_no || t('tickets.title')"
+      :description="ticket ? `#${ticket.ticket_no} · ${t(`tickets.categories.${ticket.category}`)}` : t('tickets.detailConversationTitle')"
+    >
+      <template #actions>
+        <Button variant="secondary" @click="goBack">
+          <Icon name="arrowLeft" size="sm" :stroke-width="1.8" />
+          {{ t('common.back') }}
+        </Button>
+      </template>
+    </PageHeader>
 
- <template v-else>
- <div class="min-h-0">
- <TicketConversationPane
- :title="t('tickets.detailConversationTitle')"
- :subtitle="ticket.ticket_no"
- :messages="messages"
- :empty-text="t('tickets.emptyConversation')"
- :show-composer="canReply"
- :sending="sendingReply"
- :clear-composer-key="clearComposerKey"
- :composer-placeholder="t('tickets.replyPlaceholder')"
- :submit-text="t('tickets.reply')"
- :sending-text="t('common.submitting')"
- :ticket-id="ticketID"
- :upload-fn="uploadTicketMedia"
- :download-fn="downloadAttachment"
- @reply="reply"
- @upload-error="handleUploadError"
- />
- </div>
+    <GlassCard v-if="loading" class="detail-loading text-[13px]">
+      {{ t('common.loading') }}
+    </GlassCard>
 
- <div class="min-h-0 h-full">
- <TicketDetailPane :ticket="ticket">
- <template #actions>
- <div class="flex flex-wrap gap-3">
-                <Button v-if="canWithdraw" variant="secondary" :disabled="actionLoading" @click="withdrawAndEdit">{{ t('tickets.actions.withdrawEdit') }}</Button>
-                <Button v-if="ticket.status === 'withdrawn'" variant="secondary" @click="enterEditMode">{{ t('tickets.actions.edit') }}</Button>
-                <Button v-if="canClose" variant="secondary" :disabled="actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</Button>
- </div>
- </template>
- </TicketDetailPane>
- </div>
- </template>
- </div>
- </AppLayout>
+    <div v-else-if="ticket && editing" class="ticket-edit-wrap">
+      <TicketEditorCard
+        :category="ticket.category"
+        :title="ticket.title"
+        :payload="ticket.current_form_payload || {}"
+        :disable-category="true"
+        :submit-label="t('tickets.resubmit')"
+        :submitting="submittingEdit"
+        :show-cancel="true"
+        :user-concurrency="authStore.user?.concurrency ?? null"
+        :rate-groups="rateGroups"
+        @submit="saveAndSubmit"
+        @cancel="exitEditMode"
+      />
+    </div>
+
+    <DetailPageLayout v-else-if="ticket" class="ticket-detail-layout">
+      <template #main>
+        <TicketConversationPane
+          :title="t('tickets.detailConversationTitle')"
+          :subtitle="ticket.ticket_no"
+          :messages="messages"
+          :empty-text="t('tickets.emptyConversation')"
+          :show-composer="canReply"
+          :sending="sendingReply"
+          :clear-composer-key="clearComposerKey"
+          :composer-placeholder="t('tickets.replyPlaceholder')"
+          :submit-text="t('tickets.reply')"
+          :sending-text="t('common.submitting')"
+          :ticket-id="ticketID"
+          :upload-fn="uploadTicketMedia"
+          :download-fn="downloadAttachment"
+          @reply="reply"
+          @upload-error="handleUploadError"
+        />
+      </template>
+
+      <template #side>
+        <TicketDetailPane :ticket="ticket">
+          <template #actions>
+            <div class="flex flex-wrap gap-3">
+              <Button v-if="canWithdraw" variant="secondary" :disabled="actionLoading" @click="withdrawAndEdit">{{ t('tickets.actions.withdrawEdit') }}</Button>
+              <Button v-if="ticket.status === 'withdrawn'" variant="secondary" @click="enterEditMode">{{ t('tickets.actions.edit') }}</Button>
+              <Button v-if="canClose" variant="secondary" :disabled="actionLoading" @click="closeCurrentTicket">{{ t('tickets.actions.close') }}</Button>
+            </div>
+          </template>
+        </TicketDetailPane>
+      </template>
+    </DetailPageLayout>
+  </AppLayout>
 </template>
 
 <script setup lang="ts">
@@ -63,9 +73,11 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import DetailPageLayout from '@/components/layout/DetailPageLayout.vue'
 import Button from '@/components/ui/Button.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import { ticketsAPI } from '@/api/tickets'
 import { mediaAPI } from '@/api/media'
@@ -101,6 +113,14 @@ let loadDetailRequestID = 0
 
 function ticketError(err: unknown) {
   return extractI18nErrorMessage(err, t, 'tickets.errors', t('common.unknownError'))
+}
+
+function goBack() {
+  if (window.history.length > 1) {
+    router.back()
+    return
+  }
+  router.push('/tickets')
 }
 
 function syncEditingWithRoute() {
@@ -271,3 +291,38 @@ watch(
   { immediate: true },
 )
 </script>
+
+<style scoped>
+.detail-loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.ticket-edit-wrap {
+  display: flex;
+  min-height: calc(100vh - 10rem);
+}
+
+.ticket-edit-wrap :deep(> *) {
+  flex: 1;
+  min-height: 0;
+}
+
+/* The conversation pane and side meta card both size themselves to 100% of
+   their parent (with their own internal scroll areas), so the layout needs
+   an explicit, viewport-relative height here — DetailPageLayout itself stays
+   height-agnostic for pages that just want natural page scroll. */
+.ticket-detail-layout :deep(.detail-page-layout-grid) {
+  height: calc(100vh - 10rem);
+  min-height: calc(100vh - 10rem);
+  align-items: stretch;
+}
+
+.ticket-detail-layout :deep(.detail-page-layout-main),
+.ticket-detail-layout :deep(.detail-page-layout-side) {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+</style>

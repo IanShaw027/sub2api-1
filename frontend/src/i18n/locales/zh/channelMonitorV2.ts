@@ -2,6 +2,8 @@
 export default {
   channelMonitorV2: {
     title: '渠道监控',
+    heroKicker: '实时监控',
+    heroDescription: '跨平台、分组与模型的健康度、延迟与错误总览',
     updating: '正在更新数据',
     updatedTo: '更新至 {time}',
     partialCoverage: '部分历史覆盖',
@@ -22,6 +24,7 @@ export default {
     otherModels: '其他模型',
     ignored: '忽略',
     currentUser: '当前用户',
+    healthState: { healthy: '健康', warning: '警告', critical: '严重', unknown: '未知' },
     ranges: { '90m': '90m', '24h': '24h', '7d': '7d', '30d': '30d' },
     filters: {
       platform: '平台', allPlatforms: '全部', group: '分组', allGroups: '全部', model: '模型', allModels: '全部',
@@ -95,6 +98,8 @@ export default {
       refreshTitle: '汇总频率',
       refreshHint: '影响矩阵时间粒度与刷新节奏',
       refreshAria: '汇总频率',
+      refreshOneMinute: '1 分钟',
+      refreshFiveMinutes: '5 分钟',
       platformsTitle: '平台与模型',
       platformsHint: '留空 = 展示全部真实模型名；填写后仅名单内单独成行，其余归入「其他」',
       modelsPlaceholder: '留空=全部真实模型；或填写主流模型名单（其余归其他）',

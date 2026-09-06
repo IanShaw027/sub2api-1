@@ -2,12 +2,20 @@ export default {
   dashboard: {
     title: '仪表盘',
     welcomeMessage: '欢迎回来！这是您账户的概览。',
+    heroGreetingMorning: '早上好',
+    heroGreetingAfternoon: '下午好',
+    heroGreetingEvening: '晚上好',
+    heroTitleLead: '今天已发送 ',
+    heroTitleTail: ' 次请求',
+    heroSummary: '今日消耗 {tokens} tokens，产生 ${cost} 费用，平均响应 {duration}',
     balance: '余额',
     apiKeys: 'API 密钥',
     todayRequests: '今日请求',
     todayCost: '今日消费',
     todayTokens: '今日 Token',
+    totalRequests: '总请求数',
     totalTokens: '累计 Token',
+    totalCost: '总消费',
     cacheToday: '今日缓存',
     performance: '性能指标',
     liveRpm: '实时 RPM',
@@ -70,15 +78,35 @@ export default {
   // API Keys
   keys: {
     title: 'API 密钥',
-    description: '管理您的 API 密钥和访问令牌',
-    searchPlaceholder: '搜索名称或Key...',
+    description: '创建和管理用于调用网关的密钥，按分组选择模型池与限额',
+    searchPlaceholder: '搜索密钥名称',
     endpoints: {
       title: 'API 端点',
       default: '默认',
+      custom: '自定义',
+      copy: '复制',
       copied: '已复制',
       copiedHint: '已复制到剪贴板',
       clickToCopy: '点击可复制此端点',
       speedTest: '测速',
+      titleAnthropic: 'API 端点 · Anthropic 协议',
+      titleCustomPrefix: 'API 端点 · ',
+      anthropicDesc: 'Claude Code、Cline 等使用 /v1/messages',
+      openaiDesc: 'Codex CLI、Cursor、OpenAI SDK 使用 /chat/completions',
+    },
+    filters: {
+      toggle: '筛选',
+    },
+    sortedByPrefix: '按 ',
+    sortedBySuffix: ' 排序',
+    usageQuery: '用量查询',
+    moreActions: '更多操作',
+    use: '使用',
+    showKey: '显示密钥',
+    hideKey: '隐藏密钥',
+    ccsImport: {
+      title: '导入到 CC-Switch',
+      description: '选择要导入到 CC-Switch 的 API 密钥。',
     },
     allGroups: '全部分组',
     allStatus: '全部状态',
@@ -98,7 +126,7 @@ export default {
     created: '创建时间',
     copyToClipboard: '复制到剪贴板',
     copied: '已复制！',
-    importToCcSwitch: '导入到 CCS',
+    importToCcSwitch: '导入到 CC Switch',
     enable: '启用',
     disable: '禁用',
     nameLabel: '名称',
@@ -287,12 +315,19 @@ export default {
     expiresAt: '过期时间',
     noExpiration: '永久有效',
     status: {
-      active: '活跃',
+      active: '启用',
       inactive: '已停用',
       disabled: '已禁用',
       quota_exhausted: '额度耗尽',
       expired: '已过期'
-    }
+    },
+    miniStats: {
+      total: '密钥总数',
+      active: '启用中',
+      todaySpend: '今日消费',
+    },
+    nameIdColumn: '名称 / ID',
+    usageColumnHeader: '用量 今日 · 累计',
   },
 
   // Usage
@@ -696,7 +731,10 @@ export default {
       button: '转入余额',
       transferring: '转入中...',
       empty: '当前没有可转入额度',
-      success: '已转入余额：{amount}'
+      success: '已转入余额：{amount}',
+      confirmTitle: '确认转入余额',
+      confirmMessage: '将把可用返利额度 {amount} 转入账户余额，此操作无法撤销，确定继续吗？',
+      confirmButton: '确认转入'
     },
     invitees: {
       title: '已邀请用户',
@@ -757,13 +795,34 @@ export default {
     codeRedeemSuccess: '兑换成功！',
     failedToRedeem: '兑换失败，请检查兑换码后重试。',
     subscriptionRefreshFailed: '兑换成功，但订阅状态刷新失败。',
-    pleaseEnterCode: '请输入兑换码'
+    pleaseEnterCode: '请输入兑换码',
+    totalRecharged: '累计充值',
+    filter: {
+      all: '全部类型',
+      balance: '余额',
+      concurrency: '并发',
+      subscription: '订阅',
+      adminAdjustment: '管理员调整'
+    },
+    columns: {
+      type: '类型',
+      code: '兑换码',
+      time: '时间',
+      amount: '金额'
+    }
   },
 
   // Profile
   profile: {
     title: '个人设置',
     description: '管理您的账户信息和设置',
+    nav: {
+      profile: '资料',
+      security: '安全',
+      notify: '通知',
+      bindings: '绑定',
+      danger: '危险区',
+    },
     accountBalance: '账户余额',
     concurrencyLimit: '并发限制',
     rpmLimit: 'RPM 限制',
@@ -776,7 +835,12 @@ export default {
     linkedProfileSources: '资料来源',
     linkedProfileSourcesDescription: '部分头像和昵称可能同步自第三方登录方式。',
     securityTitle: '安全设置',
-    securityDescription: '密码、双因素认证和通知提醒集中放在右侧。',
+    securityDescription: '管理登录密码、双因素认证（2FA）和 Passkey 免密登录。',
+    dangerZone: {
+      title: '危险区',
+      description: '账户级别的高风险操作。',
+      noActionsAvailable: '当前版本暂无可用的账户级高危操作（如注销账号）。',
+    },
     administrator: '管理员',
     user: '用户',
     username: '用户名',
@@ -970,7 +1034,7 @@ export default {
     showing: '显示',
     to: '至',
     of: '共',
-    results: '条结果',
+    results: '条',
     page: '页',
     pageOf: '第 {page} / {total} 页',
     previous: '上一页',

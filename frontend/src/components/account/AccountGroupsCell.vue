@@ -36,7 +36,7 @@
         <div
           v-if="showPopover"
           ref="popoverRef"
-          class="fixed z-50 min-w-48 max-w-96 rounded-lg border border-line bg-surface p-3 shadow-lg"
+          class="fixed z-50 min-w-48 max-w-96 rounded-lg border border-line bg-surface p-3 shadow-[var(--shadow-pop)]"
           :style="popoverStyle"
         >
           <div class="mb-2 flex items-center justify-between">

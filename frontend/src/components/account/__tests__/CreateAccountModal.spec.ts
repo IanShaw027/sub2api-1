@@ -1,6 +1,8 @@
 import { defineComponent } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+enableAutoUnmount(afterEach)
 
 const {
   createAccountMock,
@@ -157,10 +159,23 @@ function mountModal(groups: any[] = []) {
   })
 }
 
+// Platform panels (OpenAIPanel, AnthropicPanel, AntigravityPanel, etc.) are
+// defineAsyncComponent. Their first dynamic import() in a given test run needs a
+// real module transform (not just a microtask flush), so poll for a bit instead
+// of assuming a fixed number of flushPromises() calls is enough.
+async function findButtonByText(wrapper: ReturnType<typeof mountModal>, text: string) {
+  return vi.waitFor(() => {
+    const button = wrapper.findAll('button').find((candidate) => candidate.text().includes(text))
+    expect(button, `Button not ready: ${text}`).toBeDefined()
+    return button!
+  }, { timeout: 5000, interval: 25 })
+}
+
 async function selectButtonByText(wrapper: ReturnType<typeof mountModal>, text: string) {
-  const button = wrapper.findAll('button').find((candidate) => candidate.text().includes(text))
+  const button = await findButtonByText(wrapper, text)
   expect(button).toBeDefined()
   await button?.trigger('click')
+  await flushPromises()
 }
 
 async function submitApiKeyAccount(
@@ -169,6 +184,9 @@ async function submitApiKeyAccount(
   disableUpstreamBillingProbe = false
 ) {
   const wrapper = mountModal()
+  // Default form.platform is 'anthropic', so AnthropicPanel (a defineAsyncComponent)
+  // is already mounting before any button is clicked — flush its import first.
+  await flushPromises()
   await selectButtonByText(wrapper, platform === 'openai' ? 'OpenAI' : 'admin.accounts.claudeConsole')
   if (platform === 'openai') {
     await selectButtonByText(wrapper, 'API Key')

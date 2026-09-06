@@ -275,6 +275,7 @@ export default {
       exportCsv: '导出 CSV',
       batchUpdate: '批量修改',
       batchUpdateTitle: '批量修改兑换码',
+      selectedLabel: '已选',
       selectedCount: '已选择 {count} 个兑换码',
       clearSelection: '清空选择',
       selectCodesFirst: '请先选择兑换码',
@@ -402,6 +403,8 @@ export default {
       form: {
         title: '标题',
         content: '内容（支持 Markdown）',
+        contentPreview: '预览',
+        contentPreviewEmpty: '暂无可预览内容',
         insertImage: '插入图片',
         uploading: '正在上传…',
         uploadFailed: '图片上传失败',

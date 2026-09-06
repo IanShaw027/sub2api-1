@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import Select from '@/components/common/Select.vue'
 import OpsErrorLogTable from './OpsErrorLogTable.vue'
 import { opsAPI, type OpsErrorLog } from '@/api/admin/ops'
@@ -216,8 +216,8 @@ watch(
 </script>
 
 <template>
-  <BaseDialog :show="show" :title="modalTitle" width="full" @close="close">
-    <div class="flex h-full min-h-0 flex-col">
+  <UiModal :open="show" :title="modalTitle" width="xl" @close="close">
+    <div class="flex flex-col">
       <!-- Filters -->
       <div class="mb-4 flex-shrink-0 border-b border-line pb-4 ">
         <div class="grid grid-cols-2 gap-2 md:grid-cols-8">
@@ -225,7 +225,7 @@ watch(
             <div class="relative group">
               <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                 <svg
-                  class="h-3.5 w-3.5 text-muted transition-colors group-focus-within:text-blue-500"
+                  class="h-3.5 w-3.5 text-muted transition-colors group-focus-within:text-accent-500"
                   fill="none"
                   viewBox="0 0 24 24"
                   stroke="currentColor"
@@ -236,7 +236,7 @@ watch(
               <input
                 v-model="q"
                 type="text"
-                class="w-full rounded-lg border-line bg-surface-2 py-1.5 pl-9 pr-3 text-xs font-medium text-foreground transition-all focus:border-blue-500 focus:bg-surface focus:ring-2 focus:ring-blue-500/10    "
+                class="w-full rounded-lg border-line bg-surface-2 py-1.5 pl-9 pr-3 text-xs font-medium text-foreground transition-all focus:border-accent-500 focus:bg-surface focus:ring-2 focus:ring-accent-500/10    "
                 :placeholder="t('admin.ops.errorDetails.searchPlaceholder')"
               />
             </div>
@@ -269,13 +269,12 @@ watch(
       </div>
 
       <!-- Body -->
-      <div class="flex min-h-0 flex-1 flex-col">
+      <div class="flex flex-col">
         <div class="mb-2 flex-shrink-0 text-xs text-muted ">
           {{ t('admin.ops.errorDetails.total') }} {{ total }}
         </div>
 
           <OpsErrorLogTable
-            class="min-h-0 flex-1"
             :rows="rows"
             :total="total"
             :loading="loading"
@@ -290,7 +289,7 @@ watch(
 
       </div>
     </div>
-  </BaseDialog>
+  </UiModal>
 </template>
 
 <style>

@@ -2,12 +2,20 @@ export default {
   dashboard: {
     title: 'Dashboard',
     welcomeMessage: "Welcome back! Here's an overview of your account.",
+    heroGreetingMorning: 'Good morning',
+    heroGreetingAfternoon: 'Good afternoon',
+    heroGreetingEvening: 'Good evening',
+    heroTitleLead: 'You have sent ',
+    heroTitleTail: ' requests today',
+    heroSummary: 'Today: {tokens} tokens consumed, ${cost} spent, {duration} average response',
     balance: 'Balance',
     apiKeys: 'API Keys',
     todayRequests: 'Today Requests',
     todayCost: 'Today Cost',
     todayTokens: 'Today Tokens',
+    totalRequests: 'Total Requests',
     totalTokens: 'Total Tokens',
+    totalCost: 'Total Cost',
     cacheToday: 'Cache (Today)',
     performance: 'Performance',
     liveRpm: 'Live RPM',
@@ -70,15 +78,35 @@ export default {
   // API Keys
   keys: {
     title: 'API Keys',
-    description: 'Manage your API keys and access tokens',
-    searchPlaceholder: 'Search name or key...',
+    description: 'Create and manage keys for calling the gateway, choosing model pools and limits by group',
+    searchPlaceholder: 'Search key name',
     endpoints: {
       title: 'API Endpoints',
       default: 'Default',
+      custom: 'Custom',
+      copy: 'Copy',
       copied: 'Copied',
       copiedHint: 'Copied to clipboard',
       clickToCopy: 'Click to copy this endpoint',
       speedTest: 'Speed Test',
+      titleAnthropic: 'API Endpoint · Anthropic Protocol',
+      titleCustomPrefix: 'API Endpoint · ',
+      anthropicDesc: 'Claude Code, Cline, etc. use /v1/messages',
+      openaiDesc: 'Codex CLI, Cursor, OpenAI SDK use /chat/completions',
+    },
+    filters: {
+      toggle: 'Filters',
+    },
+    sortedByPrefix: 'Sorted by ',
+    sortedBySuffix: '',
+    usageQuery: 'Usage Query',
+    moreActions: 'More actions',
+    use: 'Use',
+    showKey: 'Show key',
+    hideKey: 'Hide key',
+    ccsImport: {
+      title: 'Import to CC-Switch',
+      description: 'Choose which API key to import into CC-Switch.',
     },
     allGroups: 'All Groups',
     allStatus: 'All Status',
@@ -98,7 +126,7 @@ export default {
     created: 'Created',
     copyToClipboard: 'Copy to clipboard',
     copied: 'Copied!',
-    importToCcSwitch: 'Import to CCS',
+    importToCcSwitch: 'Import to CC Switch',
     enable: 'Enable',
     disable: 'Disable',
     nameLabel: 'Name',
@@ -288,6 +316,13 @@ export default {
       quota_exhausted: 'Quota Exhausted',
       expired: 'Expired',
     },
+    miniStats: {
+      total: 'Total Keys',
+      active: 'Active',
+      todaySpend: 'Today Spend',
+    },
+    nameIdColumn: 'Name / ID',
+    usageColumnHeader: 'Usage Today · Total',
   },
 
   // Usage
@@ -692,7 +727,10 @@ export default {
       button: 'Transfer to Balance',
       transferring: 'Transferring...',
       empty: 'No available rebate quota',
-      success: '{amount} has been transferred to your balance'
+      success: '{amount} has been transferred to your balance',
+      confirmTitle: 'Confirm Transfer',
+      confirmMessage: 'This will transfer your available rebate quota of {amount} into your account balance. This cannot be undone. Continue?',
+      confirmButton: 'Confirm Transfer'
     },
     invitees: {
       title: 'Invited Users',
@@ -753,13 +791,34 @@ export default {
     codeRedeemSuccess: 'Code redeemed successfully!',
     failedToRedeem: 'Failed to redeem code. Please check the code and try again.',
     subscriptionRefreshFailed: 'Redeemed successfully, but failed to refresh subscription status.',
-    pleaseEnterCode: 'Please enter a redeem code'
+    pleaseEnterCode: 'Please enter a redeem code',
+    totalRecharged: 'Total Recharged',
+    filter: {
+      all: 'All Types',
+      balance: 'Balance',
+      concurrency: 'Concurrency',
+      subscription: 'Subscription',
+      adminAdjustment: 'Admin Adjustment'
+    },
+    columns: {
+      type: 'Type',
+      code: 'Code',
+      time: 'Time',
+      amount: 'Amount'
+    }
   },
 
   // Profile
   profile: {
     title: 'Profile Settings',
     description: 'Manage your account information and settings',
+    nav: {
+      profile: 'Profile',
+      security: 'Security',
+      notify: 'Notifications',
+      bindings: 'Bindings',
+      danger: 'Danger Zone',
+    },
     accountBalance: 'Account Balance',
     concurrencyLimit: 'Concurrency Limit',
     rpmLimit: 'RPM Limit',
@@ -772,7 +831,12 @@ export default {
     linkedProfileSources: 'Profile Sources',
     linkedProfileSourcesDescription: 'Some profile details may stay synced from third-party sign-in methods.',
     securityTitle: 'Security Settings',
-    securityDescription: 'Password, two-factor authentication, and alerts live in the right rail.',
+    securityDescription: 'Manage your login password, two-factor authentication (2FA), and passkeys.',
+    dangerZone: {
+      title: 'Danger Zone',
+      description: 'Account-level high-risk actions.',
+      noActionsAvailable: 'No account-level destructive actions (e.g. account deletion) are available in this build.',
+    },
     administrator: 'Administrator',
     user: 'User',
     username: 'Username',

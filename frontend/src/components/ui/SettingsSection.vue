@@ -1,5 +1,5 @@
 <template>
-  <GlassCard variant="glass" padding="lg" class="ui-settings-section">
+  <GlassCard variant="glass" padding="sm" class="ui-settings-section">
     <header v-if="title || description || $slots.header" class="ui-settings-section-header">
       <slot name="header">
         <h2 v-if="title" class="ui-settings-section-title">{{ title }}</h2>
@@ -22,23 +22,29 @@ defineProps<{
 </script>
 
 <style scoped>
-.ui-settings-section + .ui-settings-section {
-  margin-top: 16px;
+.ui-settings-section.ui-glass-card-pad-sm {
+  padding: 0;
+  overflow: hidden;
 }
 
 .ui-settings-section-header {
-  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
 }
 
 .ui-settings-section-title {
-  font-size: 16px;
-  font-weight: 800;
+  font-family: var(--font-body);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--foreground);
 }
 
 .ui-settings-section-description {
-  margin-top: 4px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--muted);
 }
 

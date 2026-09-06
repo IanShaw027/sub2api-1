@@ -104,7 +104,7 @@
  <template v-if="testResults[proxy.id]">
  <span
  v-if="testResults[proxy.id].success"
- class="inline-flex flex-shrink-0 items-center gap-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700"
+ class="inline-flex flex-shrink-0 items-center gap-1 rounded bg-success-100 px-1.5 py-0.5 text-xs text-success-text"
  >
  <span v-if="testResults[proxy.id].country">{{
  testResults[proxy.id].country
@@ -115,7 +115,7 @@
  </span>
  <span
  v-else
- class="inline-flex flex-shrink-0 items-center rounded bg-red-100 px-1.5 py-0.5 text-xs text-red-700"
+ class="inline-flex flex-shrink-0 items-center rounded bg-danger-100 px-1.5 py-0.5 text-xs text-danger-text"
  >
  {{ t('admin.proxies.testFailed') }}
  </span>
@@ -337,19 +337,29 @@ onUnmounted(() => {
 
 <style scoped>
 .select-trigger {
- @apply flex w-full items-center justify-between gap-2;
- @apply rounded-xl px-4 py-2.5 text-sm;
- @apply bg-surface;
- @apply border border-line;
- @apply text-foreground;
- @apply transition-all duration-200;
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
- @apply hover:border-line;
- @apply cursor-pointer;
+ display: flex;
+ width: 100%;
+ align-items: center;
+ justify-content: space-between;
+ gap: 8px;
+ height: 36px;
+ padding: 0 12px;
+ border-radius: var(--radius-field);
+ background: color-mix(in oklch, var(--surface) 85%, transparent);
+ border: 1px solid var(--border);
+ box-shadow: var(--field-shadow);
+ color: var(--foreground);
+ font-size: 13px;
+ transition: border-color 0.15s ease, box-shadow 0.15s ease;
+ cursor: pointer;
 }
 
+.select-trigger:focus,
+.select-trigger:focus-visible,
 .select-trigger-open {
- @apply border-accent ring-2 ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
+ outline: none;
+ border-color: var(--accent);
+ box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
 }
 
 .select-trigger-disabled {
@@ -365,12 +375,18 @@ onUnmounted(() => {
 }
 
 .select-dropdown {
- @apply absolute z-[100] mt-2 w-full;
- @apply bg-surface;
- @apply rounded-xl;
- @apply border border-line;
- @apply shadow-lg shadow-black/10;
- @apply overflow-hidden;
+ position: absolute;
+ z-index: 100;
+ margin-top: 8px;
+ width: 100%;
+ padding: 6px;
+ border-radius: 12px;
+ background: color-mix(in oklch, var(--surface) 92%, transparent);
+ border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+ box-shadow: var(--shadow-pop);
+ backdrop-filter: blur(20px);
+ -webkit-backdrop-filter: blur(20px);
+ overflow: hidden;
 }
 
 .select-header {
@@ -391,8 +407,8 @@ onUnmounted(() => {
 
 .batch-test-btn {
  @apply flex-shrink-0 rounded-lg p-1.5;
- @apply text-muted hover:text-emerald-600;
- @apply hover:bg-emerald-50;
+ @apply text-muted hover:text-success-text;
+ @apply hover:bg-success-50;
  @apply transition-colors disabled:cursor-not-allowed disabled:opacity-50;
 }
 
@@ -424,8 +440,8 @@ onUnmounted(() => {
 
 .test-btn {
  @apply flex-shrink-0 rounded p-1;
- @apply text-muted hover:text-emerald-600;
- @apply hover:bg-emerald-50;
+ @apply text-muted hover:text-success-text;
+ @apply hover:bg-success-50;
  @apply transition-colors disabled:cursor-not-allowed disabled:opacity-50;
 }
 

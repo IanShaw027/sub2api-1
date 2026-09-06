@@ -48,9 +48,9 @@ const props = defineProps<{
 }>()
 
 function rankClass(idx: number): string {
-  if (idx === 0) return 'bg-yellow-100 text-yellow-700'
+  if (idx === 0) return 'bg-warning-100 text-warning-700'
   if (idx === 1) return 'bg-surface-3 text-muted'
-  if (idx === 2) return 'bg-amber-100 text-amber-700'
+  if (idx === 2) return 'bg-warning-100 text-warning-700'
   return 'bg-surface-2 text-muted'
 }
 

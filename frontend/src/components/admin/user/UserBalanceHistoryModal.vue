@@ -13,7 +13,7 @@
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2">
               <p class="truncate font-medium text-foreground">{{ user.email }}</p>
-              <span v-if="user.deleted_at" class="flex-shrink-0 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-rose-100 text-rose-600 ring-1 ring-inset ring-rose-200">
+              <span v-if="user.deleted_at" class="flex-shrink-0 inline-flex items-center rounded px-1 py-px text-[10px] font-medium leading-tight bg-danger-100 text-danger-600 ring-1 ring-inset ring-danger-200">
                 {{ t('admin.usage.userDeletedBadge') }}
               </span>
               <span
@@ -61,7 +61,7 @@
           @click="emit('deposit')"
           class="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-2"
         >
-          <Icon name="plus" size="sm" class="text-emerald-500" :stroke-width="2" />
+          <Icon name="plus" size="sm" class="text-success-500" :stroke-width="2" />
           {{ t('admin.users.deposit') }}
         </button>
         <!-- Withdraw button - matches menu style -->
@@ -70,7 +70,7 @@
           @click="emit('withdraw')"
           class="flex items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-sm text-foreground transition-colors hover:bg-surface-2"
         >
-          <svg class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg class="h-4 w-4 text-warning-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
           </svg>
           {{ t('admin.users.withdraw') }}
@@ -258,7 +258,7 @@ const getIconBg = (item: BalanceHistoryItem) => {
       ? 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)]'
       : 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]'
   }
-  if (isSubscriptionType(item.type)) return 'bg-purple-100'
+  if (isSubscriptionType(item.type)) return 'bg-accent-100'
   return item.value >= 0
     ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]'
     : 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]'
@@ -271,7 +271,7 @@ const getIconColor = (item: BalanceHistoryItem) => {
       ? 'text-success-text'
       : 'text-danger-text'
   }
-  if (isSubscriptionType(item.type)) return 'text-purple-600'
+  if (isSubscriptionType(item.type)) return 'text-accent-600'
   return item.value >= 0
     ? 'text-accent'
     : 'text-warning-text'
@@ -284,7 +284,7 @@ const getValueColor = (item: BalanceHistoryItem) => {
       ? 'text-success-text'
       : 'text-danger-text'
   }
-  if (isSubscriptionType(item.type)) return 'text-purple-600'
+  if (isSubscriptionType(item.type)) return 'text-accent-600'
   return item.value >= 0
     ? 'text-accent'
     : 'text-warning-text'

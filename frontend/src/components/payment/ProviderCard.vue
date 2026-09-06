@@ -14,12 +14,12 @@
  <div class="flex items-center gap-3">
  <div :class="[
  'rounded-md p-1.5',
- provider.enabled && enabled ? 'bg-green-100' : 'bg-surface-2',
+ provider.enabled && enabled ? 'bg-success-100' : 'bg-surface-2',
  ]">
  <Icon
  name="server"
  size="sm"
- :class="provider.enabled && enabled ? 'text-green-600' : 'text-muted'"
+ :class="provider.enabled && enabled ? 'text-success-text' : 'text-muted'"
  />
  </div>
  <span class="text-sm font-medium text-foreground">{{ provider.name }}</span>
@@ -49,11 +49,11 @@
  <ToggleSwitch v-if="provider.refund_enabled" :label="t('admin.settings.payment.allowUserRefund')" :checked="provider.allow_user_refund" @toggle="emit('toggleField', 'allow_user_refund')" />
  <ToggleSwitch :label="t('admin.settings.payment.invoiceEnabled')" :checked="provider.invoice_enabled" @toggle="emit('toggleField', 'invoice_enabled')" />
  <div class="flex items-center gap-2 border-l border-line pl-3">
- <button type="button" @click="emit('edit')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-blue-50 hover:text-blue-600">
+ <button type="button" @click="emit('edit')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-accent-50 hover:text-accent-600">
  <Icon name="edit" size="sm" />
  <span class="text-xs">{{ t('common.edit') }}</span>
  </button>
- <button type="button" @click="emit('delete')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600">
+ <button type="button" @click="emit('delete')" class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-muted transition-colors hover:bg-danger-50 hover:text-danger-text">
  <Icon name="trash" size="sm" />
  <span class="text-xs">{{ t('common.delete') }}</span>
  </button>

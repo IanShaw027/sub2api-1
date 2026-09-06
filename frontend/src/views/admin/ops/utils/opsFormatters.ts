@@ -11,7 +11,7 @@ import { formatBytes } from '@/utils/format'
 export function getSeverityClass(severity: OpsSeverity): string {
   const classes: Record<string, string> = {
     P0: 'badge-tone-danger',
-    P1: 'bg-orange-500/15 text-orange-700',
+    P1: 'bg-warning-500/15 text-warning-text',
     P2: 'badge-tone-warning',
     P3: 'badge-tone-accent',
   }

@@ -1,41 +1,22 @@
 <template>
- <div class="callback-page px-4 py-10">
- <div class="mx-auto max-w-2xl">
- <div class="glass-card p-6">
- <h1 class="text-lg font-semibold text-foreground">
- {{ callbackTitleText }}
- </h1>
- <p class="mt-2 text-sm text-muted">
- {{ errorMessage || callbackProcessingText }}
- </p>
-
- <div
- v-if="!errorMessage"
- class="mt-6 flex items-center justify-center py-10"
- >
- <div
- class="h-8 w-8 animate-spin rounded-full border-4 border-[var(--accent)] border-t-transparent"
- ></div>
- </div>
-
- <div
- v-else
- class="mt-6 rounded-lg border border-line bg-surface-2 p-4 "
- >
- <p class="text-sm text-foreground">
- {{ errorMessage }}
- </p>
- <button
- class="btn-glass-primary mt-4"
- type="button"
- @click="goBackToPayment"
- >
- {{ backToPaymentText }}
- </button>
- </div>
- </div>
- </div>
- </div>
+  <div class="callback-page px-4 py-10">
+    <CallbackStatusCard
+      v-if="!errorMessage"
+      status="loading"
+      :title="callbackTitleText"
+      :description="callbackProcessingText"
+    />
+    <CallbackStatusCard
+      v-else
+      status="error"
+      :title="callbackTitleText"
+      :description="errorMessage"
+    >
+      <Button variant="primary" size="lg" nativeType="button" @click="goBackToPayment">
+        {{ backToPaymentText }}
+      </Button>
+    </CallbackStatusCard>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -43,6 +24,8 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { useAppStore } from '@/stores'
+import CallbackStatusCard from '@/components/auth/CallbackStatusCard.vue'
+import Button from '@/components/ui/Button.vue'
 
 const { t } = useI18n()
 const route = useRoute()

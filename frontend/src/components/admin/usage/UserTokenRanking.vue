@@ -71,7 +71,7 @@
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-muted">{{ fmtTokens(item.output_tokens) }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm tabular-nums text-muted">{{ fmtTokens(item.cache_tokens) }}</td>
             <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-foreground">{{ fmtTokens(item.total_tokens) }}</td>
-            <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-green-600">${{ fmtCost(item.actual_cost) }}</td>
+            <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium tabular-nums text-success-600">${{ fmtCost(item.actual_cost) }}</td>
           </tr>
         </tbody>
       </table>
@@ -118,7 +118,7 @@ const limitOptions = [
 
 // 前三名金/银/铜徽章
 const RANK_BADGE_CLASSES = [
-  'bg-amber-100 text-amber-700',
+  'bg-warning-100 text-warning-700',
   'bg-surface-3 text-muted',
   'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text',
 ]

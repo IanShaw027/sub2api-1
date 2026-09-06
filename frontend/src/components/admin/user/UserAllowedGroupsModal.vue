@@ -2,12 +2,12 @@
   <BaseDialog :show="show" :title="t('admin.users.groupConfig')" width="wide" @close="$emit('close')">
     <div v-if="user" class="space-y-6">
       <!-- 用户信息头部 -->
-      <div class="flex items-center gap-4 rounded-2xl bg-gradient-to-r from-[color-mix(in_oklch,var(--accent)_12%,transparent)] to-[color-mix(in_oklch,var(--accent)_16%,transparent)] p-5">
+      <div class="flex items-center gap-4 rounded-[16px] bg-gradient-to-r from-[color-mix(in_oklch,var(--accent)_12%,transparent)] to-[color-mix(in_oklch,var(--accent)_16%,transparent)] p-5">
         <div class="flex h-14 w-14 items-center justify-center rounded-full bg-surface shadow-sm">
           <span class="text-2xl font-semibold text-accent">{{ user.email.charAt(0).toUpperCase() }}</span>
         </div>
         <div class="flex-1">
-          <p class="text-lg font-semibold text-foreground">{{ user.email }}</p>
+          <p class="text-[18px] font-semibold text-foreground">{{ user.email }}</p>
           <p class="mt-1 text-sm text-muted">{{ t('admin.users.groupConfigHint', { email: user.email }) }}</p>
         </div>
       </div>
@@ -24,7 +24,7 @@
         <!-- 专属分组区域 -->
         <div v-if="exclusiveGroups.length > 0">
           <div class="mb-3 flex items-center gap-2">
-            <div class="h-1.5 w-1.5 rounded-full bg-purple-500"></div>
+            <div class="h-1.5 w-1.5 rounded-full bg-accent-500"></div>
             <h4 class="text-sm font-semibold text-foreground">{{ t('admin.users.exclusiveGroups') }}</h4>
             <span class="text-xs text-muted">({{ exclusiveGroupConfigs.filter(c => c.isSelected).length }}/{{ exclusiveGroupConfigs.length }})</span>
           </div>
@@ -59,7 +59,7 @@
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-2">
                     <span class="text-base font-semibold text-foreground">{{ config.groupName }}</span>
-                    <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">
+                    <span class="inline-flex items-center rounded-full bg-accent-100 px-2 py-0.5 text-xs font-medium text-accent-700">
                       {{ t('admin.groups.exclusive') }}
                     </span>
                   </div>
@@ -96,7 +96,7 @@
         <!-- 公开分组区域 -->
         <div v-if="publicGroups.length > 0">
           <div class="mb-3 flex flex-wrap items-center gap-2">
-            <div class="h-1.5 w-1.5 rounded-full bg-green-500"></div>
+            <div class="h-1.5 w-1.5 rounded-full bg-success-500"></div>
             <h4 class="text-sm font-semibold text-foreground">
               {{ restrictPublicGroups ? t('admin.users.publicGroupsRestricted') : t('admin.users.publicGroups') }}
             </h4>
@@ -116,7 +116,7 @@
             <div
               v-for="config in publicGroupConfigs"
               :key="config.groupId"
-              class="relative overflow-hidden rounded-xl border-2 border-green-200 bg-green-50/50 p-4"
+              class="relative overflow-hidden rounded-xl border-2 border-success-200 bg-success-50/50 p-4"
             >
               <div class="flex items-center gap-4">
                 <!-- 未开启限制时公开分组恒可用，此处仅作展示；开启后才是真实开关 -->
@@ -126,11 +126,11 @@
                     type="checkbox"
                     :checked="config.isSelected"
                     @change="togglePublicGroup(config.groupId)"
-                    class="h-5 w-5 cursor-pointer rounded-md border-2 border-green-400 text-green-600 focus:ring-green-500"
+                    class="h-5 w-5 cursor-pointer rounded-md border-2 border-success-400 text-success-600 focus:ring-success-500"
                   />
                   <div
                     v-else
-                    class="flex h-5 w-5 items-center justify-center rounded-md border-2 border-green-400 bg-green-500"
+                    class="flex h-5 w-5 items-center justify-center rounded-md border-2 border-success-400 bg-success-500"
                   >
                     <svg class="h-full w-full text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />

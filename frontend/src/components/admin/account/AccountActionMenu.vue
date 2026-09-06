@@ -4,26 +4,26 @@
       <!-- Backdrop: click anywhere outside to close -->
       <div class="fixed inset-0 z-[9998]" @click="emit('close')"></div>
       <div
-        class="action-menu-content fixed z-[9999] w-52 overflow-hidden rounded-xl bg-surface shadow-lg ring-1 ring-black/5"
+        class="action-menu-content fixed z-[9999] w-52 overflow-hidden rounded-xl border border-line bg-surface shadow-[var(--shadow-pop)]"
         :style="{ top: position.top + 'px', left: position.left + 'px' }"
         @click.stop
       >
         <div class="py-1">
           <template v-if="account">
             <button @click="$emit('test', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-surface-2">
-              <Icon name="play" size="sm" class="text-green-500" :stroke-width="2" />
+              <Icon name="play" size="sm" class="text-success-text" :stroke-width="2" />
               {{ t('admin.accounts.testConnection') }}
             </button>
             <button @click="$emit('stats', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-surface-2">
-              <Icon name="chart" size="sm" class="text-indigo-500" />
+              <Icon name="chart" size="sm" class="text-accent" />
               {{ t('admin.accounts.viewStats') }}
             </button>
             <button @click="$emit('schedule', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-surface-2">
-              <Icon name="clock" size="sm" class="text-orange-500" />
+              <Icon name="clock" size="sm" class="text-warning-text" />
               {{ t('admin.scheduledTests.schedule') }}
             </button>
             <button v-if="canDuplicate" @click="$emit('duplicate', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm hover:bg-surface-2">
-              <Icon name="copy" size="sm" class="text-sky-500" />
+              <Icon name="copy" size="sm" class="text-accent" />
               {{ t('admin.accounts.duplicateAccount') }}
             </button>
             <!-- 影子账号不持凭据:重授权/刷新 token 对其无效(后端拒绝),故隐藏(外审 G4)。 -->
@@ -32,7 +32,7 @@
                 <Icon name="link" size="sm" />
                 {{ t('admin.accounts.reAuthorize') }}
               </button>
-              <button @click="$emit('refresh-token', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-purple-600 hover:bg-surface-2">
+              <button @click="$emit('refresh-token', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-accent hover:bg-surface-2">
                 <Icon name="refresh" size="sm" />
                 {{ t('admin.accounts.refreshToken') }}
               </button>
@@ -50,11 +50,11 @@
               <Icon name="sync" size="sm" />
               {{ t('admin.accounts.recoverState') }}
             </button>
-            <button v-if="hasQuotaLimit" @click="$emit('reset-quota', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-teal-600 hover:bg-surface-2">
+            <button v-if="hasQuotaLimit" @click="$emit('reset-quota', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-accent hover:bg-surface-2">
               <Icon name="refresh" size="sm" />
               {{ t('admin.accounts.resetQuota') }}
             </button>
-            <button v-if="!isShadow" @click="$emit('inspect-device-profile', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-sky-600 hover:bg-surface-2">
+            <button v-if="!isShadow" @click="$emit('inspect-device-profile', account); $emit('close')" class="flex w-full items-center gap-2 px-4 py-2 text-sm text-accent hover:bg-surface-2">
               <Icon name="eye" size="sm" />
               {{ t('admin.accounts.inspectDeviceProfile') }}
             </button>

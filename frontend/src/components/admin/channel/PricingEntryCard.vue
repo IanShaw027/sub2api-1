@@ -20,7 +20,7 @@
             v-for="(m, i) in entry.models.slice(0, 3)"
             :key="i"
             class="inline-flex shrink-0 rounded px-1.5 py-0.5 text-xs"
-            :class="getPlatformTagClass(props.platform || '')"
+            :class="platformBadgeLightClass(props.platform || '')"
           >
             {{ m }}
           </span>
@@ -55,7 +55,7 @@
       <button
         type="button"
         @click.stop="emit('remove')"
-        class="flex-shrink-0 rounded p-1 text-muted hover:text-red-500"
+        class="flex-shrink-0 rounded p-1 text-muted hover:text-danger-text"
       >
         <Icon name="trash" size="sm" />
       </button>
@@ -71,7 +71,7 @@
         <div class="mt-3 flex items-start gap-2">
           <div class="flex-1">
             <label class="text-xs font-medium text-muted">
-              {{ t('admin.channels.form.models') }} <span class="text-red-500">*</span>
+              {{ t('admin.channels.form.models') }} <span class="text-danger-text">*</span>
             </label>
             <ModelTagInput
               :models="entry.models"
@@ -270,7 +270,8 @@ import IntervalRow from './IntervalRow.vue'
 import ModelTagInput from './ModelTagInput.vue'
 import TimePricingSection from './TimePricingSection.vue'
 import type { PricingFormEntry, IntervalFormEntry } from './types'
-import { perTokenToMTok, getPlatformTagClass } from './types'
+import { perTokenToMTok } from './types'
+import { platformBadgeLightClass } from '@/utils/platformColors'
 import type { BillingMode } from '@/api/admin/channels'
 import channelsAPI from '@/api/admin/channels'
 

@@ -101,7 +101,7 @@
             <button class="btn btn-secondary btn-sm" @click="openEditForm(tpl)">
               {{ t('common.edit') }}
             </button>
-            <button class="btn btn-secondary btn-sm text-red-600" @click="handleDelete(tpl)">
+            <button class="btn btn-secondary btn-sm text-danger-text" @click="handleDelete(tpl)">
               {{ t('common.delete') }}
             </button>
           </div>
@@ -114,7 +114,7 @@
       <div>
         <label class="input-label">
           {{ t('admin.channelMonitor.template.form.name') }}
-          <span class="text-red-500">*</span>
+          <span class="text-danger-text">*</span>
         </label>
         <input
           v-model="form.name"
@@ -128,7 +128,7 @@
       <div v-if="editing === 'new'">
         <label class="input-label">
           {{ t('admin.channelMonitor.form.provider') }}
-          <span class="text-red-500">*</span>
+          <span class="text-danger-text">*</span>
         </label>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <button
@@ -474,11 +474,11 @@ function tabClass(value: Provider): string {
 function modeBadgeClass(mode: BodyOverrideMode): string {
   switch (mode) {
     case 'merge':
-      return 'bg-amber-100 text-amber-700'
+      return 'badge-tone-warning'
     case 'replace':
-      return 'bg-purple-100 text-purple-700'
+      return 'badge-tone-accent'
     default:
-      return 'bg-surface-2 text-muted'
+      return 'badge-tone-muted'
   }
 }
 

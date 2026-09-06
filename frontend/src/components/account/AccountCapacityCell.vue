@@ -1,5 +1,5 @@
 <template>
-  <div class="flex flex-col gap-0.5">
+  <div class="flex flex-col gap-px">
     <!-- 并发槽位 -->
     <CapacityBadge :color-class="concurrencyClass" :current="currentConcurrency" :max="concurrencyMax">
       <svg class="h-2.5 w-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -56,7 +56,7 @@ const concurrencyClass = computed(() => {
   const current = currentConcurrency.value
   const max = concurrencyMax.value
   if (current >= max) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
-  if (current > 0) return 'bg-yellow-100 text-yellow-700'
+  if (current > 0) return 'bg-warning-100 text-warning-text'
   return 'bg-surface-2 text-muted'
 })
 
@@ -81,7 +81,7 @@ const windowCostClass = computed(() => {
   const reserve = props.account.window_cost_sticky_reserve || 10
   if (current >= limit + reserve) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
   if (current >= limit) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
-  if (current >= limit * 0.8) return 'bg-yellow-100 text-yellow-700'
+  if (current >= limit * 0.8) return 'bg-warning-100 text-warning-text'
   return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 })
 
@@ -109,7 +109,7 @@ const sessionLimitClass = computed(() => {
   const current = activeSessions.value
   const max = props.account.max_sessions || 0
   if (current >= max) return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
-  if (current >= max * 0.8) return 'bg-yellow-100 text-yellow-700'
+  if (current >= max * 0.8) return 'bg-warning-100 text-warning-text'
   return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 })
 
@@ -170,7 +170,7 @@ const rpmClass = computed(() => {
   } else {
     if (current >= base) return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
   }
-  if (current >= base * 0.8) return 'bg-yellow-100 text-yellow-700'
+  if (current >= base * 0.8) return 'bg-warning-100 text-warning-text'
   return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
 })
 

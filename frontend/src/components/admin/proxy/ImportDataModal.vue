@@ -11,7 +11,7 @@
         {{ t('admin.proxies.dataImportHint') }}
       </div>
       <div
-        class="rounded-lg border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-xs text-warning-text"
+        class="rounded-lg border border-warning-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-xs text-warning-text"
       >
         {{ t('admin.proxies.dataImportWarning') }}
       </div>

@@ -93,7 +93,7 @@
  :class="enableBreakdown ? 'cursor-pointer hover:bg-surface-2' : ''"
  @click="enableBreakdown && toggleBreakdown(item.endpoint)"
  >
- <td class="max-w-[180px] truncate py-1.5 font-medium" :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800' : 'text-foreground'" :title="item.endpoint">
+ <td class="max-w-[180px] truncate py-1.5 font-medium" :class="enableBreakdown ? 'text-accent hover:underline' : 'text-foreground'" :title="item.endpoint">
  <span class="inline-flex items-center gap-1">
  <svg v-if="enableBreakdown && expandedKey === item.endpoint" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
  <svg v-else-if="enableBreakdown" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
@@ -106,7 +106,7 @@
  <td class="py-1.5 text-right text-muted">
  {{ formatTokens(item.total_tokens) }}
  </td>
- <td class="py-1.5 text-right text-green-600">
+ <td class="py-1.5 text-right text-success-text">
  ${{ formatCost(item.actual_cost) }}
  </td>
  <td class="py-1.5 text-right text-muted">
@@ -141,10 +141,12 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
 import type { EndpointStat, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
+import { pieChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 const { t } = useI18n()
+const theme = useChartTheme()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
 type EndpointSource = 'inbound' | 'upstream' | 'path'
@@ -211,20 +213,11 @@ const toggleBreakdown = async (endpoint: string) => {
  }
 }
 
-const chartColors = [
- '#3b82f6',
- '#10b981',
- '#f59e0b',
- '#ef4444',
- '#8b5cf6',
- '#ec4899',
- '#14b8a6',
- '#f97316',
- '#6366f1',
- '#84cc16',
- '#06b6d4',
- '#a855f7'
-]
+/** Cycles through the token series palette so any slice count stays on-brand. */
+const seriesColor = (index: number): string => {
+ const series = theme.value.series
+ return series[index % series.length]
+}
 
 const displayEndpointStats = computed(() => {
  const sourceStats = props.source === 'upstream'
@@ -248,21 +241,22 @@ const chartData = computed(() => {
  data: displayEndpointStats.value.map((item) =>
  props.metric === 'actual_cost' ? item.actual_cost : item.total_tokens
  ),
- backgroundColor: chartColors.slice(0, displayEndpointStats.value.length),
+ backgroundColor: displayEndpointStats.value.map((_, i) => seriesColor(i)),
  borderWidth: 0
  }
  ]
  }
 })
 
-const doughnutOptions = computed(() => ({
- responsive: true,
- maintainAspectRatio: false,
+const doughnutOptions = computed(() => {
+ const base = pieChartOptions(theme.value)
+ return {
+ ...base,
  plugins: {
- legend: {
- display: false
- },
+ ...base.plugins,
+ legend: { display: false },
  tooltip: {
+ ...base.plugins.tooltip,
  callbacks: {
  label: (context: any) => {
  const value = context.raw as number
@@ -276,7 +270,8 @@ const doughnutOptions = computed(() => ({
  }
  }
  }
-}))
+ }
+})
 
 const formatTokens = (value: number): string => {
  if (value >= 1_000_000_000) {

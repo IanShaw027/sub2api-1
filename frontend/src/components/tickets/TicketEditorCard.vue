@@ -85,7 +85,7 @@ const categoryOptions = computed(() =>
 const containerClass = computed(() =>
  props.embedded
  ? 'space-y-5'
- : 'flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-surface',
+ : 'flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-surface',
 )
 const headerClass = computed(() =>
  props.embedded

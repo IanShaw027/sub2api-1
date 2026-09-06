@@ -278,7 +278,10 @@ describe('admin GroupsView column settings', () => {
       pages: 2,
     })
     const wrapper = await mountView()
-    const stats = () => wrapper.findComponent({ name: 'MiniStatCard' }).props('items')
+    const stats = () => wrapper.findAll('.summary-chip').map(chip => ({
+      label: chip.get('.summary-chip-label').text(),
+      value: Number(chip.get('.summary-chip-value').text())
+    }))
     expect(stats()).toEqual([
       { label: 'common.total', value: 40 },
       { label: 'This page: common.active', value: 1 },

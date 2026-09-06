@@ -1,46 +1,62 @@
 <template>
- <AppLayout>
- <PageHeader :title="t('tickets.create')" :description="t('tickets.createConversationSubtitle')" />
- <div class="grid h-[calc(100vh-10rem)] min-h-[calc(100vh-10rem)] min-w-0 gap-6 overflow-hidden xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.95fr)]">
- <div class="min-h-0">
- <TicketConversationPane
- :title="t('tickets.createConversationTitle')"
- :subtitle="t('tickets.createConversationSubtitle')"
- :messages="systemMessages"
- :empty-text="t('tickets.emptyConversation')"
- :show-composer="false"
- />
- </div>
+  <AppLayout>
+    <PageHeader :title="t('tickets.create')" :description="t('tickets.createDescription')">
+      <template #actions>
+        <Button variant="secondary" to="/tickets">
+          <Icon name="arrowLeft" size="sm" :stroke-width="1.8" />
+          {{ t('common.back') }}
+        </Button>
+      </template>
+    </PageHeader>
 
- <div class="min-h-0">
- <TicketEditorCard
- :category="category"
- :title="title"
- :payload="payload"
- :submit-label="t('tickets.submit')"
- :submitting="submitting"
- :user-concurrency="authStore.user?.concurrency ?? null"
- :rate-groups="rateGroups"
- @submit="submit"
- />
- </div>
- </div>
- </AppLayout>
+    <div class="ticket-create-stack">
+      <SettingsSection :title="t('tickets.createBasicSection')">
+        <SettingRow :label="t('tickets.fields.category')">
+          <SegmentedControl v-model="category" :options="categorySegmentOptions" />
+        </SettingRow>
+        <SettingRow :label="t('tickets.fields.title')">
+          <TextInput v-model="title" maxlength="80" :placeholder="t('tickets.fields.title')" />
+        </SettingRow>
+      </SettingsSection>
+
+      <SettingsSection :title="t('tickets.createDetailsSection')">
+        <div class="category-form-body">
+          <TicketCategoryForm
+            :category="category"
+            :model-value="payload"
+            :user-concurrency="authStore.user?.concurrency ?? null"
+            :rate-groups="rateGroups"
+            @update:model-value="payload = $event"
+          />
+        </div>
+      </SettingsSection>
+
+      <div class="form-actions">
+        <Button variant="secondary" to="/tickets">{{ t('common.cancel') }}</Button>
+        <Button :loading="submitting" @click="submit">{{ t('tickets.submit') }}</Button>
+      </div>
+    </div>
+  </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import Button from '@/components/ui/Button.vue'
+import SettingsSection from '@/components/ui/SettingsSection.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
+import TextInput from '@/components/ui/TextInput.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import { ticketsAPI } from '@/api/tickets'
-import TicketConversationPane from '@/components/tickets/TicketConversationPane.vue'
-import TicketEditorCard from '@/components/tickets/TicketEditorCard.vue'
+import TicketCategoryForm from '@/components/tickets/TicketCategoryForm.vue'
 import { extractI18nErrorMessage } from '@/utils/apiError'
-import { validateTicketPayload } from '@/utils/tickets'
-import type { SupportTicketMessage, TicketCategory, TicketRateGroupOption } from '@/types/ticket'
+import { sanitizeTicketPayload, ticketCategoryOptions, validateTicketPayload } from '@/utils/tickets'
+import type { TicketCategory, TicketRateGroupOption } from '@/types/ticket'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -53,15 +69,12 @@ const payload = ref<Record<string, unknown>>({})
 const submitting = ref(false)
 const rateGroups = ref<TicketRateGroupOption[]>([])
 
-const systemMessages = ref<SupportTicketMessage[]>([{
-  id: 0,
-  ticket_id: 0,
-  sender_role: 'system',
-  sender_name_snapshot: t('tickets.role.system'),
-  message_type: 'system',
-  content: t('tickets.createSystemMessage'),
-  created_at: new Date().toISOString(),
-}])
+const categorySegmentOptions = computed(() =>
+  ticketCategoryOptions.map((option) => ({
+    value: option.value,
+    label: t(option.labelKey),
+  })),
+)
 
 function ticketError(err: unknown) {
   return extractI18nErrorMessage(err, t, 'tickets.errors', t('common.unknownError'))
@@ -76,7 +89,12 @@ async function loadTicketContext() {
   }
 }
 
-async function submit(form: { category: TicketCategory; title: string; form_payload: Record<string, unknown> }) {
+async function submit() {
+  const form = {
+    category: category.value,
+    title: title.value.trim(),
+    form_payload: sanitizeTicketPayload(category.value, payload.value),
+  }
   const validationKey = validateTicketPayload(form.category, form.title, form.form_payload)
   if (validationKey) {
     appStore.showError(t(validationKey))
@@ -96,3 +114,22 @@ async function submit(form: { category: TicketCategory; title: string; form_payl
 
 onMounted(loadTicketContext)
 </script>
+
+<style scoped>
+.ticket-create-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.category-form-body {
+  padding: 20px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+</style>

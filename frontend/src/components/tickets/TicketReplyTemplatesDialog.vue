@@ -18,7 +18,7 @@
  </div>
  </div>
 
- <div v-if="localTemplates.length === 0" class="rounded-2xl border border-dashed p-6 text-center text-sm text-muted">
+ <div v-if="localTemplates.length === 0" class="rounded-xl border border-dashed p-6 text-center text-sm text-muted">
  {{ t('tickets.templates.empty') }}
  </div>
 
@@ -26,7 +26,7 @@
  <div
  v-for="(template, index) in localTemplates"
  :key="template.clientId"
- class="rounded-2xl border border-line bg-surface-2/60 p-4"
+ class="rounded-xl border border-line bg-surface-2/60 p-4"
  >
  <div class="mb-3 flex items-start gap-3">
  <input
@@ -55,7 +55,7 @@
  </div>
  <button
  type="button"
- class="rounded-lg px-2 py-1 text-sm text-red-500 transition-colors hover:bg-red-50 hover:text-red-600"
+ class="rounded-lg px-2 py-1 text-sm text-danger-500 transition-colors hover:bg-danger-50 hover:text-danger-text"
  :aria-label="t('tickets.templates.deleteSingle')"
  @click="removeTemplate(index)"
  >

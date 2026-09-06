@@ -6,7 +6,7 @@
         v-for="(model, idx) in models"
         :key="idx"
         class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm"
-        :class="getPlatformTagClass(props.platform || '')"
+        :class="platformBadgeLightClass(props.platform || '')"
       >
         {{ model }}
         <button
@@ -40,7 +40,7 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import { getPlatformTagClass } from './types'
+import { platformBadgeLightClass } from '@/utils/platformColors'
 
 const { t } = useI18n()
 

@@ -1,61 +1,44 @@
 <template>
- <div class="space-y-6">
- <GlassCard>
- <div class="flex flex-wrap items-center gap-4">
- <div class="flex items-center gap-2">
- <span class="text-sm font-medium text-foreground">{{ t('dashboard.timeRange') }}:</span>
- <DateRangePicker :start-date="startDate" :end-date="endDate" @update:startDate="$emit('update:startDate', $event)" @update:endDate="$emit('update:endDate', $event)" @change="$emit('dateRangeChange', $event)" />
+ <div class="dash-charts-row">
+ <GlassCard class="dash-chart-card" padding="md">
+ <div class="dash-chart-header">
+ <div class="dash-chart-heading">
+ <span class="dash-chart-title">{{ t('dashboard.tokenUsageTrend') }}</span>
+ <span class="dash-chart-sub">{{ trendRangeLabel }}</span>
  </div>
- <Button variant="secondary" :disabled="loading" @click="$emit('refresh')">
- {{ t('common.refresh') }}
- </Button>
- <div class="ml-auto flex items-center gap-2">
- <span class="text-sm font-medium text-foreground">{{ t('dashboard.granularity') }}:</span>
- <div class="w-28">
- <Select :model-value="granularity" :options="[{value:'day', label:t('dashboard.day')}, {value:'hour', label:t('dashboard.hour')}]" @update:model-value="$emit('update:granularity', $event)" @change="$emit('granularityChange')" />
+ <SegmentedControl
+ class="segmented-sm"
+ :model-value="granularity"
+ :options="granularityOptions"
+ @update:model-value="onGranularityChange"
+ />
+ </div>
+ <div class="dash-chart-body">
+ <TokenUsageTrend :trend-data="trend" :loading="loading" bare />
+ </div>
+ </GlassCard>
+
+ <GlassCard class="dash-dist-card" padding="md">
+ <div class="dash-chart-header">
+ <div class="dash-chart-heading">
+ <span class="dash-chart-title">{{ t('dashboard.modelDistribution') }}</span>
+ <span class="dash-chart-sub">{{ t('dashboard.last7Days') }}</span>
+ </div>
+ </div>
+ <div v-if="loading" class="dash-dist-loading"><LoadingSpinner size="md" /></div>
+ <div v-else-if="modelRows.length === 0" class="dash-dist-empty">{{ t('dashboard.noDataAvailable') }}</div>
+ <div v-else class="dash-dist-list">
+ <div v-for="row in modelRows" :key="row.model" class="dash-dist-row">
+ <div class="dash-dist-row-top">
+ <span class="dash-dist-name">{{ row.model }}</span>
+ <span class="dash-dist-meta">${{ formatCost(row.actual_cost) }} · {{ row.pct.toFixed(1) }}%</span>
+ </div>
+ <div class="progress">
+ <div class="progress-bar" :style="{ width: `${row.pct}%` }"></div>
  </div>
  </div>
  </div>
  </GlassCard>
-
- <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
- <GlassCard class="relative overflow-hidden">
- <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-surface">
- <LoadingSpinner size="md" />
- </div>
- <h3 class="mb-4 text-sm font-semibold text-foreground">{{ t('dashboard.modelDistribution') }}</h3>
- <div class="flex flex-col items-center gap-4 sm:flex-row sm:gap-6">
- <div class="h-48 w-48 shrink-0">
- <Doughnut v-if="modelData" :data="modelData" :options="doughnutOptions" />
- <div v-else class="flex h-full items-center justify-center text-sm text-muted">{{ t('dashboard.noDataAvailable') }}</div>
- </div>
- <div class="max-h-48 w-full min-w-0 flex-1 overflow-auto">
- <table class="w-full text-xs">
- <thead>
- <tr class="text-muted">
- <th class="pb-2 text-left">{{ t('dashboard.model') }}</th>
- <th class="pb-2 text-right">{{ t('dashboard.requests') }}</th>
- <th class="pb-2 text-right">{{ t('dashboard.tokens') }}</th>
- <th class="pb-2 text-right">{{ t('dashboard.actual') }}</th>
- <th class="pb-2 text-right">{{ t('dashboard.standard') }}</th>
- </tr>
- </thead>
- <tbody>
- <tr v-for="model in models" :key="model.model" class="border-t border-line">
- <td class="max-w-[100px] truncate py-1.5 font-medium text-foreground" :title="model.model">{{ model.model }}</td>
- <td class="py-1.5 text-right text-muted">{{ formatNumber(model.requests) }}</td>
- <td class="py-1.5 text-right text-muted">{{ formatTokens(model.total_tokens) }}</td>
- <td class="py-1.5 text-right text-success-text">${{ formatCost(model.actual_cost) }}</td>
- <td class="py-1.5 text-right text-muted">${{ formatCost(model.cost) }}</td>
- </tr>
- </tbody>
- </table>
- </div>
- </div>
- </GlassCard>
-
- <TokenUsageTrend :trend-data="trend" :loading="loading" />
- </div>
  </div>
 </template>
 
@@ -63,39 +46,132 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import DateRangePicker from '@/components/common/DateRangePicker.vue'
-import Select from '@/components/common/Select.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
-import Button from '@/components/ui/Button.vue'
-import { Doughnut } from 'vue-chartjs'
+import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import type { TrendDataPoint, ModelStat } from '@/types'
-import { formatCostFixed as formatCost, formatNumberLocaleString as formatNumber, formatTokensK as formatTokens } from '@/utils/format'
-import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js'
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler)
+import { formatCostFixed as formatCost } from '@/utils/format'
 
-const props = defineProps<{ loading: boolean, startDate: string, endDate: string, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()
-defineEmits(['update:startDate', 'update:endDate', 'update:granularity', 'dateRangeChange', 'granularityChange', 'refresh'])
+const props = defineProps<{ loading: boolean, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()
+const emit = defineEmits<{
+ 'update:granularity': [value: string]
+ granularityChange: []
+}>()
 const { t } = useI18n()
 
-const modelData = computed(() => !props.models?.length ? null : {
- labels: props.models.map((m: ModelStat) => m.model),
- datasets: [{
- data: props.models.map((m: ModelStat) => m.total_tokens),
- backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16']
- }]
+const granularityOptions = computed(() => [
+ { value: 'day', label: t('dashboard.day') },
+ { value: 'hour', label: t('dashboard.hour') }
+])
+
+function onGranularityChange(value: string) {
+ emit('update:granularity', value)
+ emit('granularityChange')
+}
+
+const trendRangeLabel = computed(() => {
+ const count = props.trend?.length || 0
+ return count > 0 ? `${count} · ${t('dashboard.recentUsage')}` : t('dashboard.tokenUsageTrend')
 })
 
-const doughnutOptions = {
- responsive: true,
- maintainAspectRatio: false,
- plugins: {
- legend: { display: false },
- tooltip: {
- callbacks: {
- label: (context: any) => `${context.label}: ${formatTokens(context.parsed)} tokens`
- }
- }
+const modelRows = computed(() => {
+ const list = props.models ?? []
+ if (!list.length) return []
+ const maxCost = Math.max(...list.map((m) => m.actual_cost), 0.0001)
+ return [...list]
+ .sort((a, b) => b.actual_cost - a.actual_cost)
+ .map((m) => ({
+ model: m.model,
+ actual_cost: m.actual_cost,
+ pct: maxCost > 0 ? Math.min(100, (m.actual_cost / maxCost) * 100) : 0
+ }))
+})
+</script>
+<style scoped>
+.dash-charts-row {
+ display: grid;
+ grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+ gap: 12px;
+ align-items: start;
+}
+.dash-chart-card,
+.dash-dist-card {
+ min-width: 0;
+ padding: 16px 18px !important;
+ display: flex;
+ flex-direction: column;
+ gap: 14px;
+}
+.dash-chart-header {
+ display: flex;
+ align-items: center;
+ justify-content: space-between;
+ gap: 12px;
+}
+.dash-chart-heading {
+ display: flex;
+ flex-direction: column;
+ gap: 2px;
+ min-width: 0;
+}
+.dash-chart-title {
+ font-size: 14px;
+ font-weight: 600;
+ color: var(--foreground);
+}
+.dash-chart-sub {
+ font-size: 12px;
+ color: var(--muted);
+}
+.dash-chart-body {
+ flex: 1;
+ min-height: 0;
+}
+.dash-dist-loading,
+.dash-dist-empty {
+ display: flex;
+ align-items: center;
+ justify-content: center;
+ height: 180px;
+ font-size: 13px;
+ color: var(--muted);
+}
+.dash-dist-list {
+ display: flex;
+ flex-direction: column;
+ gap: 10px;
+ max-height: 260px;
+ overflow-y: auto;
+}
+.dash-dist-row {
+ display: flex;
+ flex-direction: column;
+ gap: 5px;
+}
+.dash-dist-row-top {
+ display: flex;
+ align-items: baseline;
+ justify-content: space-between;
+ gap: 8px;
+}
+.dash-dist-name {
+ font-family: var(--font-mono);
+ font-size: 12px;
+ color: var(--foreground);
+ overflow: hidden;
+ text-overflow: ellipsis;
+ white-space: nowrap;
+}
+.dash-dist-meta {
+ flex: none;
+ font-size: 12px;
+ color: var(--muted);
+ font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1023px) {
+ .dash-charts-row {
+ grid-template-columns: minmax(0, 1fr);
  }
 }
-</script>
+</style>

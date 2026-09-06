@@ -75,8 +75,12 @@ function toggleFilters() {
 }
 
 .ui-filter-bar-search {
-  flex: 1 1 220px;
+  flex: 0 1 260px;
   min-width: 180px;
+}
+
+.ui-filter-bar-trailing {
+  margin-left: auto;
 }
 
 .ui-filter-bar-filters,
@@ -102,7 +106,7 @@ function toggleFilters() {
   border: 1px solid var(--border);
   background: color-mix(in oklch, var(--surface) 80%, transparent);
   color: var(--foreground);
-  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px rgba(16, 24, 40, 0.06);
+  box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px color-mix(in oklch, black 6%, transparent);
   cursor: pointer;
 }
 

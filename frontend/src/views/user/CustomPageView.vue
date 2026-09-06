@@ -1,34 +1,40 @@
 <template>
  <AppLayout>
  <div class="custom-page-layout">
- <div class="glass-card flex-1 min-h-0 overflow-hidden">
+ <div class="glass-card embed-card flex-1 min-h-0 overflow-hidden">
+ <div v-if="menuItem" class="card-header embed-card-header">
+ <p class="card-title embed-card-title">{{ menuItem.label || t('customPage.title') }}</p>
+ <a
+ v-if="isValidUrl"
+ :href="embeddedUrl"
+ target="_blank"
+ rel="noopener noreferrer"
+ class="btn-secondary embed-open-btn"
+ >
+ <Icon name="externalLink" size="sm" />
+ {{ t('customPage.openInNewTab') }}
+ </a>
+ </div>
+
  <div v-if="loading" class="flex h-full items-center justify-center py-12">
- <div
- class="h-8 w-8 animate-spin rounded-full border-2 border-[var(--accent)] border-t-transparent"
- ></div>
+ <span class="spinner"></span>
  </div>
 
  <div
  v-else-if="!menuItem"
- class="flex h-full items-center justify-center p-10 text-center"
+ class="flex h-full items-center justify-center p-10"
  >
- <div class="max-w-md">
- <div
- class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-2"
- >
- <Icon name="link" size="lg" class="text-muted" />
+ <div class="notice notice-danger embed-notice">
+ <Icon name="link" size="sm" class="notice-icon" />
+ <div class="min-w-0 flex-1">
+ <p class="notice-title">{{ t('customPage.notFoundTitle') }}</p>
+ <p>{{ t('customPage.notFoundDesc') }}</p>
  </div>
- <h3 class="text-lg font-semibold text-foreground">
- {{ t('customPage.notFoundTitle') }}
- </h3>
- <p class="mt-2 text-sm text-muted">
- {{ t('customPage.notFoundDesc') }}
- </p>
  </div>
  </div>
 
  <!-- Markdown mode with TOC -->
- <div v-else-if="isMarkdownMode" class="flex h-full overflow-hidden">
+ <div v-else-if="isMarkdownMode" class="flex h-full overflow-hidden embed-body">
  <!-- TOC Sidebar -->
  <aside
  v-show="tocVisible"
@@ -77,33 +83,18 @@
  </div>
 
  <!-- URL not configured -->
- <div v-else-if="!isValidUrl" class="flex h-full items-center justify-center p-10 text-center">
- <div class="max-w-md">
- <div
- class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-surface-2"
- >
- <Icon name="link" size="lg" class="text-muted" />
+ <div v-else-if="!isValidUrl" class="flex h-full items-center justify-center p-10">
+ <div class="notice notice-danger embed-notice">
+ <Icon name="link" size="sm" class="notice-icon" />
+ <div class="min-w-0 flex-1">
+ <p class="notice-title">{{ t('customPage.notConfiguredTitle') }}</p>
+ <p>{{ t('customPage.notConfiguredDesc') }}</p>
  </div>
- <h3 class="text-lg font-semibold text-foreground">
- {{ t('customPage.notConfiguredTitle') }}
- </h3>
- <p class="mt-2 text-sm text-muted">
- {{ t('customPage.notConfiguredDesc') }}
- </p>
  </div>
  </div>
 
  <!-- Iframe embed mode -->
  <div v-else class="custom-embed-shell">
- <a
- :href="embeddedUrl"
- target="_blank"
- rel="noopener noreferrer"
- class="btn-glass-secondary btn-sm custom-open-fab"
- >
- <Icon name="externalLink" size="sm" class="mr-1.5" :stroke-width="2" />
- {{ t('customPage.openInNewTab') }}
- </a>
  <iframe
  :src="embeddedUrl"
  class="custom-embed-frame"
@@ -239,7 +230,7 @@ async function fetchAndRenderMarkdown(slug: string) {
       headers: authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {},
     })
     if (!resp.ok) {
-      renderedHtml.value = `<p class="text-red-500">${t('common.pageNotFound')}</p>`
+      renderedHtml.value = `<p class="text-danger-text">${t('common.pageNotFound')}</p>`
       return
     }
     let raw = await resp.text()
@@ -272,7 +263,7 @@ async function fetchAndRenderMarkdown(slug: string) {
     renderedHtml.value = withIds
     tocItems.value = toc
   } catch {
-    renderedHtml.value = '<p class="text-red-500">Failed to load page</p>'
+    renderedHtml.value = '<p class="text-danger-text">Failed to load page</p>'
   } finally {
     loading.value = false
     await nextTick()
@@ -405,7 +396,7 @@ onUnmounted(() => {
     width: 70%;
     max-width: 240px;
     height: 100%;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow);
   }
 }
 
@@ -443,7 +434,7 @@ onUnmounted(() => {
 }
 
 .custom-embed-shell {
-  @apply relative h-full w-full overflow-hidden rounded-2xl bg-surface p-0;
+  @apply relative h-full w-full overflow-hidden bg-surface p-0;
 }
 
 .custom-open-fab {
@@ -462,7 +453,6 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   border: 0;
-  border-radius: 0;
   box-shadow: none;
   background: transparent;
 }
@@ -476,7 +466,7 @@ onUnmounted(() => {
 .markdown-page-content h1 { @apply mb-4 mt-8 border-b border-line pb-2 text-3xl font-bold; }
 .markdown-page-content h2 { @apply mb-3 mt-6 text-2xl font-bold; }
 .markdown-page-content h3 { @apply mb-2 mt-5 text-xl font-semibold; }
-.markdown-page-content h4 { @apply mb-2 mt-4 text-lg font-semibold; }
+.markdown-page-content h4 { @apply mb-2 mt-4 font-semibold; font-size: 17px; }
 .markdown-page-content p { @apply mb-4; }
 .markdown-page-content ul { @apply mb-4 list-disc pl-6; }
 .markdown-page-content ol { @apply mb-4 list-decimal pl-6; }
@@ -488,8 +478,20 @@ onUnmounted(() => {
 .markdown-page-content th { @apply border border-line bg-surface-2 px-3 py-2 text-left font-semibold; }
 .markdown-page-content td { @apply border border-line px-3 py-2; }
 .markdown-page-content code { @apply rounded bg-surface-2 px-1.5 py-0.5 font-mono text-sm; }
-.markdown-page-content pre { @apply relative my-4 overflow-x-auto rounded-lg bg-foreground p-4 text-background; }
-.markdown-page-content pre code { @apply bg-transparent p-0 text-inherit; }
+.markdown-page-content pre {
+  position: relative;
+  margin: 16px 0;
+  overflow-x: auto;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--code-bg);
+  color: oklch(92% 0.004 262);
+}
+.markdown-page-content pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+}
 .markdown-page-content hr { @apply my-6 border-line; }
 
 .copy-btn {
@@ -498,15 +500,15 @@ onUnmounted(() => {
   right: 8px;
   padding: 4px 10px;
   font-size: 12px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.15);
-  color: #e2e8f0;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  background: color-mix(in oklch, oklch(92% 0.004 262) 15%, transparent);
+  color: oklch(92% 0.004 262);
+  border: 1px solid color-mix(in oklch, oklch(92% 0.004 262) 20%, transparent);
   cursor: pointer;
   opacity: 0;
   transition: opacity 0.2s, background 0.2s;
   font-family: inherit;
 }
-.copy-btn:hover { background: rgba(255, 255, 255, 0.25); }
+.copy-btn:hover { background: color-mix(in oklch, oklch(92% 0.004 262) 25%, transparent); }
 pre:hover .copy-btn { opacity: 1; }
 </style>

@@ -4,7 +4,7 @@
  <div class="flex items-center gap-1">
  <span
  :class="[
- 'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
+ 'tag text-[10.5px]',
  capacityClass(concurrencyUsed, concurrencyMax)
  ]"
  >
@@ -21,7 +21,7 @@
  <div v-if="sessionsMax > 0" class="flex items-center gap-1">
  <span
  :class="[
- 'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
+ 'tag text-[10.5px]',
  capacityClass(sessionsUsed, sessionsMax)
  ]"
  >
@@ -38,7 +38,7 @@
  <div class="flex items-center gap-1">
  <span
  :class="[
- 'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium',
+ 'tag text-[10.5px]',
  capacityClass(rpmUsed, rpmMax)
  ]"
  >
@@ -74,11 +74,11 @@ withDefaults(defineProps<Props>(), {
 
 function capacityClass(used: number, max: number): string {
  if (max > 0 && used >= max) {
- return 'bg-red-100 text-red-700'
+ return 'tag-danger'
  }
  if (used > 0) {
- return 'bg-yellow-100 text-yellow-700'
+ return 'tag-warning'
  }
- return 'bg-surface-2 text-muted'
+ return ''
 }
 </script>

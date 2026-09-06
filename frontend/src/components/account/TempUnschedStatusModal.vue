@@ -29,7 +29,7 @@
       </div>
 
       <div v-else class="space-y-4">
-        <div class="rounded-lg border border-emerald-200 bg-[color-mix(in_oklch,var(--success)_16%,transparent)] p-3 text-sm text-emerald-800">
+        <div class="notice notice-success">
           {{ t('admin.accounts.recoverStateHint') }}
         </div>
 
@@ -104,7 +104,7 @@
 
         <div
           v-if="hasThresholdEvidence"
-          class="rounded-lg border border-blue-200 bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3 text-sm text-blue-800"
+          class="notice notice-info"
           data-testid="temp-unsched-trigger-evidence"
         >
           {{ triggerEvidenceText }}

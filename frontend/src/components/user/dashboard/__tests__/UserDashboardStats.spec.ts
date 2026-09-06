@@ -12,11 +12,7 @@ describe('UserDashboardStats metric completeness', () => {
   it('keeps standard costs, cache tokens and TPM alongside actual usage', () => {
     const wrapper = mount(UserDashboardStats, {
       props: {
-        balance: 10,
         isSimple: false,
-        liveRpmUsed: 7,
-        liveRpmLimit: 20,
-        currentConcurrency: 3,
         stats: {
           today_actual_cost: 1.25,
           today_cost: 2.5,
@@ -41,29 +37,23 @@ describe('UserDashboardStats metric completeness', () => {
     const cost = card('dashboard.todayCost')
     expect(cost.props('value')).toBe('$1.2500')
     expect(cost.text()).toContain('dashboard.standard: $2.5000')
-    expect(cost.text()).toContain('common.total (dashboard.actual): $12.5000')
-    expect(cost.text()).toContain('common.total (dashboard.standard): $25.0000')
+    expect(card('dashboard.totalCost').props('value')).toBe('$12.5000')
+    expect(card('dashboard.totalCost').text()).toContain('dashboard.standard: $25.0000')
     expect(card('dashboard.todayTokens').text()).toContain('dashboard.cache: 700')
     expect(card('dashboard.totalTokens').text()).toContain('dashboard.cache: 900')
-    const performance = card('dashboard.performance')
-    expect(performance.props('value')).toBe(7)
-    expect(performance.text()).toContain('RPM 7/20')
-    expect(performance.text()).toContain('4 dashboard.avgRpm')
-    expect(performance.text()).toContain('3 dashboard.currentConcurrency')
-    expect(performance.text()).toContain('1.5K TPM')
-    expect(performance.find('.ui-stat-card-sparkline').exists()).toBe(false)
+    expect(card('dashboard.totalRequests').text()).toContain('4 dashboard.avgRpm')
+    expect(card('dashboard.avgResponse').text()).toContain('1.5K TPM')
+    expect(wrapper.find('.ui-stat-card-sparkline').exists()).toBe(false)
     wrapper.unmount()
   })
 
-  it('renders zero for absent metrics and retains the balance history action', async () => {
+  it('renders zero for absent metrics', () => {
     const wrapper = mount(UserDashboardStats, {
-      props: { balance: 0, isSimple: false, stats: {} as UserStats }
+      props: { isSimple: false, stats: {} as UserStats }
     })
     expect(wrapper.text()).toContain('dashboard.cache: 0')
     expect(wrapper.text()).toContain('0 TPM')
     expect(wrapper.text()).not.toMatch(/NaN|undefined/)
-    await wrapper.findAllComponents(StatCard)[0]!.trigger('click')
-    expect(wrapper.emitted('balance-history')).toHaveLength(1)
     wrapper.unmount()
   })
 })

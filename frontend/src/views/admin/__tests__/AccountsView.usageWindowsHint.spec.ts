@@ -193,6 +193,10 @@ describe('admin AccountsView usage windows hint', () => {
   })
 
   it('renders the upstream billing trust warning next to the declared-rate column', async () => {
+    // upstream_billing_rate is hidden by default under the prototype-04 default column set
+    // (glass-04-default-columns); explicitly show it here to exercise the header/warning.
+    localStorage.setItem('account-hidden-columns', JSON.stringify([]))
+    localStorage.setItem('account-hidden-columns-version', 'glass-04-default-columns')
     const wrapper = mountView()
     await flushPromises()
 

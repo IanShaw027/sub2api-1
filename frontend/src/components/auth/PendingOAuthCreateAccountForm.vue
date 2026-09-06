@@ -4,7 +4,7 @@
  v-model="email"
  :data-testid="`${testIdPrefix}-create-account-email`"
  type="email"
- class="input w-full"
+ class="field input-lg w-full"
  :placeholder="t('auth.emailPlaceholder')"
  :disabled="isSubmitting || isSendingCode || isAliyunRunning"
  />
@@ -12,7 +12,7 @@
  v-model="password"
  :data-testid="`${testIdPrefix}-create-account-password`"
  type="password"
- class="input w-full"
+ class="field input-lg w-full"
  :placeholder="t('auth.passwordPlaceholder')"
  :disabled="isSubmitting"
  />
@@ -41,15 +41,16 @@
  type="text"
  inputmode="numeric"
  maxlength="6"
- class="input min-w-0 flex-1"
+ class="field h-12 min-w-0 flex-1 text-center font-mono text-[22px] tracking-[0.4em]"
  placeholder="123456"
  :disabled="isSubmitting"
  />
- <button
+ <Button
  :data-testid="`${testIdPrefix}-create-account-send-code`"
- type="button"
- class="btn btn-secondary shrink-0"
+ variant="ghost"
+ class="shrink-0"
  :disabled="isSubmitting || isSendingCode || isAliyunRunning || countdown > 0 || !email.trim() || (turnstileWidgetActive && !turnstileToken)"
+ :loading="isSendingCode"
  @click="handleSendCode"
  >
  {{
@@ -59,9 +60,9 @@
  ? t('auth.resendCountdown', { countdown })
  : t('auth.sendCode')
  }}
- </button>
+ </Button>
  </div>
- <p v-if="emailVerifyEnabled && sendCodeSuccess" class="text-sm text-green-600">
+ <p v-if="emailVerifyEnabled && sendCodeSuccess" class="text-sm text-success-text">
  {{ t('auth.codeSentSuccess') }}
  </p>
  <p v-else-if="emailVerifyEnabled" class="text-xs text-muted">
@@ -72,27 +73,29 @@
  v-model="invitationCode"
  :data-testid="`${testIdPrefix}-create-account-invitation-code`"
  type="text"
- class="input w-full"
+ class="field input-lg w-full"
  :placeholder="t('auth.invitationCodePlaceholder')"
  :disabled="isSubmitting"
  />
- <button
+ <Button
  :data-testid="`${testIdPrefix}-create-account-submit`"
- type="button"
- class="btn btn-primary w-full"
+ size="lg"
+ class="w-full"
  :disabled="isSubmitting || isSendingCode || isAliyunRunning || !email.trim() || password.length < 6 || (invitationCodeEnabled && !invitationCode.trim()) || (turnstileWidgetActive && !turnstileToken)"
+ :loading="isSubmitting"
  @click="handleSubmit"
  >
  {{ isSubmitting ? t('common.processing') : t('auth.createAccount') }}
- </button>
- <button
- type="button"
- class="btn btn-secondary w-full"
+ </Button>
+ <Button
+ variant="secondary"
+ size="lg"
+ class="w-full"
  :disabled="isSubmitting"
  @click="emitSwitchToBind"
  >
  {{ t('auth.alreadyHaveAccount') }}
- </button>
+ </Button>
  </form>
 </template>
 
@@ -100,6 +103,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import TurnstileWidget from '@/components/CaptchaChallenge.vue'
+import Button from '@/components/ui/Button.vue'
 import type { AliyunCaptchaBizResult } from '@/components/AliyunCaptchaWidget.vue'
 import { getPublicSettings, sendPendingOAuthVerifyCode } from '@/api/auth'
 import {

@@ -171,12 +171,23 @@ function rateEnabled(r: number): boolean {
 
 function chipClass(active: boolean): string {
  return active
- ? 'bg-gradient-to-r from-[var(--accent)] to-[color-mix(in_oklch,var(--accent)_80%,black)] text-white shadow-sm shadow-[color-mix(in_oklch,var(--accent)_30%,transparent)]'
+ ? 'chip-plain-active'
  : 'bg-surface text-muted ring-1 ring-inset ring-line enabled:hover:bg-surface-2 enabled:hover:text-foreground enabled:hover:ring-line'
 }
 </script>
 
 <style scoped>
+/* "全部" chip 激活态:与 .btn-glass-primary 同款实心主色。 */
+.chip-plain-active {
+ color: white;
+ background-color: var(--accent);
+ box-shadow: 0 8px 20px -10px var(--accent);
+}
+
+.chip-plain-active:hover {
+ filter: brightness(1.07);
+}
+
 /* 平台/分组 chip 的配色统一从 --chip-accent(平台主色)派生,新增平台无需扩展样式。
  激活态与非激活态在模板上互斥挂载,避免选择器优先级互相覆盖。 */
 .chip-tinted {
@@ -201,7 +212,7 @@ function chipClass(active: boolean): string {
 }
 
 .chip-tinted-active {
- color: #fff;
+ color: white;
  background-color: var(--chip-accent);
  background-color: color-mix(in srgb, var(--chip-accent) 85%, black);
  box-shadow: 0 1px 2px 0 color-mix(in srgb, var(--chip-accent) 35%, transparent);

@@ -302,10 +302,10 @@ watch(
 )
 
 function getLoadBarClass(loadPct: number): string {
-  if (loadPct >= 90) return 'bg-red-500 '
-  if (loadPct >= 70) return 'bg-orange-500 '
-  if (loadPct >= 50) return 'bg-yellow-500 '
-  return 'bg-green-500 '
+  if (loadPct >= 90) return 'bg-danger-500 '
+  if (loadPct >= 70) return 'bg-warning-500 '
+  if (loadPct >= 50) return 'bg-warning-500 '
+  return 'bg-success-500 '
 }
 
 function getLoadBarStyle(loadPct: number): string {
@@ -341,11 +341,11 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="flex h-full flex-col rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <!-- 头部 -->
     <div class="mb-4 flex shrink-0 items-center justify-between gap-3">
       <h3 class="flex items-center gap-2 text-sm font-bold text-foreground ">
-        <svg class="h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg class="h-4 w-4 text-accent-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
         {{ t('admin.ops.concurrency.title') }}
@@ -434,7 +434,7 @@ watch(
 
           <!-- 等待队列 -->
           <div v-if="row.waiting_in_queue > 0" class="mt-1.5 flex justify-end">
-            <span class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700  ">
+            <span class="rounded-full bg-accent-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent-700  ">
               {{ t('admin.ops.concurrency.queued', { count: row.waiting_in_queue }) }}
             </span>
           </div>
@@ -507,7 +507,7 @@ watch(
             <!-- 等待队列 -->
             <span
               v-if="row.waiting_in_queue > 0"
-              class="rounded-full bg-purple-500/15 px-1.5 py-0.5 font-semibold text-purple-700  "
+              class="rounded-full bg-accent-500/15 px-1.5 py-0.5 font-semibold text-accent-700  "
             >
               {{ t('admin.ops.concurrency.queued', { count: row.waiting_in_queue }) }}
             </span>
@@ -589,7 +589,7 @@ watch(
 
           <!-- 等待队列 -->
           <div v-if="row.waiting_in_queue > 0" class="mt-1.5 flex justify-end">
-            <span class="rounded-full bg-purple-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700  ">
+            <span class="rounded-full bg-accent-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent-700  ">
               {{ t('admin.ops.concurrency.queued', { count: row.waiting_in_queue }) }}
             </span>
           </div>
@@ -602,7 +602,7 @@ watch(
 <style scoped>
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+  scrollbar-color: color-mix(in oklch, var(--muted) 30%, transparent) transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -614,11 +614,11 @@ watch(
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: rgba(156, 163, 175, 0.3);
-  border-radius: 3px;
+  background-color: color-mix(in oklch, var(--muted) 30%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(156, 163, 175, 0.5);
+  background-color: color-mix(in oklch, var(--muted) 50%, transparent);
 }
 </style>

@@ -11,6 +11,7 @@ export default {
     cancel: 'Cancel',
     delete: 'Delete',
     edit: 'Edit',
+    moreActions: 'More actions',
     create: 'Create',
     update: 'Update',
     confirm: 'Confirm',
@@ -201,6 +202,14 @@ export default {
     },
     breadcrumbAdmin: 'Console',
     breadcrumbUser: 'Dashboard',
+    search: 'Search',
+    searchPlaceholder: 'Search accounts, keys, users…',
+    searchEmpty: 'No matching pages',
+    searchHint: '↑↓ select · Enter open · Esc close',
+    balance: 'Balance',
+    theme: 'Theme',
+    notifications: 'Notifications',
+    pages: 'Pages',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
     collapse: 'Collapse',
@@ -232,6 +241,18 @@ export default {
 
   // Auth
   auth: {
+    brand: {
+      serviceNormal: 'All systems normal',
+      // Three one-line selling points for the auth brand panel (shorter than the home feature copy)
+      features: {
+        unifiedGateway: 'One key · Call every connected model with a single API key',
+        multiAccount: 'Reliable · Smart multi-account routing with automatic failover',
+        balanceQuota: 'Pay as you go · Usage-based billing with clear quota limits and reports'
+      }
+    },
+    agreementNotice: 'By signing in you agree to the',
+    agreementSeparator: 'and',
+    signUpAgreementNotice: 'By signing up you agree to the',
     welcomeBack: 'Welcome Back',
     signInToAccount: 'Sign in to your account to continue',
     signIn: 'Sign In',

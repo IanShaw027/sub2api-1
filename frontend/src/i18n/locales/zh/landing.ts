@@ -16,7 +16,7 @@ export default {
     goToDashboard: '进入控制台',
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',
-    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务',
+    heroDescription: '无需管理多个订阅账号，一站式接入 Claude、GPT、Gemini 等主流 AI 服务。',
     tags: {
       subscriptionToApi: '订阅转 API',
       stickySession: '会话保持',
@@ -60,6 +60,8 @@ export default {
     // 优势对比
     comparison: {
       title: '为什么选择我们？',
+      heading: '对比官方订阅',
+      headingDesc: '智能调度多个上游账号，自动切换和负载均衡；按实际使用量计费，支持配额上限，团队用量一目了然。',
       headers: {
         feature: '对比项',
         official: '官方订阅',
@@ -101,13 +103,71 @@ export default {
       claude: 'Claude',
       gemini: 'Gemini',
       antigravity: 'Antigravity',
-      more: '更多'
+      more: '更多',
+      line: 'Claude · OpenAI · Gemini · Antigravity · Grok'
     },
     // CTA 区块
     cta: {
       title: '准备好开始了吗？',
       description: '注册即可获得免费试用额度，体验一站式 AI 服务',
       button: '免费注册'
+    },
+    // ---- Glass redesign additions ----
+    nav: {
+      modelPlaza: '模型广场',
+      docs: '文档',
+      keyUsage: '用量查询',
+      status: '服务状态'
+    },
+    heroTitle1: '一个密钥，',
+    heroTitle2: '畅用多个 AI 模型',
+    heroDescriptionExt: '兼容 Anthropic 与 OpenAI 协议，Claude Code、Codex CLI 改一个 Base URL 即可使用。',
+    socialProof: '面向 Claude Code · Codex CLI · Cursor 等客户端的开发者',
+    console: {
+      url: 'console.sub2api.dev/dashboard',
+      uptimeLabel: '服务状态 · 近 30 天可用性',
+      allOk: '全部正常',
+      rpmLabel: '请求 / 分钟 · 24h',
+      firstToken: '首 token 620 ms',
+      stickyHit: '会话保持命中 98.2%'
+    },
+    steps: {
+      kicker: '接入只需三步',
+      title: '改一个 Base URL，其余照旧',
+      items: {
+        create: { title: '注册并创建 API 密钥', desc: '按分组选择模型池，可设置并发、速率与过期时间' },
+        baseUrl: { title: '把 Base URL 指向本站', desc: '同时兼容 /v1/messages 与 /v1/chat/completions' },
+        client: { title: '在任意客户端使用', desc: '会话保持保证同一对话始终命中同一上游账号' }
+      },
+      copy: '复制',
+      copied: '已复制',
+      comment: {
+        shell: '# ~/.zshrc',
+        start: '# 启动',
+        codex: '# ~/.codex/config.toml'
+      }
+    },
+    pricing: {
+      kicker: '模型与定价',
+      title: '按量付费，价格透明',
+      link: '前往模型广场',
+      headers: {
+        model: '模型',
+        vendor: '提供商',
+        input: '输入 / 1M',
+        output: '输出 / 1M',
+        context: '上下文',
+        status: '状态'
+      },
+      normal: '正常',
+      limited: '限流',
+      footnote: '价格按每 1M tokens 计，缓存读取按输入价 10% 计费；高峰倍率与分组倍率以密钥所属分组为准。',
+      empty: '暂无公开定价，登录后可在模型广场查看'
+    },
+    footerLinks: {
+      terms: '服务条款',
+      privacy: '隐私政策',
+      contact: '联系客服'
     },
     footer: {
       allRightsReserved: '保留所有权利。'
@@ -121,6 +181,8 @@ export default {
     placeholder: 'sk-ant-mirror-xxxxxxxxxxxx',
     query: '查询',
     querying: '查询中...',
+    showKey: '显示 Key',
+    hideKey: '隐藏 Key',
     privacyNote: '您的 Key 仅在浏览器本地处理，不会被存储',
     dateRange: '统计范围:',
     dateRangeToday: '今日',
@@ -187,6 +249,13 @@ export default {
     queryFailed: '查询失败',
     queryFailedRetry: '查询失败，请稍后重试',
     noDailyUsage: '暂无按日用量数据',
+  },
+
+  // 404 Not Found Page
+  notFound: {
+    description: '您访问的页面不存在或已被移动。',
+    backHome: '返回首页',
+    goBack: '返回上一页',
   },
 
   // Setup Wizard

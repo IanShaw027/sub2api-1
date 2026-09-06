@@ -30,80 +30,71 @@ const isVisible = computed(() => isLoading.value)
 
 <style scoped>
 .navigation-progress {
- position: fixed;
- top: 0;
- left: 0;
- right: 0;
- height: 3px;
- z-index: 9999;
- overflow: hidden;
- background: transparent;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 9999;
+  overflow: hidden;
+  background: transparent;
 }
 
+/* 主色渐变 + 微光（原型 07 · NavigationProgress） */
 .navigation-progress-bar {
- height: 100%;
- width: 100%;
- background: linear-gradient(
- 90deg,
- transparent 0%,
- theme('colors.primary.400') 20%,
- theme('colors.primary.500') 50%,
- theme('colors.primary.400') 80%,
- transparent 100%
- );
- animation: progress-slide 1.5s ease-in-out infinite;
-}
-
-/* 暗色模式下的进度条颜色 */
-:global(:root[data-theme='glass-dark']) .navigation-progress-bar {
- background: linear-gradient(
- 90deg,
- transparent 0%,
- theme('colors.primary.500') 20%,
- theme('colors.primary.400') 50%,
- theme('colors.primary.500') 80%,
- transparent 100%
- );
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent) 25%,
+    color-mix(in oklch, var(--accent) 60%, white) 50%,
+    var(--accent) 75%,
+    transparent 100%
+  );
+  box-shadow: 0 0 8px var(--accent);
+  animation: progress-slide 1.5s ease-in-out infinite;
 }
 
 /* 进度条滑动动画 */
 @keyframes progress-slide {
- 0% {
- transform: translateX(-100%);
- }
- 100% {
- transform: translateX(100%);
- }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 /* 淡入淡出过渡 */
 .progress-fade-enter-active {
- transition: opacity 0.15s ease-out;
+  transition: opacity 0.15s ease-out;
 }
 
 .progress-fade-leave-active {
- transition: opacity 0.3s ease-out;
+  transition: opacity 0.3s ease-out;
 }
 
 .progress-fade-enter-from,
 .progress-fade-leave-to {
- opacity: 0;
+  opacity: 0;
 }
 
 /* 减少动画模式 */
 @media (prefers-reduced-motion: reduce) {
- .navigation-progress-bar {
- animation: progress-pulse 2s ease-in-out infinite;
- }
+  .navigation-progress-bar {
+    animation: progress-pulse 2s ease-in-out infinite;
+  }
 
- @keyframes progress-pulse {
- 0%,
- 100% {
- opacity: 0.4;
- }
- 50% {
- opacity: 1;
- }
- }
+  @keyframes progress-pulse {
+    0%,
+    100% {
+      opacity: 0.4;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
 }
 </style>

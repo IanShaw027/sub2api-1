@@ -14,7 +14,11 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
-          <FilterBar :search-placeholder="t('admin.announcements.searchAnnouncements')">
+          <FilterBar
+            :search-placeholder="t('admin.announcements.searchAnnouncements')"
+            :filter-label="t('common.filter')"
+
+          >
             <template #search>
               <input
                 v-model="searchQuery"
@@ -179,7 +183,7 @@
     <BaseDialog
       :show="showEditDialog"
       :title="isEditing ? t('admin.announcements.editAnnouncement') : t('admin.announcements.createAnnouncement')"
-      width="wide"
+      width="extra-wide"
       @close="closeEdit"
     >
       <form id="announcement-form" @submit.prevent="handleSave" class="space-y-4">
@@ -188,56 +192,77 @@
           <input v-model="form.title" type="text" class="input" required />
         </div>
 
-        <div>
-          <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
-          <textarea ref="contentTextareaRef" v-model="form.content" rows="6" class="input" required></textarea>
-          <div class="mt-2 flex items-center gap-3">
-            <label class="btn-glass-secondary cursor-pointer">
-              {{ t('admin.announcements.form.insertImage') }}
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                class="sr-only"
-                :disabled="uploading"
-                @change="handleImageUpload"
-              />
-            </label>
-            <span v-if="uploading" class="text-sm text-muted">
-              {{ t('admin.announcements.form.uploading') }}
-            </span>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.announcements.form.content') }}</label>
+            <textarea
+              ref="contentTextareaRef"
+              v-model="form.content"
+              class="field announcement-content-field"
+              required
+            ></textarea>
+            <div class="mt-2 flex items-center gap-3">
+              <label class="btn-glass-secondary cursor-pointer">
+                {{ t('admin.announcements.form.insertImage') }}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  class="sr-only"
+                  :disabled="uploading"
+                  @change="handleImageUpload"
+                />
+              </label>
+              <span v-if="uploading" class="text-sm text-muted">
+                {{ t('admin.announcements.form.uploading') }}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <label class="input-label">{{ t('admin.announcements.form.contentPreview') }}</label>
+            <div class="glass-card announcement-preview-card">
+              <div
+                v-if="form.content.trim()"
+                class="markdown-body prose prose-sm max-w-none"
+                v-html="contentPreviewHtml"
+              ></div>
+              <p v-else class="text-sm text-muted">
+                {{ t('admin.announcements.form.contentPreviewEmpty') }}
+              </p>
+            </div>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.status') }}</label>
+        <SettingsSection>
+          <SettingRow :label="t('admin.announcements.form.status')">
             <Select v-model="form.status" :options="statusOptions" />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.notifyMode') }}</label>
+          </SettingRow>
+          <SettingRow
+            :label="t('admin.announcements.form.notifyMode')"
+            :description="t('admin.announcements.form.notifyModeHint')"
+          >
             <Select v-model="form.notify_mode" :options="notifyModeOptions" />
-            <p class="input-hint">{{ t('admin.announcements.form.notifyModeHint') }}</p>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.startsAt') }}</label>
+          </SettingRow>
+          <SettingRow
+            :label="t('admin.announcements.form.startsAt')"
+            :description="t('admin.announcements.form.startsAtHint')"
+          >
             <input v-model="form.starts_at_str" type="datetime-local" class="input" />
-            <p class="input-hint">{{ t('admin.announcements.form.startsAtHint') }}</p>
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.announcements.form.endsAt') }}</label>
+          </SettingRow>
+          <SettingRow
+            :label="t('admin.announcements.form.endsAt')"
+            :description="t('admin.announcements.form.endsAtHint')"
+          >
             <input v-model="form.ends_at_str" type="datetime-local" class="input" />
-            <p class="input-hint">{{ t('admin.announcements.form.endsAtHint') }}</p>
-          </div>
-        </div>
-
-        <AnnouncementTargetingEditor
-          v-model="form.targeting"
-          :groups="subscriptionGroups"
-        />
+          </SettingRow>
+          <SettingRow :label="t('admin.announcements.form.targetingMode')">
+            <AnnouncementTargetingEditor
+              v-model="form.targeting"
+              :groups="subscriptionGroups"
+            />
+          </SettingRow>
+        </SettingsSection>
       </form>
 
       <template #footer>
@@ -282,6 +307,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminMediaAPI, mediaPublicUrl } from '@/api/media'
@@ -290,6 +317,7 @@ import { adminAPI } from '@/api/admin'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import type { AdminGroup, Announcement, AnnouncementTargeting } from '@/types'
 import type { Column } from '@/components/common/types'
+import '@/styles/announcement-markdown.css'
 
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -298,6 +326,8 @@ import Button from '@/components/ui/Button.vue'
 import FilterBar from '@/components/ui/FilterBar.vue'
 import ChipScroller from '@/components/ui/ChipScroller.vue'
 import Fab from '@/components/ui/Fab.vue'
+import SettingsSection from '@/components/ui/SettingsSection.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
@@ -309,6 +339,8 @@ import Icon from '@/components/icons/Icon.vue'
 import AnnouncementTargetingEditor from '@/components/admin/announcements/AnnouncementTargetingEditor.vue'
 import AnnouncementReadStatusDialog from '@/components/admin/announcements/AnnouncementReadStatusDialog.vue'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
+
+marked.setOptions({ breaks: true, gfm: true })
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -477,6 +509,12 @@ const form = reactive({
   starts_at_str: '',
   ends_at_str: '',
   targeting: { any_of: [] } as AnnouncementTargeting
+})
+
+const contentPreviewHtml = computed(() => {
+  const content = form.content || ''
+  if (!content.trim()) return ''
+  return DOMPurify.sanitize(marked.parse(content, { async: false }) as string)
 })
 
 const subscriptionGroups = ref<AdminGroup[]>([])
@@ -712,9 +750,24 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
+.announcements-mobile-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .announcements-fab { display: none; }
 @media (max-width: 767px) {
   .announcements-create-desktop { display: none; }
   .announcements-fab { display: inline-flex; }
+}
+
+.announcement-content-field {
+  height: 220px;
+}
+
+.announcement-preview-card {
+  height: 220px;
+  overflow-y: auto;
+  padding: 12px 16px;
 }
 </style>

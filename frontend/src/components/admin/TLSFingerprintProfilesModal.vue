@@ -70,7 +70,7 @@
                 <Icon
                   :name="profile.enable_grease ? 'check' : 'lock'"
                   size="sm"
-                  :class="profile.enable_grease ? 'text-green-500' : 'text-muted'"
+                  :class="profile.enable_grease ? 'text-success-500' : 'text-muted'"
                 />
               </td>
               <td class="px-3 py-2">
@@ -187,7 +187,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
                 form.enable_grease ? 'translate-x-4' : 'translate-x-0'
               ]"
             />

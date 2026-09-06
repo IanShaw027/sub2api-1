@@ -33,7 +33,7 @@ describe('proxyExpiryBadgeClass', () => {
     expect(proxyExpiryBadgeClass(isoInDays(7), 'active')).toBe('badge badge-warning')
   })
   it('>7 天 → gray', () => {
-    expect(proxyExpiryBadgeClass(isoInDays(30), 'active')).toBe('text-gray-500')
+    expect(proxyExpiryBadgeClass(isoInDays(30), 'active')).toBe('text-muted')
   })
 })
 

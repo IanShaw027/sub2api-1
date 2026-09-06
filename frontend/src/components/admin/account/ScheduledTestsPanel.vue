@@ -203,14 +203,14 @@
               <div class="flex items-center gap-1" @click.stop>
                 <button
                   @click="startEdit(plan)"
-                  class="rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-blue-500"
+                  class="rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] hover:text-accent-500"
                   :title="t('admin.scheduledTests.editPlan')"
                 >
                   <Icon name="edit" size="sm" :stroke-width="2" />
                 </button>
                 <button
                   @click="confirmDeletePlan(plan)"
-                  class="rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-red-500"
+                  class="rounded-lg p-1.5 text-muted transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-500"
                   :title="t('admin.scheduledTests.deletePlan')"
                 >
                   <Icon name="trash" size="sm" :stroke-width="2" />
@@ -418,7 +418,7 @@
                   </div>
                   <pre
                     v-if="expandedResultIds.has(result.id)"
-                    class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-red-50 p-2 text-xs text-danger-text"
+                    class="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded bg-danger-50 p-2 text-xs text-danger-text"
                   >{{ result.error_message }}</pre>
                 </div>
                 <div v-else-if="result.response_text" class="mt-2">

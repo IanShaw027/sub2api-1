@@ -1,6 +1,11 @@
 <template>
   <span :class="['badge-tone-' + tone, dot ? 'ui-status-badge-dot' : null]">
-    <span v-if="dot" class="ui-status-badge-dot-mark" aria-hidden="true" />
+    <span
+      v-if="dot"
+      class="ui-status-badge-dot-mark"
+      :class="{ 'ui-status-badge-dot-live': pulse }"
+      aria-hidden="true"
+    />
     <slot>{{ label }}</slot>
   </span>
 </template>
@@ -13,10 +18,13 @@ withDefaults(
     tone?: StatusBadgeTone
     label?: string
     dot?: boolean
+    /** Real-time / live state: animates the dot with `s2a-pulse`. */
+    pulse?: boolean
   }>(),
   {
     tone: 'muted',
-    dot: false
+    dot: false,
+    pulse: false
   }
 )
 </script>
@@ -32,5 +40,9 @@ withDefaults(
   border-radius: 50%;
   background: currentColor;
   flex: none;
+}
+
+.ui-status-badge-dot-live {
+  animation: s2a-pulse 1.6s ease-in-out infinite;
 }
 </style>

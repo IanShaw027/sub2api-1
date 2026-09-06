@@ -1,19 +1,38 @@
 <template>
  <AppLayout>
- <PageHeader :title="t('profile.title')" />
+ <SettingsPageLayout>
+ <template #header>
+ <PageHeader :title="t('profile.title')" :description="t('profile.description')" />
+ </template>
+
+ <template #nav>
+ <nav
+ class="glass-card sticky top-[76px] flex flex-col gap-1 p-2"
+ :aria-label="t('profile.title')"
+ >
+ <a
+ v-for="item in navItems"
+ :key="item.id"
+ :href="`#${item.id}`"
+ class="rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+ >
+ {{ item.label }}
+ </a>
+ </nav>
+ </template>
+
+ <template #content>
  <div
  data-testid="profile-shell"
- class="mx-auto max-w-[950px] space-y-6"
+ class="flex flex-col gap-3"
+ >
+ <div
+ id="profile-section-profile"
+ class="flex scroll-mt-20 flex-col gap-3"
  >
  <ProfileInfoCard
  :user="user"
- :linuxdo-enabled="linuxdoOAuthEnabled"
- :dingtalk-enabled="dingtalkOAuthEnabled"
- :oidc-enabled="oidcOAuthEnabled"
  :oidc-provider-name="oidcOAuthProviderName"
- :wechat-enabled="wechatOAuthEnabled"
- :wechat-open-enabled="wechatOAuthOpenEnabled"
- :wechat-mp-enabled="wechatOAuthMPEnabled"
  />
 
  <div
@@ -40,7 +59,7 @@
  <div
  v-for="(qrCode, index) in supportQRCodes"
  :key="`${qrCode.image_url}-${index}`"
- class="overflow-hidden rounded-2xl bg-surface p-3 "
+ class="overflow-hidden rounded-xl bg-surface p-3 "
  >
  <img
  :src="qrCode.image_url"
@@ -58,21 +77,82 @@
  </div>
  </div>
  </div>
+ </div>
 
- <ProfilePasswordForm />
+ <SettingsSection
+ id="profile-section-security"
+ class="scroll-mt-20"
+ :title="t('profile.securityTitle')"
+ :description="t('profile.securityDescription')"
+ >
+ <ProfilePasswordForm embedded />
+ <SettingRow
+ :label="t('profile.totp.title')"
+ :description="t('profile.totp.description')"
+ >
+ <ProfileTotpCard embedded />
+ </SettingRow>
+ <SettingRow
+ :label="t('profile.passkey.title')"
+ :description="t('profile.passkey.description')"
+ >
+ <ProfilePasskeyCard :enabled="passkeyEnabled" embedded />
+ </SettingRow>
+ </SettingsSection>
 
- <ProfileBalanceNotifyCard
+ <SettingsSection
  v-if="user && balanceLowNotifyEnabled"
+ id="profile-section-notify"
+ class="scroll-mt-20"
+ :title="t('profile.balanceNotify.title')"
+ :description="t('profile.balanceNotify.description')"
+ >
+ <ProfileBalanceNotifyCard
  :enabled="user.balance_notify_enabled ?? true"
  :threshold="user.balance_notify_threshold"
  :extra-emails="user.balance_notify_extra_emails ?? []"
  :system-default-threshold="systemDefaultThreshold"
  :user-email="user.email"
+ embedded
  />
+ </SettingsSection>
 
- <ProfileTotpCard />
- <ProfilePasskeyCard :enabled="passkeyEnabled" />
+ <SettingsSection
+ id="profile-section-bindings"
+ class="scroll-mt-20"
+ :title="t('profile.authBindings.title')"
+ :description="t('profile.authBindings.description')"
+ >
+ <ProfileIdentityBindingsSection
+ :user="user"
+ :linuxdo-enabled="linuxdoOAuthEnabled"
+ :dingtalk-enabled="dingtalkOAuthEnabled"
+ :oidc-enabled="oidcOAuthEnabled"
+ :oidc-provider-name="oidcOAuthProviderName"
+ :wechat-enabled="wechatOAuthEnabled"
+ :wechat-open-enabled="wechatOAuthOpenEnabled"
+ :wechat-mp-enabled="wechatOAuthMPEnabled"
+ embedded
+ compact
+ />
+ </SettingsSection>
+
+ <SettingsSection
+ data-testid="profile-danger-zone"
+ id="profile-section-danger"
+ class="scroll-mt-20 border-danger-200"
+ :title="t('profile.dangerZone.title')"
+ :description="t('profile.dangerZone.description')"
+ >
+ <SettingRow :label="t('profile.dangerZone.title')">
+ <p class="text-sm text-muted">
+ {{ t('profile.dangerZone.noActionsAvailable') }}
+ </p>
+ </SettingRow>
+ </SettingsSection>
  </div>
+ </template>
+ </SettingsPageLayout>
  </AppLayout>
 </template>
 
@@ -81,9 +161,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Icon } from '@/components/icons'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import SettingsPageLayout from '@/components/layout/SettingsPageLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import SettingsSection from '@/components/ui/SettingsSection.vue'
+import SettingRow from '@/components/ui/SettingRow.vue'
 import ProfileBalanceNotifyCard from '@/components/user/profile/ProfileBalanceNotifyCard.vue'
 import ProfileInfoCard from '@/components/user/profile/ProfileInfoCard.vue'
+import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import ProfilePasswordForm from '@/components/user/profile/ProfilePasswordForm.vue'
 import ProfileTotpCard from '@/components/user/profile/ProfileTotpCard.vue'
 import ProfilePasskeyCard from '@/components/user/profile/ProfilePasskeyCard.vue'
@@ -110,6 +194,19 @@ const wechatOAuthMPEnabled = ref<boolean | undefined>(undefined)
 const oidcOAuthEnabled = ref(false)
 const oidcOAuthProviderName = ref('OIDC')
 const passkeyEnabled = ref(false)
+
+const navItems = computed(() => {
+  const items = [
+    { id: 'profile-section-profile', label: t('profile.nav.profile') },
+    { id: 'profile-section-security', label: t('profile.nav.security') }
+  ]
+  if (user.value && balanceLowNotifyEnabled.value) {
+    items.push({ id: 'profile-section-notify', label: t('profile.nav.notify') })
+  }
+  items.push({ id: 'profile-section-bindings', label: t('profile.nav.bindings') })
+  items.push({ id: 'profile-section-danger', label: t('profile.nav.danger') })
+  return items
+})
 
 onMounted(async () => {
   const profileRefresh = authStore.refreshUser().catch((error) => {
@@ -152,3 +249,16 @@ onMounted(async () => {
   await Promise.all([profileRefresh, settingsLoad])
 })
 </script>
+
+<style scoped>
+/* SettingsPageLayout's own flex `gap: 14px` between #header and the nav/content
+   grid already provides the header-to-content spacing; PageHeader's own
+   default 14px margin-bottom would double it (28px). Zeroed here the same way
+   admin/SettingsView.vue's settings.css does for its own PageHeader usage
+   (see that file's comment) — this scoped rule reaches PageHeader's root
+   `<header>` because Vue stamps a parent's scope id onto a slotted child's
+   root element, even when passed through SettingsPageLayout's `#header` slot. */
+.ui-page-header.ui-page-header {
+  margin-bottom: 0;
+}
+</style>

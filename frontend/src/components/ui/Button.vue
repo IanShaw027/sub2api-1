@@ -33,7 +33,7 @@ const props = withDefaults(
   }>(),
   {
     variant: 'primary',
-    size: 'sm',
+    size: 'md',
     loading: false,
     disabled: false,
     nativeType: 'button'
@@ -57,10 +57,14 @@ const buttonClass = computed(() => {
   if (props.variant === 'primary') classes.push('btn-glass-primary')
   else if (props.variant === 'secondary') classes.push('btn-glass-secondary')
   else if (props.variant === 'danger') classes.push('ui-btn-danger')
+  else if (props.variant === 'success') classes.push('ui-btn-success')
+  else if (props.variant === 'warning') classes.push('ui-btn-warning')
   else if (props.variant === 'ghost') classes.push('ui-btn-ghost')
   else if (props.variant === 'icon') classes.push('ui-btn-icon')
 
-  if (props.size === 'md') classes.push('ui-btn-md')
+  if (props.size === 'lg') classes.push('ui-btn-lg')
+  else if (props.size === 'sm') classes.push('btn-sm')
+  else if (props.size === 'xs') classes.push('btn-xs')
   if (isDisabled.value) classes.push('ui-btn-disabled')
   return classes
 })
@@ -79,9 +83,9 @@ function handleClick(event: MouseEvent) {
   text-decoration: none;
 }
 
-.ui-btn-md,
-.ui-btn-md.btn-glass-primary,
-.ui-btn-md.btn-glass-secondary {
+.ui-btn-lg,
+.ui-btn-lg.btn-glass-primary,
+.ui-btn-lg.btn-glass-secondary {
   height: 42px;
   padding: 0 18px;
   font-size: 14px;
@@ -104,7 +108,7 @@ function handleClick(event: MouseEvent) {
   transition: filter 0.15s ease, transform 0.1s ease, background 0.15s ease;
 }
 
-.ui-btn-md.ui-btn-danger {
+.ui-btn-lg.ui-btn-danger {
   height: 42px;
 }
 
@@ -114,6 +118,84 @@ function handleClick(event: MouseEvent) {
 
 .ui-btn-danger:active {
   transform: scale(0.98);
+}
+
+.ui-btn-success,
+.ui-btn-warning {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: var(--radius-btn);
+  font-size: 13px;
+  font-weight: 600;
+  border: 0;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.1s ease, background 0.15s ease;
+}
+
+.ui-btn-success {
+  background: color-mix(in oklch, var(--success) 16%, transparent);
+  color: var(--success-text);
+}
+
+.ui-btn-warning {
+  background: color-mix(in oklch, var(--warning) 18%, transparent);
+  color: var(--warning-text);
+}
+
+.ui-btn-lg.ui-btn-success,
+.ui-btn-lg.ui-btn-warning {
+  height: 42px;
+}
+
+.ui-btn-success:hover {
+  filter: brightness(1.06);
+}
+
+.ui-btn-warning:hover {
+  filter: brightness(1.06);
+}
+
+.ui-btn-success:active,
+.ui-btn-warning:active {
+  transform: scale(0.98);
+}
+
+/* xs (26px r8) / sm (32px r9) sizes for variants not backed by the
+   global `.btn` selector (danger / success / warning / ghost / icon). */
+.ui-btn-danger.btn-xs,
+.ui-btn-success.btn-xs,
+.ui-btn-warning.btn-xs,
+.ui-btn-ghost.btn-xs {
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.ui-btn-danger.btn-sm,
+.ui-btn-success.btn-sm,
+.ui-btn-warning.btn-sm,
+.ui-btn-ghost.btn-sm {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+}
+
+.ui-btn-icon.btn-xs {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.ui-btn-icon.btn-sm {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
 }
 
 .ui-btn-ghost {
@@ -133,7 +215,7 @@ function handleClick(event: MouseEvent) {
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 
-.ui-btn-md.ui-btn-ghost {
+.ui-btn-lg.ui-btn-ghost {
   height: 42px;
 }
 
@@ -161,7 +243,7 @@ function handleClick(event: MouseEvent) {
   transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
 }
 
-.ui-btn-md.ui-btn-icon {
+.ui-btn-lg.ui-btn-icon {
   width: 42px;
   height: 42px;
 }

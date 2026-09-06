@@ -4,31 +4,23 @@
  <div v-for="i in 5" :key="i" class="data-table-mobile-card glass-card-solid">
  <div class="space-y-3">
  <div v-for="column in dataColumns" :key="column.key" class="flex justify-between">
- <div class="h-4 w-20 animate-pulse rounded bg-surface-2"></div>
- <div class="h-4 w-32 animate-pulse rounded bg-surface-2"></div>
+ <div class="skeleton h-3 w-20"></div>
+ <div class="skeleton h-3 w-32"></div>
  </div>
  <div v-if="hasActionsColumn" class="border-t border-line pt-3">
- <div class="h-8 w-full animate-pulse rounded bg-surface-2"></div>
+ <div class="skeleton h-8 w-full"></div>
  </div>
  </div>
  </div>
  </template>
 
  <template v-else-if="!data || data.length === 0">
- <div class="data-table-mobile-card glass-card-solid p-12 text-center">
  <slot name="empty">
- <div class="flex flex-col items-center">
- <Icon
- name="inbox"
- size="xl"
- class="mb-4 h-12 w-12 text-muted"
- />
- <p class="text-lg font-medium text-foreground">
- {{ t('empty.noData') }}
- </p>
+ <div class="empty-state data-table-empty">
+ <Icon name="inbox" class="data-table-empty-icon" :stroke-width="1.6" aria-hidden="true" />
+ <p class="data-table-empty-title">{{ t('empty.noData') }}</p>
  </div>
  </slot>
- </div>
  </template>
 
  <template v-else>
@@ -36,7 +28,7 @@
  <label class="flex items-center gap-2 text-sm font-medium text-muted">
  <input
  type="checkbox"
- class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+ class="dt-checkbox"
  :checked="allVisibleSelected"
  :indeterminate="someVisibleSelected"
  data-test="select-all-mobile"
@@ -59,7 +51,7 @@
  <div v-if="selectable" class="flex justify-end">
  <input
  type="checkbox"
- class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+ class="dt-checkbox"
  :checked="isRowSelected(row, index)"
  :aria-label="getRowSelectionLabel(row, index)"
  data-test="select-row"
@@ -73,10 +65,10 @@
  :data-field="column.key"
  class="flex min-w-0 items-start justify-between gap-4"
  >
- <span class="text-xs font-medium uppercase tracking-wider text-muted">
+ <span class="data-table-mobile-label">
  {{ column.label }}
  </span>
- <div class="min-w-0 max-w-full text-right text-sm text-foreground">
+ <div class="data-table-mobile-value min-w-0 max-w-full">
  <slot :name="`cell-${column.key}`" :row="row" :value="row[column.key]" :expanded="actionsExpanded">
  {{ column.formatter ? column.formatter(row[column.key], row) : row[column.key] }}
  </slot>
@@ -105,11 +97,11 @@
  <th
  v-if="selectable"
  scope="col"
- class="sticky-header-cell w-11 min-w-11 px-3 py-3 text-center"
+ class="sticky-header-cell data-table-th w-11 min-w-11 px-4 text-center"
  >
  <input
  type="checkbox"
- class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+ class="dt-checkbox"
  :checked="allVisibleSelected"
  :indeterminate="someVisibleSelected"
  :aria-label="t('common.selectAll')"
@@ -123,7 +115,7 @@
  scope="col"
  :aria-sort="column.sortable ? getColumnAriaSort(column.key) : undefined"
  :class="[
- 'sticky-header-cell data-table-th py-3 text-left',
+ 'sticky-header-cell data-table-th text-left',
  getAdaptivePaddingClass(),
  { 'data-table-th-sortable cursor-pointer': column.sortable },
  getStickyColumnClass(column, index),
@@ -141,7 +133,7 @@
  <span>{{ column.label }}</span>
  </slot>
  <span
- v-if="column.sortable"
+ v-if="column.sortable && sortKey === column.key"
  class="inline-flex h-5 w-4 flex-col items-center justify-center"
  aria-hidden="true"
  >
@@ -169,32 +161,21 @@
  <tbody class="table-body divide-y divide-line bg-surface">
  <!-- Loading skeleton -->
  <tr v-if="loading" v-for="i in 5" :key="i">
- <td v-if="selectable" class="w-11 min-w-11 px-3 py-4">
- <div class="mx-auto h-4 w-4 animate-pulse rounded bg-surface-2"></div>
+ <td v-if="selectable" class="data-table-td w-11 min-w-11 px-4">
+ <div class="skeleton mx-auto h-4 w-4"></div>
  </td>
- <td v-for="column in columns" :key="column.key" :class="['whitespace-nowrap py-4', getAdaptivePaddingClass()]">
- <div class="animate-pulse">
- <div class="h-4 w-3/4 rounded bg-surface-2"></div>
- </div>
+ <td v-for="column in columns" :key="column.key" :class="['data-table-td whitespace-nowrap', getAdaptivePaddingClass()]">
+ <div class="skeleton h-3 w-3/4"></div>
  </td>
  </tr>
 
  <!-- Empty state -->
  <tr v-else-if="!data || data.length === 0">
- <td
- :colspan="tableColumnCount"
- :class="['py-12 text-center text-muted', getAdaptivePaddingClass()]"
- >
+ <td :colspan="tableColumnCount" class="data-table-empty-cell">
  <slot name="empty">
- <div class="flex flex-col items-center">
- <Icon
- name="inbox"
- size="xl"
- class="mb-4 h-12 w-12 text-muted"
- />
- <p class="text-lg font-medium text-foreground">
- {{ t('empty.noData') }}
- </p>
+ <div class="empty-state data-table-empty">
+ <Icon name="inbox" class="data-table-empty-icon" :stroke-width="1.6" aria-hidden="true" />
+ <p class="data-table-empty-title">{{ t('empty.noData') }}</p>
  </div>
  </slot>
  </td>
@@ -220,10 +201,10 @@
  }"
  @click="clickableRows && emit('rowClick', item.row)"
  >
- <td v-if="selectable" class="w-11 min-w-11 px-3 py-4 text-center">
+ <td v-if="selectable" class="data-table-td w-11 min-w-11 px-4 text-center">
  <input
  type="checkbox"
- class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
+ class="dt-checkbox"
  :checked="isRowSelected(item.row, item.index)"
  :aria-label="getRowSelectionLabel(item.row, item.index)"
  data-test="select-row"
@@ -235,7 +216,7 @@
  v-for="(column, colIndex) in columns"
  :key="column.key"
  :class="[
- 'whitespace-nowrap py-4 text-sm text-foreground',
+ 'data-table-td whitespace-nowrap text-foreground',
  getAdaptivePaddingClass(),
  getStickyColumnClass(column, colIndex),
  column.class
@@ -892,7 +873,7 @@ const getAdaptivePaddingClass = () => {
  } else if (columnCount >= 5) {
  return 'px-4' // 16px
  } else {
- return 'px-6' // 24px (原始值)
+ return 'px-4' // 16px（Glass 表格默认）
  }
 }
 
@@ -953,7 +934,7 @@ defineExpose({
 <style scoped>
 /* 表格横向滚动 */
 .table-wrapper {
- --select-col-width: 52px; /* 勾选列宽度：px-6 (24px*2) + checkbox (16px) */
+ --select-col-width: 48px; /* 勾选列宽度：px-4 (16px*2) + checkbox (16px) */
  position: relative;
  overflow-x: auto;
  overflow-y: auto;
@@ -971,11 +952,83 @@ defineExpose({
 }
 
 .data-table-th {
+ height: 42px;
+ padding-top: 0;
+ padding-bottom: 0;
  font-size: 11px;
  font-weight: 600;
  letter-spacing: 0.06em;
  text-transform: uppercase;
  color: var(--muted);
+}
+
+/* 表体单元格：13px，上下 12px（行最小高 58px） */
+.data-table-td {
+ padding-top: 12px;
+ padding-bottom: 12px;
+ font-size: 13px;
+}
+
+.data-table-row > td {
+ height: 58px;
+}
+
+/* 勾选框：16px / 圆角 5 / 1.5px 描边，选中填主色（同 ui/Checkbox） */
+.dt-checkbox {
+ appearance: none;
+ -webkit-appearance: none;
+ width: 16px;
+ height: 16px;
+ flex: none;
+ border-radius: 5px;
+ border: 1.5px solid var(--border);
+ background: color-mix(in oklch, var(--surface) 85%, transparent);
+ box-shadow: var(--field-shadow);
+ cursor: pointer;
+ transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.dt-checkbox:checked,
+.dt-checkbox:indeterminate {
+ background-color: var(--accent);
+ border-color: var(--accent);
+ background-repeat: no-repeat;
+ background-position: center;
+ background-size: 11px 11px;
+}
+
+.dt-checkbox:checked {
+ background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+}
+
+.dt-checkbox:indeterminate {
+ background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'%3E%3Cpath d='M6 12h12'/%3E%3C/svg%3E");
+}
+
+.dt-checkbox:focus-visible {
+ outline: 2px solid var(--accent);
+ outline-offset: 2px;
+}
+
+/* 空状态：虚线 12px 盒子（原型 07） */
+.data-table-empty-cell {
+ padding: 16px;
+}
+
+.data-table-empty {
+ padding: 24px 16px;
+}
+
+.data-table-empty-icon {
+ width: 24px;
+ height: 24px;
+ color: var(--muted);
+}
+
+.data-table-empty-title {
+ font-size: 12.5px;
+ font-weight: 600;
+ color: var(--foreground);
 }
 
 .data-table-th-sortable:hover {
@@ -994,6 +1047,19 @@ defineExpose({
 
 .data-table-mobile-card {
  padding: 14px;
+}
+
+.data-table-mobile-label {
+ font-size: 11px;
+ font-weight: 500;
+ color: var(--muted);
+}
+
+.data-table-mobile-value {
+ font-size: 13px;
+ font-weight: 600;
+ color: var(--foreground);
+ text-align: right;
 }
 
 /* 表体保持在表头下方 */
@@ -1040,9 +1106,11 @@ defineExpose({
  right: 0;
 }
 
-/* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index */
+/* 表头 sticky 列 - 需要比普通表头单元格更高的 z-index，且背景必须不透明
+   （普通表头是 45% 半透明染色，横向滚动时会让被盖住的表头文字透出来） */
 .sticky-header-cell.sticky-col {
  z-index: 220; /* 高于普通表头单元格和表体固定列 */
+ background: color-mix(in oklch, var(--surface-secondary) 45%, var(--surface));
 }
 
 /* 表体 sticky 列背景 */
@@ -1073,7 +1141,7 @@ tbody tr:hover .sticky-col {
  bottom: 0;
  width: 10px;
  transform: translateX(100%);
- background: linear-gradient(to right, rgba(0, 0, 0, 0.08), transparent);
+ background: linear-gradient(to right, color-mix(in oklch, black 8%, transparent), transparent);
  pointer-events: none;
 }
 
@@ -1086,7 +1154,7 @@ tbody tr:hover .sticky-col {
  bottom: 0;
  width: 10px;
  transform: translateX(100%);
- background: linear-gradient(to right, rgba(0, 0, 0, 0.08), transparent);
+ background: linear-gradient(to right, color-mix(in oklch, black 8%, transparent), transparent);
  pointer-events: none;
 }
 
@@ -1099,76 +1167,59 @@ tbody tr:hover .sticky-col {
  bottom: 0;
  width: 10px;
  transform: translateX(-100%);
- background: linear-gradient(to left, rgba(0, 0, 0, 0.08), transparent);
+ background: linear-gradient(to left, color-mix(in oklch, black 8%, transparent), transparent);
  pointer-events: none;
 }
 
 /* 暗色模式阴影 */
 :global([data-theme='glass-dark']) .is-scrollable .sticky-col-left::after,
 :global([data-theme='glass-dark']) .is-scrollable .sticky-col-left-second::after {
- background: linear-gradient(to right, rgba(0, 0, 0, 0.2), transparent);
+ background: linear-gradient(to right, color-mix(in oklch, black 20%, transparent), transparent);
 }
 
 :global([data-theme='glass-dark']) .is-scrollable .sticky-col-right::before {
- background: linear-gradient(to left, rgba(0, 0, 0, 0.2), transparent);
+ background: linear-gradient(to left, color-mix(in oklch, black 20%, transparent), transparent);
 }
 </style>
 
 <style>
-/* ==========================================================================
- 终极悬浮滚动条防丢器 (Sledgehammer Override)
- 绕过 style.css 中 `* { scrollbar-color: transparent }` 的全局悬停隐身诅咒！
- ========================================================================== */
-
-/* 1. 废除全局针对所有元素的 scrollbar-width 设定，拿回 Chrome/Safari 下 Webkit 滚动条规则的控制权！ */
+/* 表格横向/纵向滚动条：8px 滑块，hover 才显形（与全局滚动条语言一致） */
 .table-wrapper {
- scrollbar-width: auto !important; /* 阻止 Chrome 121 退化到原生 Mac 闪隐滚动条 */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
 }
 
-/* 2. 重写 Webkit 滚动层，全部加上 !important 强制覆盖透明悬停陷阱 */
+.table-wrapper:hover,
+.table-wrapper:focus-within {
+  scrollbar-color: color-mix(in oklch, var(--muted) 45%, transparent) transparent;
+}
+
 .table-wrapper::-webkit-scrollbar {
- height: 12px !important;
- width: 12px !important;
- display: block !important;
- background-color: transparent !important;
+  width: 8px;
+  height: 8px;
+  background-color: transparent;
 }
 
 .table-wrapper::-webkit-scrollbar-track {
- background-color: rgba(0, 0, 0, 0.03) !important;
- border-radius: 6px !important;
- margin: 0 4px !important;
-}
-[data-theme='glass-dark'] .table-wrapper::-webkit-scrollbar-track {
- background-color: rgba(255, 255, 255, 0.05) !important;
+  background-color: transparent;
 }
 
-/* 常驻、不透明的滑块，无视鼠标是否 hover 都在那！ */
 .table-wrapper::-webkit-scrollbar-thumb {
- background-color: rgba(107, 114, 128, 0.75) !important;
- border-radius: 6px !important;
- border: 2px solid transparent !important;
- background-clip: padding-box !important;
- -webkit-appearance: none !important;
+  background-color: transparent;
+  border-radius: 999px;
+  transition: background-color 0.15s ease;
 }
+
+.table-wrapper:hover::-webkit-scrollbar-thumb,
+.table-wrapper:focus-within::-webkit-scrollbar-thumb {
+  background-color: color-mix(in oklch, var(--muted) 45%, transparent);
+}
+
 .table-wrapper::-webkit-scrollbar-thumb:hover {
- background-color: rgba(75, 85, 99, 0.9) !important;
+  background-color: color-mix(in oklch, var(--muted) 70%, transparent);
 }
 
-[data-theme='glass-dark'] .table-wrapper::-webkit-scrollbar-thumb {
- background-color: rgba(156, 163, 175, 0.75) !important;
-}
-[data-theme='glass-dark'] .table-wrapper::-webkit-scrollbar-thumb:hover {
- background-color: rgba(209, 213, 219, 0.9) !important;
-}
-
-/* 3. 仅给真正的 Firefox 留的后路 */
-@supports (-moz-appearance:none) {
- .table-wrapper {
- scrollbar-width: thin !important;
- scrollbar-color: rgba(156, 163, 175, 0.5) rgba(0, 0, 0, 0.03) !important;
- }
-[data-theme='glass-dark'] .table-wrapper {
- scrollbar-color: rgba(75, 85, 99, 0.5) rgba(255, 255, 255, 0.05) !important;
- }
+.table-wrapper::-webkit-scrollbar-corner {
+  background-color: transparent;
 }
 </style>

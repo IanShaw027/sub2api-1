@@ -11,6 +11,7 @@ export default {
     cancel: '取消',
     delete: '删除',
     edit: '编辑',
+    moreActions: '更多操作',
     create: '创建',
     update: '更新',
     confirm: '确认',
@@ -201,6 +202,14 @@ export default {
     },
     breadcrumbAdmin: '管理后台',
     breadcrumbUser: '控制台',
+    search: '搜索',
+    searchPlaceholder: '搜索账号、密钥、用户…',
+    searchEmpty: '没有匹配的页面',
+    searchHint: '↑↓ 选择 · Enter 打开 · Esc 关闭',
+    balance: '余额',
+    theme: '主题',
+    notifications: '通知',
+    pages: '页面',
     lightMode: '浅色模式',
     darkMode: '深色模式',
     collapse: '收起',
@@ -232,6 +241,18 @@ export default {
 
   // Auth
   auth: {
+    brand: {
+      serviceNormal: '服务正常',
+      // 登录 / 注册左侧品牌面板的三条卖点（比首页特性描述更精炼，单行显示）
+      features: {
+        unifiedGateway: '一键接入 · 获取一个 API 密钥，即可调用所有已接入模型',
+        multiAccount: '稳定可靠 · 多账号智能调度，自动切换和负载均衡',
+        balanceQuota: '用多少付多少 · 按量计费，配额上限与用量明细清晰可见'
+      }
+    },
+    agreementNotice: '登录即表示同意',
+    agreementSeparator: '与',
+    signUpAgreementNotice: '注册即表示同意',
     welcomeBack: '欢迎回来',
     signInToAccount: '登录您的账户以继续',
     signIn: '登录',

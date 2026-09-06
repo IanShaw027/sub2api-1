@@ -63,7 +63,7 @@ export default {
     },
     events: {
       title: '审计事件', description: '按身份、入口、风险、Hash 和时间复核事件，详情中可查看完整提示词。', decision: '判定', risk: '风险等级', endpoint: '入口', groupId: '分组 ID', userId: '用户 ID', apiKeyId: 'API Key ID', keyword: '关键词',
-      startAt: '开始时间', endAt: '结束时间', deleteSelected: '删除选中项（{count}）', deleteByFilter: '按筛选删除',
+      startAt: '开始时间', endAt: '结束时间', deleteSelected: '删除选中项（{count}）', deleteByFilter: '按筛选删除', advancedFilters: '高级筛选',
       filterDeleteDialogTitle: '按筛选删除审计事件', filterDeleteDialogDesc: '选择删除的时间范围与风险条件后即可执行删除；删除不可恢复。如需提前查看匹配数量，可先获取删除预览。',
       filterTimeRange: '删除时间范围', filterTimeRangeHint: '将删除所选截止时间之前产生的事件；预览后新产生的事件不受影响。',
       timePresets: { '1d': '1 天前', '7d': '7 天前', '30d': '30 天前', '90d': '90 天前', all: '全部时间', custom: '自定义范围' },

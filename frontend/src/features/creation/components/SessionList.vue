@@ -2,7 +2,6 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Button from '@/components/ui/Button.vue'
-import GlassCard from '@/components/ui/GlassCard.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import { useCreationStore } from '../stores/creation'
 import type { CreationSessionMode } from '../types'
@@ -19,7 +18,10 @@ const modeOptions = computed(() => [
 
 async function switchMode(mode: CreationSessionMode) {
   store.sessionModeFilter = mode
-  const next = store.sessions.find((session) => session.mode === mode)
+  const sameMode = store.sessions.filter((session) => session.mode === mode)
+  // Prefer a session that already belongs to the active group so switching modes never
+  // silently swaps the selected group (selectSession adopts the session's group_id).
+  const next = sameMode.find((session) => session.group_id === store.groupId) ?? sameMode[0]
   if (next) {
     await store.selectSession(next.id)
     return
@@ -47,7 +49,7 @@ async function removeSession(id: number) {
 </script>
 
 <template>
-  <GlassCard class="studio-session-list" padding="sm">
+  <div class="glass-card studio-session-list">
     <div class="studio-session-list-header">
       <h2 class="text-sm font-semibold text-foreground">{{ t('studio.sessions') }}</h2>
       <SegmentedControl
@@ -58,12 +60,19 @@ async function removeSession(id: number) {
     </div>
 
     <div class="studio-session-actions">
-      <Button variant="secondary" size="sm" @click="createForMode">
+      <Button variant="secondary" @click="createForMode">
         {{ store.sessionModeFilter === 'image' ? t('studio.newImage') : t('studio.newChat') }}
       </Button>
     </div>
 
-    <div v-if="store.sessionsLoading" class="px-2 py-3 text-xs text-muted">
+    <div
+      v-if="store.sessionsLoading"
+      class="px-2 py-3 text-xs text-muted"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+      :aria-label="t('studio.a11y.loadingSessions')"
+    >
       {{ t('common.loading') }}
     </div>
 
@@ -86,13 +95,14 @@ async function removeSession(id: number) {
           type="button"
           class="studio-session-delete text-muted"
           :title="t('studio.deleteSession')"
+          :aria-label="t('studio.deleteSession')"
           @click="removeSession(session.id)"
         >
           ×
         </button>
       </li>
     </ul>
-  </GlassCard>
+  </div>
 </template>
 
 <style scoped>
@@ -101,6 +111,7 @@ async function removeSession(id: number) {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  padding: 12px;
 }
 
 .studio-session-list-header {
@@ -124,48 +135,87 @@ async function removeSession(id: number) {
   max-height: min(52vh, 560px);
 }
 
+/* Desktop 3-column layout: match the main/controls columns' locked height
+   (viewport minus header + page padding) and scroll the session list
+   internally instead of clamping to a vh fraction. */
+@media (min-width: 1101px) {
+  .studio-session-list {
+    height: calc(100vh - 146px - 24px);
+    overflow-y: auto;
+  }
+
+  .studio-session-items {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
 .studio-session-item {
   display: flex;
   align-items: center;
-  gap: 4px;
-  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
-  border-radius: 12px;
-  background: color-mix(in oklch, var(--surface) 80%, transparent);
+  gap: 2px;
+  border-radius: 9px;
+  transition: background 0.15s ease;
 }
 
-.studio-session-item-active {
-  border-color: color-mix(in oklch, var(--accent) 45%, var(--border));
-  background: color-mix(in oklch, var(--accent) 8%, var(--surface));
+.studio-session-item:hover {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+}
+
+.studio-session-item-active,
+.studio-session-item-active:hover {
+  background: var(--surface-secondary);
 }
 
 .studio-session-button {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: 10px 12px;
+  justify-content: center;
+  gap: 1px;
+  min-height: 36px;
+  padding: 4px 10px;
   text-align: left;
   background: transparent;
   border: none;
+  border-radius: 9px;
   color: var(--foreground);
 }
 
 .studio-session-title {
   font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-session-item-active .studio-session-title {
+  color: var(--accent);
   font-weight: 600;
 }
 
 .studio-session-meta {
   font-size: 11px;
+  font-family: var(--font-mono);
 }
 
 .studio-session-delete {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
+  flex: none;
   border: none;
+  border-radius: 8px;
   background: transparent;
-  font-size: 18px;
+  font-size: 16px;
   line-height: 1;
+}
+
+.studio-session-delete:hover {
+  background: color-mix(in oklch, var(--foreground) 8%, transparent);
+  color: var(--foreground);
 }
 
 @media (max-width: 767px) {

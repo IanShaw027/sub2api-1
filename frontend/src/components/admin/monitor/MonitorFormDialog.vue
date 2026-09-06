@@ -7,7 +7,7 @@
   >
     <form id="channel-monitor-form" @submit.prevent="handleSubmit" class="space-y-5">
       <div>
-        <label class="input-label">{{ t('admin.channelMonitor.form.name') }} <span class="text-red-500">*</span></label>
+        <label class="input-label">{{ t('admin.channelMonitor.form.name') }} <span class="text-danger-text">*</span></label>
         <input v-model="form.name" type="text" required class="input" :placeholder="t('admin.channelMonitor.form.namePlaceholder')" />
       </div>
 
@@ -33,7 +33,7 @@
       </div>
 
       <div>
-        <label class="input-label">{{ t('admin.channelMonitor.form.provider') }} <span class="text-red-500">*</span></label>
+        <label class="input-label">{{ t('admin.channelMonitor.form.provider') }} <span class="text-danger-text">*</span></label>
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <button
             v-for="opt in providerOptions"
@@ -54,7 +54,7 @@
       <!-- 配额模式数据源：关联账号（复用账号侧用量/余额服务） -->
       <div v-if="usesQuotaMode">
         <label class="input-label">
-          {{ t('admin.channelMonitor.form.linkedAccount') }} <span class="text-red-500">*</span>
+          {{ t('admin.channelMonitor.form.linkedAccount') }} <span class="text-danger-text">*</span>
         </label>
         <div data-testid="monitor-linked-account">
           <Select
@@ -97,7 +97,7 @@
       </div>
 
       <div v-if="usesProbePart">
-        <label class="input-label">{{ t('admin.channelMonitor.form.endpoint') }} <span class="text-red-500">*</span></label>
+        <label class="input-label">{{ t('admin.channelMonitor.form.endpoint') }} <span class="text-danger-text">*</span></label>
         <div class="flex gap-2">
           <input v-model="form.endpoint" data-testid="monitor-endpoint" type="text" required class="input flex-1" :placeholder="t('admin.channelMonitor.form.endpointPlaceholder')" />
           <button type="button" @click="useCurrentDomain" class="btn btn-secondary whitespace-nowrap">
@@ -108,7 +108,7 @@
 
       <div v-if="usesProbePart">
         <label class="input-label">
-          {{ t('admin.channelMonitor.form.apiKey') }}<span v-if="!editing" class="text-red-500"> *</span>
+          {{ t('admin.channelMonitor.form.apiKey') }}<span v-if="!editing" class="text-danger-text"> *</span>
         </label>
         <div class="flex gap-2">
           <input
@@ -126,14 +126,14 @@
       </div>
 
       <div v-if="usesProbePart">
-        <label class="input-label">{{ t('admin.channelMonitor.form.primaryModel') }} <span class="text-red-500">*</span></label>
+        <label class="input-label">{{ t('admin.channelMonitor.form.primaryModel') }} <span class="text-danger-text">*</span></label>
         <input
           v-model="form.primary_model"
           data-testid="monitor-primary-model"
           type="text"
           required
           class="input font-medium"
-          :class="getPlatformTextClass(form.provider)"
+          :class="platformTextClass(form.provider)"
           :placeholder="t('admin.channelMonitor.form.primaryModelPlaceholder')"
         />
       </div>
@@ -154,7 +154,7 @@
       </div>
 
       <div>
-        <label class="input-label">{{ t('admin.channelMonitor.form.intervalSeconds') }} <span class="text-red-500">*</span></label>
+        <label class="input-label">{{ t('admin.channelMonitor.form.intervalSeconds') }} <span class="text-danger-text">*</span></label>
         <input v-model.number="form.interval_seconds" type="number" min="15" max="3600" required class="input" />
         <p class="mt-1 text-xs text-muted">{{ t('admin.channelMonitor.form.intervalSecondsHint') }}</p>
       </div>
@@ -255,7 +255,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Select from '@/components/common/Select.vue'
 import ModelTagInput from '@/components/admin/channel/ModelTagInput.vue'
-import { getPlatformTextClass } from '@/components/admin/channel/types'
+import { platformTextClass } from '@/utils/platformColors'
 import MonitorKeyPickerDialog from '@/components/admin/monitor/MonitorKeyPickerDialog.vue'
 import MonitorAdvancedRequestConfig from '@/components/admin/monitor/MonitorAdvancedRequestConfig.vue'
 import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'

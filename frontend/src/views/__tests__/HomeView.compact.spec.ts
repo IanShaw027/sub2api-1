@@ -56,7 +56,13 @@ function mountHome(settings: Record<string, unknown> = {}) {
 }
 
 function compactDestination(wrapper: ReturnType<typeof mountHome>) {
-  return wrapper.get('[data-testid="compact-home"]').findComponent(RouterLinkStub).props('to')
+  // The compact header now also renders a brand link (`to="/home"`) and an
+  // optional model-plaza link ahead of the login/dashboard CTA, so the first
+  // RouterLinkStub in the container is no longer necessarily the CTA. Find
+  // the login/dashboard link specifically by excluding those other targets.
+  const links = wrapper.get('[data-testid="compact-home"]').findAllComponents(RouterLinkStub)
+  const excluded = new Set(['/home', '/model-plaza'])
+  return links.find((link) => !excluded.has(link.props('to')))?.props('to')
 }
 
 function modelPlazaDestination(wrapper: ReturnType<typeof mountHome>) {
@@ -108,7 +114,11 @@ describe('HomeView compact mode', () => {
     const wrapper = mountHome(settings)
 
     expect(wrapper.find('[data-testid="compact-home"]').exists()).toBe(false)
-    expect(wrapper.find('.terminal-container').exists()).toBe(true)
+    // The old inline `.terminal-container` mock was extracted into the
+    // `ConsolePreview` component (`.console-wrap`/`.console-window`) during
+    // the Glass redesign; assert the default marketing home root renders.
+    expect(wrapper.find('.home-page').exists()).toBe(true)
+    expect(wrapper.find('.console-wrap').exists()).toBe(true)
   })
 
   it('links unauthenticated visitors to login', () => {

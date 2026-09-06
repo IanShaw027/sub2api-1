@@ -7,7 +7,7 @@ import type { OpsLatencyHistogramResponse } from '@/api/admin/ops'
 import type { ChartState } from '../types'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import { useTheme } from '@/composables/useTheme'
+import { baseChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(BarElement, CategoryScale, LinearScale, Tooltip, Legend)
 
@@ -18,11 +18,11 @@ interface Props {
 
 const props = defineProps<Props>()
 const { t } = useI18n()
-const { isDark: isDarkMode } = useTheme()
+const theme = useChartTheme()
 const colors = computed(() => ({
-  blue: '#3b82f6',
-  grid: isDarkMode.value ? '#374151' : '#f3f4f6',
-  text: isDarkMode.value ? '#9ca3af' : '#6b7280'
+  blue: theme.value.accent,
+  grid: theme.value.grid,
+  text: theme.value.text
 }))
 
 const hasData = computed(() => (props.latencyData?.total_requests ?? 0) > 0)
@@ -52,12 +52,10 @@ const chartData = computed(() => {
 
 const options = computed(() => {
   const c = colors.value
+  const base = baseChartOptions(theme.value)
   return {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false }
-    },
+    ...base,
+    plugins: { ...base.plugins, legend: { display: false } },
     scales: {
       x: {
         grid: { display: false },
@@ -74,10 +72,10 @@ const options = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="flex h-full flex-col rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <div class="mb-4 flex items-center justify-between">
       <h3 class="flex items-center gap-2 text-sm font-bold text-foreground ">
-        <svg class="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg class="h-4 w-4 text-accent-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path
             stroke-linecap="round"
             stroke-linejoin="round"

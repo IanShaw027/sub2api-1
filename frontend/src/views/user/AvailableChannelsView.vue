@@ -7,40 +7,36 @@
         </Button>
       </template>
     </PageHeader>
-    <TablePageLayout>
-      <template #filters>
-        <FilterBar :search-placeholder="t('availableChannels.searchPlaceholder')">
-          <template #search>
-            <div class="relative w-full">
-              <Icon
-                name="search"
-                size="md"
-                class="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
-              />
-              <input
-                v-model="searchQuery"
-                type="text"
-                :placeholder="t('availableChannels.searchPlaceholder')"
-                class="input pl-10"
-              />
-            </div>
-          </template>
-        </FilterBar>
-      </template>
+    <div class="space-y-3.5">
+      <FilterBar :search-placeholder="t('availableChannels.searchPlaceholder')">
+        <template #search>
+          <div class="relative w-full">
+            <Icon
+              name="search"
+              size="md"
+              class="absolute left-3 top-1/2 -translate-y-1/2 text-muted"
+            />
+            <input
+              v-model="searchQuery"
+              type="text"
+              :placeholder="t('availableChannels.searchPlaceholder')"
+              class="input pl-10"
+            />
+          </div>
+        </template>
+      </FilterBar>
 
-      <template #table>
-        <AvailableChannelsTable
-          :columns="columnLabels"
-          :rows="filteredChannels"
-          :loading="loading"
-          :user-group-rates="userGroupRates"
-          pricing-key-prefix="availableChannels.pricing"
-          :no-pricing-label="t('availableChannels.noPricing')"
-          :no-models-label="t('availableChannels.noModels')"
-          :empty-label="t('availableChannels.empty')"
-        />
-      </template>
-    </TablePageLayout>
+      <AvailableChannelsTable
+        :columns="columnLabels"
+        :rows="filteredChannels"
+        :loading="loading"
+        :user-group-rates="userGroupRates"
+        pricing-key-prefix="availableChannels.pricing"
+        :no-pricing-label="t('availableChannels.noPricing')"
+        :no-models-label="t('availableChannels.noModels')"
+        :empty-label="t('availableChannels.empty')"
+      />
+    </div>
   </AppLayout>
 </template>
 
@@ -48,7 +44,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
 import FilterBar from '@/components/ui/FilterBar.vue'

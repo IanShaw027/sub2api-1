@@ -23,7 +23,7 @@
 
       <!-- Mixed platform warning -->
       <div v-if="isMixedPlatform" class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-4">
-        <p class="text-sm text-amber-700">
+        <p class="text-sm text-warning-text">
           <svg class="mr-1.5 inline h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
@@ -74,7 +74,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
                 openaiPassthroughEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -125,7 +125,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
                 openaiFlattenNamespacesEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -179,14 +179,14 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
                 openAILongContextBillingEnabled ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
           </button>
         </div>
         <p
-          class="mt-3 rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-amber-700"
+          class="mt-3 rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-warning-text"
           data-testid="bulk-edit-openai-long-context-shadow-hint"
         >
           {{ t('admin.accounts.bulkEdit.longContextShadowHint') }}
@@ -232,333 +232,21 @@
       </div>
 
       <!-- Model restriction -->
-      <div class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-model-restriction-label"
-            class="input-label mb-0"
-            for="bulk-edit-model-restriction-enabled"
-          >
-            {{ t('admin.accounts.modelRestriction') }}
-          </label>
-          <input
-            v-model="enableModelRestriction"
-            id="bulk-edit-model-restriction-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-model-restriction-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-
-        <div
-          id="bulk-edit-model-restriction-body"
-          :class="!enableModelRestriction && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-model-restriction-label"
-        >
-          <div
-            v-if="isOpenAIModelRestrictionDisabled"
-            class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3"
-          >
-            <p class="text-xs text-amber-700">
-              {{ t('admin.accounts.openai.modelRestrictionDisabledByPassthrough') }}
-            </p>
-          </div>
-
-          <template v-else>
-            <!-- Mode Toggle -->
-            <div class="mb-4 flex gap-2">
-              <button
-                type="button"
-                :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'whitelist'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-                @click="modelRestrictionMode = 'whitelist'"
-              >
-                <svg
-                  class="mr-1.5 inline h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                  />
-                </svg>
-                {{ t('admin.accounts.modelWhitelist') }}
-              </button>
-              <button
-                type="button"
-                :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'mapping'
- ? 'bg-purple-100 text-purple-700'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-                @click="modelRestrictionMode = 'mapping'"
-              >
-                <svg
-                  class="mr-1.5 inline h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-                  />
-                </svg>
-                {{ t('admin.accounts.modelMapping') }}
-              </button>
-            </div>
-
-            <!-- Whitelist Mode -->
-            <div v-if="modelRestrictionMode === 'whitelist'">
-              <div class="mb-3 rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-                <p class="text-xs text-accent">
-                  <svg
-                    class="mr-1 inline h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  {{ t('admin.accounts.selectAllowedModels') }}
-                </p>
-              </div>
-
-              <ModelWhitelistSelector
-                v-model="allowedModels"
-                :platforms="targetSelectedPlatforms"
-              />
-
-              <p class="text-xs text-muted">
-                {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-                <span v-if="allowedModels.length === 0">{{
-                  t('admin.accounts.supportsAllModels')
-                }}</span>
-              </p>
-            </div>
-
-            <!-- Mapping Mode -->
-            <div v-else>
-              <div class="mb-3 rounded-lg bg-purple-50 p-3">
-                <p class="text-xs text-purple-700">
-                  <svg
-                    class="mr-1 inline h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  {{ t('admin.accounts.mapRequestModels') }}
-                </p>
-              </div>
-
-              <!-- Model Mapping List -->
-              <div v-if="modelMappings.length > 0" class="mb-3 space-y-2">
-                <div
-                  v-for="(mapping, index) in modelMappings"
-                  :key="index"
-                  class="flex items-center gap-2"
-                >
-                  <input
-                    v-model="mapping.from"
-                    type="text"
-                    class="input flex-1"
-                    :placeholder="t('admin.accounts.requestModel')"
-                  />
-                  <svg
-                    class="h-4 w-4 flex-shrink-0 text-muted"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M14 5l7 7m0 0l-7 7m7-7H3"
-                    />
-                  </svg>
-                  <input
-                    v-model="mapping.to"
-                    type="text"
-                    class="input flex-1"
-                    :placeholder="t('admin.accounts.actualModel')"
-                  />
-                  <button
-                    type="button"
-                    class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-                    @click="removeModelMapping(index)"
-                  >
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        stroke-width="2"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                class="mb-3 w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-muted transition-colors hover:border-line hover:text-foreground"
-                @click="addModelMapping"
-              >
-                <svg
-                  class="mr-1 inline h-4 w-4"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="2"
-                    d="M12 4v16m8-8H4"
-                  />
-                </svg>
-                {{ t('admin.accounts.addMapping') }}
-              </button>
-
-              <!-- Quick Add Buttons -->
-              <div class="flex flex-wrap gap-2">
-                <button
-                  v-for="preset in filteredPresets"
-                  :key="preset.label"
-                  type="button"
-                  :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
-                  @click="addPresetMapping(preset.from, preset.to)"
-                >
-                  + {{ preset.label }}
-                </button>
-              </div>
-            </div>
-          </template>
-        </div>
-      </div>
+      <ModelRestrictionSection
+        v-model:enabled="enableModelRestriction"
+        v-model:mode="modelRestrictionMode"
+        v-model:allowed-models="allowedModels"
+        v-model:model-mappings="modelMappings"
+        :platforms="targetSelectedPlatforms"
+        :disabled-by-passthrough="isOpenAIModelRestrictionDisabled"
+        :presets="filteredPresets"
+      />
 
       <!-- Custom error codes -->
-      <div class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <label
-              id="bulk-edit-custom-error-codes-label"
-              class="input-label mb-0"
-              for="bulk-edit-custom-error-codes-enabled"
-            >
-              {{ t('admin.accounts.customErrorCodes') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.customErrorCodesHint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableCustomErrorCodes"
-            id="bulk-edit-custom-error-codes-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-custom-error-codes-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-
-        <div v-if="enableCustomErrorCodes" id="bulk-edit-custom-error-codes-body" class="space-y-3">
-          <div class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3">
-            <p class="text-xs text-amber-700">
-              <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
-              {{ t('admin.accounts.customErrorCodesWarning') }}
-            </p>
-          </div>
-
-          <!-- Error Code Buttons -->
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="code in commonErrorCodes"
-              :key="code.value"
-              type="button"
-              :class="[
- 'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
- selectedErrorCodes.includes(code.value)
- ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-1 ring-red-500'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-              @click="toggleErrorCode(code.value)"
-            >
-              {{ code.value }} {{ code.label }}
-            </button>
-          </div>
-
-          <!-- Manual input -->
-          <div class="flex items-center gap-2">
-            <input
-              v-model="customErrorCodeInput"
-              id="bulk-edit-custom-error-code-input"
-              type="number"
-              min="100"
-              max="599"
-              class="input flex-1"
-              :placeholder="t('admin.accounts.enterErrorCode')"
-              aria-labelledby="bulk-edit-custom-error-codes-label"
-              @keyup.enter="addCustomErrorCode"
-            />
-            <button type="button" class="btn btn-secondary px-3" @click="addCustomErrorCode">
-              <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="2"
-                  d="M12 4v16m8-8H4"
-                />
-              </svg>
-            </button>
-          </div>
-
-          <!-- Selected codes summary -->
-          <div class="flex flex-wrap gap-1.5">
-            <span
-              v-for="code in selectedErrorCodes.sort((a, b) => a - b)"
-              :key="code"
-              class="inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] px-2.5 py-0.5 text-sm font-medium text-danger-text"
-            >
-              {{ code }}
-              <button
-                type="button"
-                class="hover:text-red-900"
-                @click="removeErrorCode(code)"
-              >
-                <Icon name="x" size="xs" class="h-3.5 w-3.5" :stroke-width="2" />
-              </button>
-            </span>
-            <span v-if="selectedErrorCodes.length === 0" class="text-xs text-muted">
-              {{ t('admin.accounts.noneSelectedUsesDefault') }}
-            </span>
-          </div>
-        </div>
-      </div>
+      <CustomErrorCodesSection
+        v-model:enabled="enableCustomErrorCodes"
+        v-model:selected-codes="selectedErrorCodes"
+      />
 
       <!-- Intercept warmup requests (Anthropic only) -->
       <div class="border-t border-line pt-4">
@@ -594,7 +282,7 @@
           >
             <span
               :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-[var(--thumb)] shadow ring-0 transition duration-200 ease-in-out',
                 interceptWarmupRequests ? 'translate-x-5' : 'translate-x-0'
               ]"
             />
@@ -603,67 +291,12 @@
       </div>
 
       <!-- Header Override (eligible API-key platforms + grok OAuth) -->
-      <div v-if="allHeaderOverrideCapable" class="border-t border-line pt-4">
-        <div class="flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-header-override-label"
-              class="input-label mb-0"
-              for="bulk-edit-header-override-enabled"
-            >
-              {{ t('admin.accounts.headerOverride.title') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.headerOverride.hint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableHeaderOverride"
-            id="bulk-edit-header-override-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-header-override-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div v-if="enableHeaderOverride" id="bulk-edit-header-override-body" class="mt-3 space-y-3">
-          <button
-            type="button"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- headerOverrideEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            @click="headerOverrideEnabled = !headerOverrideEnabled"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                headerOverrideEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-
-          <div v-if="headerOverrideEnabled" class="space-y-3">
-            <div class="rounded-lg bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] p-3">
-              <p class="text-xs text-accent">
-                <Icon name="exclamationCircle" size="sm" class="mr-1 inline" :stroke-width="2" />
-                {{ t('admin.accounts.headerOverride.info') }}
-              </p>
-            </div>
-
-            <p class="text-xs text-warning-text">
-              {{ t('admin.accounts.headerOverride.bulkReplaceHint') }}
-            </p>
-
-            <HeaderOverrideEditor
-              :rows="headerOverrideRows"
-              @update:rows="headerOverrideRows = $event"
-            />
-          </div>
-          <p v-else class="text-xs text-muted">
-            {{ t('admin.accounts.headerOverride.bulkDisableHint') }}
-          </p>
-        </div>
-      </div>
+      <HeaderOverrideSection
+        :show="allHeaderOverrideCapable"
+        v-model:enable-header-override="enableHeaderOverride"
+        v-model:header-override-enabled="headerOverrideEnabled"
+        v-model:header-override-rows="headerOverrideRows"
+      />
 
       <!-- Proxy -->
       <div class="border-t border-line pt-4">
@@ -700,133 +333,16 @@
       </div>
 
       <!-- Concurrency & Priority -->
-      <div class="grid grid-cols-2 gap-4 border-t border-line pt-4 lg:grid-cols-4">
-        <div>
-          <div class="mb-3 flex items-center justify-between">
-            <label
-              id="bulk-edit-concurrency-label"
-              class="input-label mb-0"
-              for="bulk-edit-concurrency-enabled"
-            >
-              {{ t('admin.accounts.concurrency') }}
-            </label>
-            <input
-              v-model="enableConcurrency"
-              id="bulk-edit-concurrency-enabled"
-              type="checkbox"
-              aria-controls="bulk-edit-concurrency"
-              class="rounded border-line text-accent focus:ring-accent"
-            />
-          </div>
-          <input
-            v-model.number="concurrency"
-            id="bulk-edit-concurrency"
-            type="number"
-            min="1"
-            :disabled="!enableConcurrency"
-            class="input"
-            :class="!enableConcurrency && 'cursor-not-allowed opacity-50'"
-            aria-labelledby="bulk-edit-concurrency-label"
-            @input="concurrency = Math.max(1, concurrency || 1)"
-          />
-        </div>
-        <div>
-          <div class="mb-3 flex items-center justify-between">
-            <label
-              id="bulk-edit-load-factor-label"
-              class="input-label mb-0"
-              for="bulk-edit-load-factor-enabled"
-            >
-              {{ t('admin.accounts.loadFactor') }}
-            </label>
-            <input
-              v-model="enableLoadFactor"
-              id="bulk-edit-load-factor-enabled"
-              type="checkbox"
-              aria-controls="bulk-edit-load-factor"
-              class="rounded border-line text-accent focus:ring-accent"
-            />
-          </div>
-          <input
-            v-model.number="loadFactor"
-            id="bulk-edit-load-factor"
-            type="number"
-            min="1"
-            :disabled="!enableLoadFactor"
-            class="input"
-            :class="!enableLoadFactor && 'cursor-not-allowed opacity-50'"
-            aria-labelledby="bulk-edit-load-factor-label"
-            @input="loadFactor = (loadFactor &amp;&amp; loadFactor >= 1) ? loadFactor : null"
-          />
-          <p class="input-hint">{{ t('admin.accounts.loadFactorHint') }}</p>
-        </div>
-        <div>
-          <div class="mb-3 flex items-center justify-between">
-            <label
-              id="bulk-edit-priority-label"
-              class="input-label mb-0"
-              for="bulk-edit-priority-enabled"
-            >
-              {{ t('admin.accounts.priority') }}
-            </label>
-            <input
-              v-model="enablePriority"
-              id="bulk-edit-priority-enabled"
-              type="checkbox"
-              aria-controls="bulk-edit-priority"
-              class="rounded border-line text-accent focus:ring-accent"
-            />
-          </div>
-          <input
-            v-model.number="priority"
-            id="bulk-edit-priority"
-            type="number"
-            min="1"
-            :disabled="!enablePriority"
-            class="input"
-            :class="!enablePriority && 'cursor-not-allowed opacity-50'"
-            aria-labelledby="bulk-edit-priority-label"
-          />
-        </div>
-        <div>
-          <div class="mb-3 flex items-center justify-between">
-            <label
-              id="bulk-edit-rate-multiplier-label"
-              class="input-label mb-0"
-              for="bulk-edit-rate-multiplier-enabled"
-            >
-              {{ t('admin.accounts.billingRateMultiplier') }}
-            </label>
-            <input
-              v-model="enableRateMultiplier"
-              id="bulk-edit-rate-multiplier-enabled"
-              type="checkbox"
-              aria-controls="bulk-edit-rate-multiplier"
-              class="rounded border-line text-accent focus:ring-accent"
-            />
-          </div>
-          <input
-            v-model.number="rateMultiplier"
-            id="bulk-edit-rate-multiplier"
-            type="number"
-            min="0"
-            step="0.01"
-            :disabled="!enableRateMultiplier"
-            class="input"
-            :class="!enableRateMultiplier && 'cursor-not-allowed opacity-50'"
-            aria-labelledby="bulk-edit-rate-multiplier-label"
-          />
-          <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
-          <p
-            v-if="enableRateMultiplier"
-            class="mt-2 flex items-start gap-1 text-xs text-amber-700"
-            data-testid="bulk-rate-sync-warning"
-          >
-            <Icon name="exclamationTriangle" size="xs" class="mt-0.5 flex-shrink-0" />
-            <span>{{ t('admin.accounts.bulkEdit.rateSyncWarning') }}</span>
-          </p>
-        </div>
-      </div>
+      <ConcurrencyPrioritySection
+        v-model:enable-concurrency="enableConcurrency"
+        v-model:concurrency="concurrency"
+        v-model:enable-load-factor="enableLoadFactor"
+        v-model:load-factor="loadFactor"
+        v-model:enable-priority="enablePriority"
+        v-model:priority="priority"
+        v-model:enable-rate-multiplier="enableRateMultiplier"
+        v-model:rate-multiplier="rateMultiplier"
+      />
 
       <!-- Status -->
       <div class="border-t border-line pt-4">
@@ -855,550 +371,74 @@
         </div>
       </div>
 
-      <!-- OpenAI OAuth WS mode -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-ws-mode-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-ws-mode-enabled"
-          >
-            {{ t('admin.accounts.openai.wsMode') }}
-          </label>
-          <input
-            v-model="enableOpenAIWSMode"
-            id="bulk-edit-openai-ws-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-ws-mode"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-ws-mode"
-          :class="!enableOpenAIWSMode && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.wsModeDesc') }}
-          </p>
-          <p class="mb-3 text-xs text-muted">
-            {{ t(openAIWSModeConcurrencyHintKey) }}
-          </p>
-          <Select
-            v-model="openaiOAuthResponsesWebSocketV2Mode"
-            data-testid="bulk-edit-openai-ws-mode-select"
-            :options="openAIWSModeOptions"
-            aria-labelledby="bulk-edit-openai-ws-mode-label"
-          />
-        </div>
-      </div>
-
-      <!-- OpenAI OAuth Codex CLI only -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-codex-cli-only-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-codex-cli-only-enabled"
-          >
-            {{ t('admin.accounts.openai.codexCLIOnly') }}
-          </label>
-          <input
-            v-model="enableCodexCLIOnly"
-            id="bulk-edit-openai-codex-cli-only-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-codex-cli-only"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-codex-cli-only"
-          :class="!enableCodexCLIOnly && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.codexCLIOnlyDesc') }}
-          </p>
-          <button
-            id="bulk-edit-openai-codex-cli-only-toggle"
-            type="button"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- codexCLIOnlyEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            @click="codexCLIOnlyEnabled = !codexCLIOnlyEnabled"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                codexCLIOnlyEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-      </div>
-
-      <!-- OpenAI OAuth: Codex app-server -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-codex-app-server-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-codex-app-server-enabled"
-          >
-            {{ t('admin.accounts.openai.codexCLIOnlyAppServer') }}
-          </label>
-          <input
-            v-model="enableCodexCLIOnlyAppServer"
-            id="bulk-edit-openai-codex-app-server-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-codex-app-server"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-codex-app-server"
-          :class="!enableCodexCLIOnlyAppServer && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.codexCLIOnlyAppServerDesc') }}
-          </p>
-          <button
-            id="bulk-edit-openai-codex-app-server-toggle"
-            type="button"
-            :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- codexCLIOnlyAppServerEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            @click="codexCLIOnlyAppServerEnabled = !codexCLIOnlyAppServerEnabled"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                codexCLIOnlyAppServerEnabled ? 'translate-x-5' : 'translate-x-0'
-              ]"
-            />
-          </button>
-        </div>
-      </div>
-
-      <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
-      <div v-if="allOpenAIOAuth" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
-          <input
-            id="bulk-edit-openai-codex-fingerprint-mode-enabled"
-            v-model="enableCodexFingerprintMode"
-            type="checkbox"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div :class="!enableCodexFingerprintMode && 'pointer-events-none opacity-50'">
-          <p class="mb-2 text-xs text-muted">
-            {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
-          </p>
-          <Select v-model="codexFingerprintMode" data-testid="bulk-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
-        </div>
-      </div>
+      <!-- OpenAI OAuth toggles (WS mode, Codex CLI only, Codex app-server, fingerprint mode) -->
+      <OpenAIOAuthTogglesSection
+        :show="allOpenAIOAuth"
+        :openAIWSModeOptions="openAIWSModeOptions"
+        :openAIWSModeConcurrencyHintKey="openAIWSModeConcurrencyHintKey"
+        :codexFingerprintModeOptions="codexFingerprintModeOptions"
+        v-model:enableOpenAIWSMode="enableOpenAIWSMode"
+        v-model:openaiOAuthResponsesWebSocketV2Mode="openaiOAuthResponsesWebSocketV2Mode"
+        v-model:enableCodexCLIOnly="enableCodexCLIOnly"
+        v-model:codexCLIOnlyEnabled="codexCLIOnlyEnabled"
+        v-model:enableCodexCLIOnlyAppServer="enableCodexCLIOnlyAppServer"
+        v-model:codexCLIOnlyAppServerEnabled="codexCLIOnlyAppServerEnabled"
+        v-model:enableCodexFingerprintMode="enableCodexFingerprintMode"
+        v-model:codexFingerprintMode="codexFingerprintMode"
+      />
 
       <!-- Upstream billing auto probe (any API-key platform) -->
-      <div v-if="allBillingProbeCapable" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-upstream-billing-auto-probe-label"
-              class="input-label mb-0"
-              for="bulk-edit-upstream-billing-auto-probe-enabled"
-            >
-              {{ t('admin.accounts.upstreamBilling.autoProbe') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
-            </p>
-          </div>
-          <input
-            v-model="enableUpstreamBillingAutoProbe"
-            id="bulk-edit-upstream-billing-auto-probe-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-upstream-billing-auto-probe"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-upstream-billing-auto-probe"
-          :class="!enableUpstreamBillingAutoProbe && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-upstream-billing-auto-probe-label"
-        >
-          <Select
-            v-model="upstreamBillingAutoProbeMode"
-            :disabled="!enableUpstreamBillingAutoProbe"
-            data-testid="bulk-edit-upstream-billing-auto-probe-select"
-            :options="upstreamBillingAutoProbeOptions"
-            aria-labelledby="bulk-edit-upstream-billing-auto-probe-label"
-          />
-        </div>
-      </div>
+      <UpstreamBillingAutoProbeSection
+        :show="allBillingProbeCapable"
+        :upstreamBillingAutoProbeOptions="upstreamBillingAutoProbeOptions"
+        v-model:enableUpstreamBillingAutoProbe="enableUpstreamBillingAutoProbe"
+        v-model:upstreamBillingAutoProbeMode="upstreamBillingAutoProbeMode"
+      />
 
-      <!-- OpenAI API Key endpoint capabilities -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between gap-4">
-          <div class="flex-1">
-            <label
-              id="bulk-edit-openai-endpoint-capabilities-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-endpoint-capabilities-enabled"
-            >
-              {{ t('admin.accounts.openai.endpointCapabilities') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAIEndpointCapabilities"
-            id="bulk-edit-openai-endpoint-capabilities-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-endpoint-capabilities-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-endpoint-capabilities-body"
-          :class="!enableOpenAIEndpointCapabilities && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-openai-endpoint-capabilities-label"
-        >
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label
-              v-for="option in openAIEndpointCapabilityOptions"
-              :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm"
-            >
-              <input
-                type="checkbox"
-                :disabled="!enableOpenAIEndpointCapabilities"
-                class="rounded border-line text-accent focus:ring-accent"
-                :data-testid="`bulk-edit-openai-endpoint-capability-${option.value}`"
-                :checked="openAIEndpointCapabilities.includes(option.value)"
-                @change="toggleOpenAIEndpointCapability(option.value, $event)"
-              />
-              <span class="text-foreground">{{ option.label }}</span>
-            </label>
-          </div>
-        </div>
-      </div>
-
-      <!-- OpenAI API Key Responses route -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between gap-4">
-          <div class="flex-1">
-            <label
-              id="bulk-edit-openai-responses-mode-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-responses-mode-enabled"
-            >
-              {{ t('admin.accounts.openai.responsesMode') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.responsesModeDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAIResponsesMode"
-            id="bulk-edit-openai-responses-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-responses-mode-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-responses-mode-body"
-          :class="!enableOpenAIResponsesMode && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-openai-responses-mode-label"
-        >
-          <Select
-            v-model="openAIResponsesMode"
-            :disabled="!enableOpenAIResponsesMode || !openAIResponsesModeApplicable"
-            data-testid="bulk-edit-openai-responses-mode-select"
-            :options="openAIResponsesModeOptions"
-            aria-labelledby="bulk-edit-openai-responses-mode-label"
-          />
-          <p
-            v-if="enableOpenAIEndpointCapabilities && !openAITextGenerationCapabilityEnabled"
-            class="mt-2 rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-amber-700"
-            data-testid="bulk-edit-openai-responses-mode-not-applicable"
-          >
-            {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
-          </p>
-        </div>
-      </div>
-
-      <!-- OpenAI API Key WS mode -->
-      <div v-if="allOpenAIAPIKey" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-openai-apikey-ws-mode-label"
-            class="input-label mb-0"
-            for="bulk-edit-openai-apikey-ws-mode-enabled"
-          >
-            {{ t('admin.accounts.openai.wsMode') }}
-          </label>
-          <input
-            v-model="enableOpenAIAPIKeyWSMode"
-            id="bulk-edit-openai-apikey-ws-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-apikey-ws-mode"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-apikey-ws-mode"
-          :class="!enableOpenAIAPIKeyWSMode && 'pointer-events-none opacity-50'"
-        >
-          <p class="mb-3 text-xs text-muted">
-            {{ t('admin.accounts.openai.wsModeDesc') }}
-          </p>
-          <p class="mb-3 text-xs text-muted">
-            {{ t(openAIAPIKeyWSModeConcurrencyHintKey) }}
-          </p>
-          <Select
-            v-model="openaiAPIKeyResponsesWebSocketV2Mode"
-            data-testid="bulk-edit-openai-apikey-ws-mode-select"
-            :options="openAIWSModeOptions"
-            aria-labelledby="bulk-edit-openai-apikey-ws-mode-label"
-          />
-        </div>
-      </div>
+      <!-- OpenAI API Key toggles (endpoint capabilities, responses route, WS mode) -->
+      <OpenAIApiKeyTogglesSection
+        :show="allOpenAIAPIKey"
+        :openAIEndpointCapabilityOptions="openAIEndpointCapabilityOptions"
+        :openAIResponsesModeOptions="openAIResponsesModeOptions"
+        :openAIResponsesModeApplicable="openAIResponsesModeApplicable"
+        :openAITextGenerationCapabilityEnabled="openAITextGenerationCapabilityEnabled"
+        :openAIWSModeOptions="openAIWSModeOptions"
+        :openAIAPIKeyWSModeConcurrencyHintKey="openAIAPIKeyWSModeConcurrencyHintKey"
+        v-model:enableOpenAIEndpointCapabilities="enableOpenAIEndpointCapabilities"
+        v-model:openAIEndpointCapabilities="openAIEndpointCapabilities"
+        v-model:enableOpenAIResponsesMode="enableOpenAIResponsesMode"
+        v-model:openAIResponsesMode="openAIResponsesMode"
+        v-model:enableOpenAIAPIKeyWSMode="enableOpenAIAPIKeyWSMode"
+        v-model:openaiAPIKeyResponsesWebSocketV2Mode="openaiAPIKeyResponsesWebSocketV2Mode"
+        @toggle-capability="toggleOpenAIEndpointCapability"
+      />
 
       <!-- OpenAI Compact mode -->
-      <div v-if="allOpenAIPassthroughCapable" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-openai-compact-mode-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-compact-mode-enabled"
-            >
-              {{ t('admin.accounts.openai.compactMode') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.compactModeDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAICompactMode"
-            id="bulk-edit-openai-compact-mode-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-compact-mode"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-compact-mode"
-          :class="!enableOpenAICompactMode && 'pointer-events-none opacity-50'"
-        >
-          <Select
-            v-model="openAICompactMode"
-            data-testid="bulk-edit-openai-compact-mode-select"
-            :options="openAICompactModeOptions"
-            aria-labelledby="bulk-edit-openai-compact-mode-label"
-          />
-        </div>
-      </div>
+      <OpenAICompactModeSection
+        :show="allOpenAIPassthroughCapable"
+        :openAICompactModeOptions="openAICompactModeOptions"
+        v-model:enableOpenAICompactMode="enableOpenAICompactMode"
+        v-model:openAICompactMode="openAICompactMode"
+      />
 
       <!-- OpenAI Compact model mapping -->
-      <div v-if="allOpenAIPassthroughCapable" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <div class="flex-1 pr-4">
-            <label
-              id="bulk-edit-openai-compact-model-mapping-label"
-              class="input-label mb-0"
-              for="bulk-edit-openai-compact-model-mapping-enabled"
-            >
-              {{ t('admin.accounts.openai.compactModelMapping') }}
-            </label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.compactModelMappingDesc') }}
-            </p>
-          </div>
-          <input
-            v-model="enableOpenAICompactModelMapping"
-            id="bulk-edit-openai-compact-model-mapping-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-openai-compact-model-mapping"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div
-          id="bulk-edit-openai-compact-model-mapping"
-          :class="!enableOpenAICompactModelMapping && 'pointer-events-none opacity-50'"
-        >
-          <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
-              v-for="(mapping, index) in openAICompactModelMappings"
-              :key="index"
-              class="flex items-center gap-2"
-            >
-              <input
-                v-model="mapping.from"
-                type="text"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.fromModel')"
-                data-testid="bulk-edit-openai-compact-model-mapping-input"
-              />
-              <span class="text-muted">→</span>
-              <input
-                v-model="mapping.to"
-                type="text"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.toModel')"
-                data-testid="bulk-edit-openai-compact-model-mapping-input"
-              />
-              <button
-                type="button"
-                class="rounded-lg p-2 text-red-500 transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-                @click="removeOpenAICompactModelMapping(index)"
-              >
-                <Icon name="trash" size="sm" />
-              </button>
-            </div>
-          </div>
-          <button
-            type="button"
-            class="mb-3 w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-muted transition-colors hover:border-line hover:text-foreground"
-            data-testid="bulk-edit-openai-compact-model-mapping-add"
-            @click="addOpenAICompactModelMapping"
-          >
-            + {{ t('admin.accounts.addMapping') }}
-          </button>
-        </div>
-      </div>
+      <OpenAICompactModelMappingSection
+        :show="allOpenAIPassthroughCapable"
+        v-model:enabled="enableOpenAICompactModelMapping"
+        v-model:mappings="openAICompactModelMappings"
+      />
 
       <!-- RPM Limit (仅全部为 Anthropic OAuth/SetupToken 时显示) -->
-      <div v-if="allAnthropicOAuthOrSetupToken" class="border-t border-line pt-4">
-        <div class="mb-3 flex items-center justify-between">
-          <label
-            id="bulk-edit-rpm-limit-label"
-            class="input-label mb-0"
-            for="bulk-edit-rpm-limit-enabled"
-          >
-            {{ t('admin.accounts.quotaControl.rpmLimit.label') }}
-          </label>
-          <input
-            v-model="enableRpmLimit"
-            id="bulk-edit-rpm-limit-enabled"
-            type="checkbox"
-            aria-controls="bulk-edit-rpm-limit-body"
-            class="rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-
-        <div
-          id="bulk-edit-rpm-limit-body"
-          :class="!enableRpmLimit && 'pointer-events-none opacity-50'"
-          role="group"
-          aria-labelledby="bulk-edit-rpm-limit-label"
-        >
-          <div class="mb-3 flex items-center justify-between">
-            <span class="text-sm text-foreground">{{ t('admin.accounts.quotaControl.rpmLimit.hint') }}</span>
-            <button
-              type="button"
-              @click="rpmLimitEnabled = !rpmLimitEnabled"
-              :class="[
- 'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2',
- rpmLimitEnabled ? 'bg-accent' : 'bg-surface-3'
- ]"
-            >
-              <span
-                :class="[
-                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                  rpmLimitEnabled ? 'translate-x-5' : 'translate-x-0'
-                ]"
-              />
-            </button>
-          </div>
-
-          <div v-if="rpmLimitEnabled" class="space-y-3">
-            <div>
-              <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.rpmLimit.baseRpm') }}</label>
-              <input
-                v-model.number="bulkBaseRpm"
-                type="number"
-                min="1"
-                max="1000"
-                step="1"
-                class="input"
-                :placeholder="t('admin.accounts.quotaControl.rpmLimit.baseRpmPlaceholder')"
-              />
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.rpmLimit.baseRpmHint') }}</p>
-            </div>
-
-            <div>
-              <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.rpmLimit.strategy') }}</label>
-              <div class="flex gap-2">
-                <button
-                  type="button"
-                  @click="bulkRpmStrategy = 'tiered'"
-                  :class="[
- 'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
- bulkRpmStrategy === 'tiered'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-                >
-                  {{ t('admin.accounts.quotaControl.rpmLimit.strategyTiered') }}
-                </button>
-                <button
-                  type="button"
-                  @click="bulkRpmStrategy = 'sticky_exempt'"
-                  :class="[
- 'flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-all',
- bulkRpmStrategy === 'sticky_exempt'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-                >
-                  {{ t('admin.accounts.quotaControl.rpmLimit.strategyStickyExempt') }}
-                </button>
-              </div>
-            </div>
-
-            <div v-if="bulkRpmStrategy === 'tiered'">
-              <label class="input-label text-xs">{{ t('admin.accounts.quotaControl.rpmLimit.stickyBuffer') }}</label>
-              <input
-                v-model.number="bulkRpmStickyBuffer"
-                type="number"
-                min="1"
-                step="1"
-                class="input"
-                :placeholder="t('admin.accounts.quotaControl.rpmLimit.stickyBufferPlaceholder')"
-              />
-              <p class="input-hint">{{ t('admin.accounts.quotaControl.rpmLimit.stickyBufferHint') }}</p>
-            </div>
-
-            </div>
-          </div>
-
-        <!-- 用户消息限速模式（独立于 RPM 开关，始终可见） -->
-        <div class="mt-4">
-          <label class="input-label">{{ t('admin.accounts.quotaControl.rpmLimit.userMsgQueue') }}</label>
-          <p class="mt-1 text-xs text-muted mb-2">
-            {{ t('admin.accounts.quotaControl.rpmLimit.userMsgQueueHint') }}
-          </p>
-          <div class="flex space-x-2">
-            <button type="button" v-for="opt in umqModeOptions" :key="opt.value"
-              @click="userMsgQueueMode = userMsgQueueMode === opt.value ? null : opt.value"
-              :class="[
- 'px-3 py-1.5 text-sm rounded-md border transition-colors',
- userMsgQueueMode === opt.value
- ? 'bg-accent text-white border-accent'
- : 'bg-surface text-foreground border-line hover:bg-surface-2'
- ]">
-              {{ opt.label }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <RpmLimitSection
+        :show="allAnthropicOAuthOrSetupToken"
+        v-model:enable-rpm-limit="enableRpmLimit"
+        v-model:rpm-limit-enabled="rpmLimitEnabled"
+        v-model:bulk-base-rpm="bulkBaseRpm"
+        v-model:bulk-rpm-strategy="bulkRpmStrategy"
+        v-model:bulk-rpm-sticky-buffer="bulkRpmStickyBuffer"
+        v-model:user-msg-queue-mode="userMsgQueueMode"
+        :umq-mode-options="umqModeOptions"
+      />
 
       <!-- Groups -->
       <div class="border-t border-line pt-4">
@@ -1499,13 +539,20 @@ import Select from '@/components/common/Select.vue'
 import ProxySelector, { PROXY_ROTATION_VALUE } from '@/components/common/ProxySelector.vue'
 import ProxyRotationSelector from '@/components/common/ProxyRotationSelector.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
-import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
-import Icon from '@/components/icons/Icon.vue'
+import ModelRestrictionSection from '@/components/account/bulk/ModelRestrictionSection.vue'
+import OpenAICompactModelMappingSection from '@/components/account/bulk/OpenAICompactModelMappingSection.vue'
+import ConcurrencyPrioritySection from '@/components/account/bulk/ConcurrencyPrioritySection.vue'
+import RpmLimitSection from '@/components/account/bulk/RpmLimitSection.vue'
+import CustomErrorCodesSection from '@/components/account/bulk/CustomErrorCodesSection.vue'
+import HeaderOverrideSection from '@/components/account/bulk/HeaderOverrideSection.vue'
+import OpenAIOAuthTogglesSection from '@/components/account/bulk/OpenAIOAuthTogglesSection.vue'
+import UpstreamBillingAutoProbeSection from '@/components/account/bulk/UpstreamBillingAutoProbeSection.vue'
+import OpenAIApiKeyTogglesSection from '@/components/account/bulk/OpenAIApiKeyTogglesSection.vue'
+import OpenAICompactModeSection from '@/components/account/bulk/OpenAICompactModeSection.vue'
 import {
   buildModelMappingObject as buildModelMappingPayload,
   getPresetMappingsByPlatform
 } from '@/composables/useModelWhitelist'
-import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
 import {
   buildHeaderOverridesObject,
   isHeaderOverrideCapable,
@@ -1689,7 +736,6 @@ const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const allowedModels = ref<string[]>([])
 const modelMappings = ref<ModelMapping[]>([])
 const selectedErrorCodes = ref<number[]>([])
-const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
@@ -1736,17 +782,6 @@ const umqModeOptions = computed(() => [
   { value: 'throttle', label: t('admin.accounts.quotaControl.rpmLimit.umqModeThrottle') },
   { value: 'serialize', label: t('admin.accounts.quotaControl.rpmLimit.umqModeSerialize') },
 ])
-
-// Common HTTP error codes
-const commonErrorCodes = [
-  { value: 401, label: 'Unauthorized' },
-  { value: 403, label: 'Forbidden' },
-  { value: 429, label: 'Rate Limit' },
-  { value: 500, label: 'Server Error' },
-  { value: 502, label: 'Bad Gateway' },
-  { value: 503, label: 'Unavailable' },
-  { value: 529, label: 'Overloaded' }
-]
 
 const statusOptions = computed(() => [
   { value: 'active', label: t('common.active') },
@@ -1840,82 +875,8 @@ const openAIAPIKeyWSModeConcurrencyHintKey = computed(() =>
   resolveOpenAIWSModeConcurrencyHintKey(openaiAPIKeyResponsesWebSocketV2Mode.value)
 )
 
-// Model mapping helpers
-const addModelMapping = () => {
-  modelMappings.value.push({ from: '', to: '' })
-}
-
-const removeModelMapping = (index: number) => {
-  modelMappings.value.splice(index, 1)
-}
-
-const addOpenAICompactModelMapping = () => {
-  openAICompactModelMappings.value.push({ from: '', to: '' })
-}
-
-const removeOpenAICompactModelMapping = (index: number) => {
-  openAICompactModelMappings.value.splice(index, 1)
-}
-
-const addPresetMapping = (from: string, to: string) => {
-  const exists = modelMappings.value.some((m) => m.from === from)
-  if (exists) {
-    appStore.showInfo(t('admin.accounts.mappingExists', { model: from }))
-    return
-  }
-  modelMappings.value.push({ from, to })
-}
-
-// Error code helpers
-const toggleErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index === -1) {
-    // Adding code - check for 429/529 warning
-    if (code === 429) {
-      if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-        return
-      }
-    } else if (code === 529) {
-      if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-        return
-      }
-    }
-    selectedErrorCodes.value.push(code)
-  } else {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
-
-const addCustomErrorCode = () => {
-  const code = customErrorCodeInput.value
-  if (code === null || code < 100 || code > 599) {
-    appStore.showError(t('admin.accounts.invalidErrorCode'))
-    return
-  }
-  if (selectedErrorCodes.value.includes(code)) {
-    appStore.showInfo(t('admin.accounts.errorCodeExists'))
-    return
-  }
-  // Check for 429/529 warning
-  if (code === 429) {
-    if (!confirm(t('admin.accounts.customErrorCodes429Warning'))) {
-      return
-    }
-  } else if (code === 529) {
-    if (!confirm(t('admin.accounts.customErrorCodes529Warning'))) {
-      return
-    }
-  }
-  selectedErrorCodes.value.push(code)
-  customErrorCodeInput.value = null
-}
-
-const removeErrorCode = (code: number) => {
-  const index = selectedErrorCodes.value.indexOf(code)
-  if (index !== -1) {
-    selectedErrorCodes.value.splice(index, 1)
-  }
-}
+// Model mapping helpers (whitelist/mapping editing lives in ModelRestrictionSection /
+// OpenAICompactModelMappingSection)
 
 const buildModelMappingObject = (): Record<string, string> | null => {
   return buildModelMappingPayload(
@@ -2407,7 +1368,6 @@ watch(
       allowedModels.value = []
       modelMappings.value = []
       selectedErrorCodes.value = []
-      customErrorCodeInput.value = null
       interceptWarmupRequests.value = false
       headerOverrideEnabled.value = false
       headerOverrideRows.value = []

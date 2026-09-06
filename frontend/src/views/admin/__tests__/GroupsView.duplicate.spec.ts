@@ -291,7 +291,7 @@ describe('GroupsView duplicate action', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const editButton = wrapper.findAll('button').find((button) => button.text() === 'common.edit')
+    const editButton = wrapper.findAll('button').find((button) => button.attributes('aria-label') === 'common.edit')
     expect(editButton).toBeTruthy()
     await editButton!.trigger('click')
     await flushPromises()

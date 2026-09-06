@@ -3,12 +3,15 @@ import { computed } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import creationAPI from '../api'
+import TokenStats from './TokenStats.vue'
 import type { CreationMessageRole } from '../types'
 
 const props = defineProps<{
   role: CreationMessageRole | 'assistant' | 'user' | 'system'
   content: unknown
   streaming?: boolean
+  inputTokens?: number | null
+  outputTokens?: number | null
 }>()
 
 const text = computed(() => creationAPI.extractMessageText(props.content))
@@ -23,15 +26,25 @@ const html = computed(() => {
 <template>
   <div class="studio-message-content">
     <div v-if="role === 'assistant'" class="studio-markdown text-foreground" v-html="html" />
-    <p v-else class="text-sm text-foreground whitespace-pre-wrap">{{ text }}</p>
+    <p v-else class="studio-message-text text-foreground">{{ text }}</p>
     <span v-if="streaming" class="studio-cursor" aria-hidden="true">▍</span>
+    <TokenStats
+      v-if="role === 'assistant' && !streaming"
+      :input-tokens="inputTokens"
+      :output-tokens="outputTokens"
+    />
   </div>
 </template>
 
 <style scoped>
 .studio-message-content {
-  font-size: 14px;
-  line-height: 1.55;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.studio-message-text {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 .studio-markdown :deep(p) {
@@ -47,6 +60,13 @@ const html = computed(() => {
   border-radius: 10px;
   padding: 10px 12px;
   overflow: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.studio-markdown :deep(code) {
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 .studio-cursor {

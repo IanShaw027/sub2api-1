@@ -1,11 +1,11 @@
 <template>
- <div
- :class="['spinner', sizeClasses, colorClass]"
- role="status"
- :aria-label="t('common.loading')"
- >
- <span class="sr-only">{{ t('common.loading') }}</span>
- </div>
+  <div
+    :class="['spinner', sizeClasses, colorClass]"
+    role="status"
+    :aria-label="t('common.loading')"
+  >
+    <span class="sr-only">{{ t('common.loading') }}</span>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -18,48 +18,41 @@ type SpinnerSize = 'sm' | 'md' | 'lg' | 'xl'
 type SpinnerColor = 'primary' | 'secondary' | 'white' | 'gray'
 
 interface Props {
- size?: SpinnerSize
- color?: SpinnerColor
+  size?: SpinnerSize
+  color?: SpinnerColor
 }
 
 const props = withDefaults(defineProps<Props>(), {
- size: 'md',
- color: 'primary'
+  size: 'md',
+  color: 'primary'
 })
 
+/* Glass `.spinner`: 2px ring in currentColor at every size. */
 const sizeClasses = computed(() => {
- const sizes: Record<SpinnerSize, string> = {
- sm: 'w-4 h-4 border-2',
- md: 'w-8 h-8 border-2',
- lg: 'w-12 h-12 border-[3px]',
- xl: 'w-16 h-16 border-4'
- }
- return sizes[props.size]
+  const sizes: Record<SpinnerSize, string> = {
+    sm: 'w-4 h-4',
+    md: 'w-5 h-5',
+    lg: 'w-6 h-6',
+    xl: 'w-12 h-12'
+  }
+  return sizes[props.size]
 })
 
 const colorClass = computed(() => {
- const colors: Record<SpinnerColor, string> = {
- primary: 'text-accent',
- secondary: 'text-muted',
- white: 'text-white',
- gray: 'text-muted'
- }
- return colors[props.color]
+  const colors: Record<SpinnerColor, string> = {
+    primary: 'text-accent',
+    secondary: 'text-muted',
+    white: 'text-white',
+    gray: 'text-muted'
+  }
+  return colors[props.color]
 })
 </script>
 
 <style scoped>
+/* Ring geometry/animation comes from the global `.spinner` recipe (2px, currentColor). */
 .spinner {
- @apply inline-block rounded-full border-solid border-current border-r-transparent;
- animation: spin 0.75s linear infinite;
-}
-
-@keyframes spin {
- from {
- transform: rotate(0deg);
- }
- to {
- transform: rotate(360deg);
- }
+  display: inline-block;
+  flex: none;
 }
 </style>

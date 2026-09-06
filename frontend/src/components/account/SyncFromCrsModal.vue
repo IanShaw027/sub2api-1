@@ -21,9 +21,7 @@
       >
         {{ t('admin.accounts.crsUpdateBehaviorNote') }}
       </div>
-      <div
-        class="rounded-lg border border-amber-200 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] p-3 text-xs text-warning-text"
-      >
+      <div class="notice notice-warning">
         {{ t('admin.accounts.crsVersionRequirement') }}
       </div>
 
@@ -58,14 +56,9 @@
           </div>
         </div>
 
-        <label class="flex items-center gap-2 text-sm text-foreground">
-          <input
-            v-model="form.sync_proxies"
-            type="checkbox"
-            class="rounded border-line"
-          />
+        <Checkbox v-model="form.sync_proxies">
           {{ t('admin.accounts.syncProxies') }}
-        </label>
+        </Checkbox>
       </div>
     </form>
 
@@ -122,11 +115,9 @@
             :key="acc.crs_account_id"
             class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-2"
           >
-            <input
-              type="checkbox"
-              :checked="selectedIds.has(acc.crs_account_id)"
-              class="rounded border-line"
-              @change="toggleSelect(acc.crs_account_id)"
+            <Checkbox
+              :model-value="selectedIds.has(acc.crs_account_id)"
+              @update:model-value="toggleSelect(acc.crs_account_id)"
             />
             <span
               class="inline-block rounded bg-[color-mix(in_oklch,var(--success)_16%,transparent)] px-1.5 py-0.5 text-[10px] font-medium text-success-text"
@@ -142,7 +133,7 @@
       <!-- Sync options summary -->
       <div class="flex items-center gap-2 text-xs text-muted">
         <span>{{ t('admin.accounts.syncProxies') }}:</span>
-        <span :class="form.sync_proxies ? 'text-green-600' : 'text-muted'">
+        <span :class="form.sync_proxies ? 'text-success-text' : 'text-muted'">
           {{ form.sync_proxies ? t('common.yes') : t('common.no') }}
         </span>
       </div>
@@ -244,6 +235,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import Checkbox from '@/components/ui/Checkbox.vue'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
 import type { PreviewFromCRSResult } from '@/api/admin/accounts'

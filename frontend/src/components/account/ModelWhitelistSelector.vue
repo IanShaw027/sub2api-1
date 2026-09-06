@@ -35,7 +35,7 @@
       <!-- Dropdown List -->
       <div
         v-if="showDropdown"
-        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-line bg-surface shadow-lg"
+        class="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-line bg-surface shadow-[var(--shadow-pop)]"
       >
         <div class="sticky top-0 border-b border-line bg-surface p-2">
           <input
@@ -97,7 +97,7 @@
       <button
         type="button"
         @click="fillRelated"
-        class="rounded-lg border border-blue-200 px-3 py-1.5 text-sm text-accent hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]"
+        class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_35%,transparent)] px-3 py-1.5 text-sm text-accent hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]"
       >
         {{ t('admin.accounts.fillRelatedModels') }}
       </button>
@@ -106,14 +106,14 @@
         type="button"
         @click="syncUpstreamModels"
         :disabled="isSyncingUpstream"
-        class="rounded-lg border border-emerald-200 px-3 py-1.5 text-sm text-success-text hover:bg-[color-mix(in_oklch,var(--success)_16%,transparent)] disabled:cursor-not-allowed disabled:opacity-60"
+        class="rounded-lg border border-[color-mix(in_oklch,var(--success)_35%,transparent)] px-3 py-1.5 text-sm text-success-text hover:bg-[color-mix(in_oklch,var(--success)_16%,transparent)] disabled:cursor-not-allowed disabled:opacity-60"
       >
         {{ isSyncingUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
       </button>
       <button
         type="button"
         @click="clearAll"
-        class="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-danger-text hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]"
+        class="rounded-lg border border-[color-mix(in_oklch,var(--danger)_35%,transparent)] px-3 py-1.5 text-sm text-danger-text hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]"
       >
         {{ t('admin.accounts.clearAllModels') }}
       </button>

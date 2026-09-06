@@ -268,6 +268,7 @@ export default {
       exportCsv: 'Export CSV',
       batchUpdate: 'Batch Update',
       batchUpdateTitle: 'Batch Update Redeem Codes',
+      selectedLabel: 'Selected',
       selectedCount: '{count} redeem code(s) selected',
       clearSelection: 'Clear selection',
       selectCodesFirst: 'Select redeem codes first',
@@ -405,6 +406,8 @@ export default {
       form: {
         title: 'Title',
         content: 'Content (Markdown supported)',
+        contentPreview: 'Preview',
+        contentPreviewEmpty: 'Nothing to preview yet',
         insertImage: 'Insert image',
         uploading: 'Uploading…',
         uploadFailed: 'Failed to upload image',

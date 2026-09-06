@@ -4,7 +4,7 @@
       class="flex flex-col gap-3 border-b border-line px-6 py-4  lg:flex-row lg:items-start lg:justify-between"
     >
       <div>
-        <h2 class="text-lg font-semibold text-foreground ">
+        <h2 class="settings-card-title">
           {{ t("admin.settings.emailTemplates.title") }}
         </h2>
         <p class="mt-1 text-sm text-muted ">
@@ -110,7 +110,7 @@
               :class="
                 selectedEventMeta.optional
                   ? 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text  '
-                  : 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-emerald-800  '
+                  : 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-800  '
               "
             >
               {{ selectedEventMeta.optional ? localText("可退订通知", "Optional") : localText("事务邮件", "Transactional") }}

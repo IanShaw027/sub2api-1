@@ -52,8 +52,11 @@ function toggle() {
   padding: 0;
   cursor: pointer;
   border-radius: 999px;
-  background: color-mix(in oklch, var(--foreground) 14%, transparent);
-  transition: background 0.15s ease;
+  box-sizing: border-box;
+  background: var(--surface-tertiary);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--field-shadow);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .ui-toggle:focus-visible {
@@ -78,14 +81,16 @@ function toggle() {
 
 .ui-toggle[aria-checked='true'] {
   background: var(--accent);
+  border-color: transparent;
+  box-shadow: inset 0 1px 2px color-mix(in oklch, black 18%, transparent), 0 0 0 3px color-mix(in oklch, var(--accent) 16%, transparent);
 }
 
 .ui-toggle-thumb {
   position: absolute;
-  left: 2px;
+  left: 1px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  background: var(--thumb);
+  box-shadow: 0 1px 3px color-mix(in oklch, black 28%, transparent), 0 0 0 0.5px color-mix(in oklch, black 6%, transparent);
   transition: transform 0.15s ease;
 }
 

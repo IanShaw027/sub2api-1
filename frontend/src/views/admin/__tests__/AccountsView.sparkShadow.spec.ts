@@ -5,7 +5,7 @@ import AccountsView from '../AccountsView.vue'
 import AccountActionMenu from '@/components/admin/account/AccountActionMenu.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import HelpTooltip from '@/components/common/HelpTooltip.vue'
+import NameIdCell from '@/components/common/cells/NameIdCell.vue'
 
 // 外审 F2:AccountActionMenu emit 'create-spark-shadow',但 AccountsView 此前未监听,
 // 导致按钮点击无效。本测试通过真实组件引用 emit 该事件,断言父页面接线调用 API。
@@ -332,15 +332,16 @@ describe('admin AccountsView — 账号行展示', () => {
       target: '_blank',
       rel: 'noopener noreferrer',
     })
-    expect(link.classes()).toEqual(expect.arrayContaining([
-      'border-dotted',
-      'text-foreground',
-    ]))
+    // Name rendering moved from a bespoke `.acct-name-link` + HelpTooltip pair into the
+    // shared common/cells/NameIdCell.vue during the Glass redesign: the link now gets its
+    // `is-link` styling hook from NameIdCell itself, and the safe URL surfaces via the
+    // cell's native `title` attribute instead of a floating HelpTooltip popover.
+    expect(link.classes()).toContain('is-link')
+    expect(link.classes()).not.toContain('is-alert')
     expect(link.classes()).not.toContain('text-primary-600')
-    const tooltip = wrapper.findComponent(HelpTooltip)
-    expect(tooltip.props('content')).toBe('https://relay.example.com')
-    expect(tooltip.props('widthClass')).toBe('w-max max-w-sm break-all')
-    expect(tooltip.classes()).toEqual(expect.arrayContaining(['self-start']))
+    const nameCell = wrapper.findComponent(NameIdCell)
+    expect(nameCell.exists()).toBe(true)
+    expect(nameCell.attributes('title')).toContain('https://relay.example.com')
     expect(wrapper.text()).toContain('oauth-account')
     expect(wrapper.text()).toContain('invalid-url')
 

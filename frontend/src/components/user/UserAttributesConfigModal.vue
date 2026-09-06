@@ -77,7 +77,7 @@
  </button>
  <button
  @click="confirmDelete(attr)"
- class="rounded-lg p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+ class="rounded-lg p-1.5 text-muted hover:bg-danger-50 hover:text-danger-text"
  :title="t('common.delete')"
  >
  <Icon name="trash" size="sm" />
@@ -161,7 +161,7 @@
  <button
  type="button"
  @click="removeOption(index)"
- class="rounded-lg p-1.5 text-muted hover:bg-red-50 hover:text-red-600"
+ class="rounded-lg p-1.5 text-muted hover:bg-danger-50 hover:text-danger-text"
  >
  <Icon name="x" size="sm" :stroke-width="2" />
  </button>

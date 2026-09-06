@@ -86,9 +86,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       vue(),
-      checker({
-        vueTsc: true
-      }),
+      checker({ vueTsc: true }),
       injectPublicSettings(backendUrl)
     ],
   resolve: {
@@ -166,7 +164,9 @@ export default defineConfig(({ mode }) => {
           target: backendUrl,
           changeOrigin: true
         },
-        '/setup': {
+        // Only the setup API sub-paths (/setup/status, /setup/test-db, …) go upstream; the bare
+        // /setup is the SPA's SetupWizardView route and must be served by Vite.
+        '^/setup/': {
           target: backendUrl,
           changeOrigin: true
         }

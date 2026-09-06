@@ -1,37 +1,22 @@
 <template>
  <AppLayout>
  <PageHeader :title="t('redeem.title')" :description="t('redeem.description')" />
- <div class="mx-auto max-w-2xl space-y-6">
- <!-- Current Balance Card -->
- <div class="glass-card overflow-hidden">
- <div class="bg-[var(--accent)] px-6 py-8 text-center">
- <div
- class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-surface/20 backdrop-blur-sm"
- >
- <Icon name="creditCard" size="xl" class="text-white" />
- </div>
- <p class="text-sm font-medium text-white/80">{{ t('redeem.currentBalance') }}</p>
- <p class="mt-2 text-4xl font-bold text-white">
- ${{ user?.balance?.toFixed(2) || '0.00' }}
- </p>
- <p class="mt-2 text-sm text-white/80">
- {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}
- </p>
- </div>
+ <div class="redeem-page">
+ <!-- Balance / concurrency / total recharged mini stats -->
+ <div class="redeem-stats">
+ <StatCard :label="t('redeem.currentBalance')" :value="`$${(user?.balance ?? 0).toFixed(2)}`" />
+ <StatCard :label="t('redeem.concurrency')" :value="`${user?.concurrency ?? 0}`" :sub="t('redeem.requests')" />
+ <StatCard :label="t('redeem.totalRecharged')" :value="`$${totalRecharged.toFixed(2)}`" />
  </div>
 
  <!-- Redeem Form -->
  <div class="glass-card">
- <div class="p-6">
- <form @submit.prevent="handleRedeem" class="space-y-5">
- <div>
- <label for="code" class="login-label">
- {{ t('redeem.redeemCodeLabel') }}
- </label>
- <div class="relative mt-1">
- <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
- <Icon name="gift" size="md" class="text-muted" />
+ <div class="card-header">
+ <p class="card-title">{{ t('redeem.redeemCodeLabel') }}</p>
+ <p class="card-subtitle">{{ t('redeem.redeemCodeHint') }}</p>
  </div>
+ <div class="card-body">
+ <form class="redeem-form" @submit.prevent="handleRedeem">
  <input
  id="code"
  v-model="redeemCode"
@@ -39,40 +24,11 @@
  required
  :placeholder="t('redeem.redeemCodePlaceholder')"
  :disabled="submitting"
- class="field py-3 pl-12 text-lg"
+ class="field redeem-code-field"
  />
- </div>
- <p class="input-hint">
- {{ t('redeem.redeemCodeHint') }}
- </p>
- </div>
-
- <button
- type="submit"
- :disabled="!redeemCode || submitting"
- class="btn-glass-primary w-full py-3"
- >
- <svg
- v-if="submitting"
- class="-ml-1 mr-2 h-5 w-5 animate-spin"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- <Icon v-else name="checkCircle" size="md" class="mr-2" />
+ <button type="submit" class="btn btn-primary redeem-submit-btn" :disabled="!redeemCode || submitting">
+ <span v-if="submitting" class="spinner" aria-hidden="true"></span>
+ <Icon v-else name="checkCircle" size="sm" />
  {{ submitting ? t('redeem.redeeming') : t('redeem.redeemButton') }}
  </button>
  </form>
@@ -81,53 +37,33 @@
 
  <!-- Success Message -->
  <transition name="fade">
- <div
- v-if="redeemResult"
- class="glass-card border-emerald-200 bg-emerald-50 "
- >
- <div class="p-6">
- <div class="flex items-start gap-4">
- <div
- class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-100 "
- >
- <Icon name="checkCircle" size="md" class="text-emerald-600 " />
- </div>
- <div class="flex-1">
- <h3 class="text-sm font-semibold text-emerald-800 ">
- {{ t('redeem.redeemSuccess') }}
- </h3>
- <div class="mt-2 text-sm text-emerald-700 ">
+ <div v-if="redeemResult" class="notice notice-success">
+ <Icon name="checkCircle" size="sm" class="notice-icon" />
+ <div class="min-w-0 flex-1">
+ <p class="notice-title">{{ t('redeem.redeemSuccess') }}</p>
  <p>{{ redeemResult.message }}</p>
- <div class="mt-3 space-y-1">
- <p v-if="redeemResult.type === 'balance'" class="font-medium">
- {{ t('redeem.added') }}: ${{ redeemResult.value.toFixed(2) }}
+ <div class="mt-1.5 space-y-0.5">
+ <p v-if="redeemResult.type === 'balance'">
+ {{ t('redeem.added') }}: <span class="num font-semibold">${{ redeemResult.value.toFixed(2) }}</span>
  </p>
- <p v-else-if="redeemResult.type === 'concurrency'" class="font-medium">
- {{ t('redeem.added') }}: {{ redeemResult.value }}
+ <p v-else-if="redeemResult.type === 'concurrency'">
+ {{ t('redeem.added') }}: <span class="num font-semibold">{{ redeemResult.value }}</span>
  {{ t('redeem.concurrentRequests') }}
  </p>
- <p v-else-if="redeemResult.type === 'subscription'" class="font-medium">
+ <p v-else-if="redeemResult.type === 'subscription'">
  {{ t('redeem.subscriptionAssigned') }}
  <span v-if="redeemResult.group_name"> - {{ redeemResult.group_name }}</span>
  <span v-if="redeemResult.validity_days">
- ({{
- t('redeem.subscriptionDays', { days: redeemResult.validity_days })
- }})</span
+ ({{ t('redeem.subscriptionDays', { days: redeemResult.validity_days }) }})</span
  >
  </p>
  <p v-if="redeemResult.new_balance !== undefined">
- {{ t('redeem.newBalance') }}:
- <span class="font-semibold">${{ redeemResult.new_balance.toFixed(2) }}</span>
+ {{ t('redeem.newBalance') }}: <span class="num font-semibold">${{ redeemResult.new_balance.toFixed(2) }}</span>
  </p>
  <p v-if="redeemResult.new_concurrency !== undefined">
  {{ t('redeem.newConcurrency') }}:
- <span class="font-semibold"
- >{{ redeemResult.new_concurrency }} {{ t('redeem.requests') }}</span
- >
+ <span class="num font-semibold">{{ redeemResult.new_concurrency }} {{ t('redeem.requests') }}</span>
  </p>
- </div>
- </div>
- </div>
  </div>
  </div>
  </div>
@@ -135,207 +71,81 @@
 
  <!-- Error Message -->
  <transition name="fade">
- <div
- v-if="errorMessage"
- class="glass-card border-red-200 bg-red-50 "
- >
- <div class="p-6">
- <div class="flex items-start gap-4">
- <div
- class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-red-100 "
- >
- <Icon
- name="exclamationCircle"
- size="md"
- class="text-red-600 "
- />
- </div>
- <div class="flex-1">
- <h3 class="text-sm font-semibold text-red-800 ">
- {{ t('redeem.redeemFailed') }}
- </h3>
- <p class="mt-2 text-sm text-red-700 ">
- {{ errorMessage }}
- </p>
- </div>
- </div>
+ <div v-if="errorMessage" class="notice notice-danger">
+ <Icon name="exclamationCircle" size="sm" class="notice-icon" />
+ <div class="min-w-0 flex-1">
+ <p class="notice-title">{{ t('redeem.redeemFailed') }}</p>
+ <p>{{ errorMessage }}</p>
  </div>
  </div>
  </transition>
 
  <!-- Information Card -->
- <div
- class="glass-card border-[color-mix(in_oklch,var(--accent)_28%,transparent)] bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]"
- >
- <div class="p-6">
- <div class="flex items-start gap-4">
- <div
- class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_oklch,var(--accent)_14%,transparent)]"
- >
- <Icon name="infoCircle" size="md" class="text-accent" />
- </div>
- <div class="flex-1">
- <h3 class="text-sm font-semibold text-accent">
- {{ t('redeem.aboutCodes') }}
- </h3>
- <ul
- class="mt-2 list-inside list-disc space-y-1 text-sm text-accent "
- >
+ <div class="glass-card">
+ <div class="card-body">
+ <p class="card-title">{{ t('redeem.aboutCodes') }}</p>
+ <ul class="redeem-rules">
  <li>{{ t('redeem.codeRule1') }}</li>
  <li>{{ t('redeem.codeRule2') }}</li>
  <li>
  {{ t('redeem.codeRule3') }}
- <span
- v-if="contactInfo"
- class="ml-1.5 inline-flex items-center rounded-md bg-[color-mix(in_oklch,var(--accent)_18%,transparent)] px-2 py-0.5 text-xs font-medium text-accent"
- >
- {{ contactInfo }}
- </span>
+ <span v-if="contactInfo" class="tag tag-accent ml-1">{{ contactInfo }}</span>
  </li>
  <li>{{ t('redeem.codeRule4') }}</li>
  </ul>
  </div>
  </div>
- </div>
- </div>
 
  <!-- Recent Activity -->
- <div class="glass-card">
- <div class="border-b border-line px-6 py-4 ">
- <h2 class="text-lg font-semibold text-foreground">
- {{ t('redeem.recentActivity') }}
- </h2>
- </div>
- <div class="p-6">
- <!-- Loading State -->
- <div v-if="loadingHistory" class="flex items-center justify-center py-8">
- <svg class="h-6 w-6 animate-spin text-accent" fill="none" viewBox="0 0 24 24">
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
+ <div class="glass-card redeem-history-card">
+ <div class="card-header redeem-history-header">
+ <p class="card-title">{{ t('redeem.recentActivity') }}</p>
+ <UiSelect
+ :model-value="historyType"
+ class="redeem-history-filter"
+ :options="historyTypeOptions"
+ variant="pill"
+ @update:model-value="handleHistoryTypeChange"
+ />
  </div>
 
- <!-- History List -->
- <div v-else-if="history.length > 0" class="space-y-3">
- <div
- v-for="item in history"
- :key="item.id"
- class="flex items-center justify-between rounded-xl bg-surface-2 p-4 "
- >
- <div class="flex items-center gap-4">
- <div
- :class="[
- 'flex h-10 w-10 items-center justify-center rounded-xl',
- isBalanceType(item.type)
- ? item.value >= 0
- ? 'bg-emerald-100 '
- : 'bg-red-100 '
- : isSubscriptionType(item.type)
- ? 'bg-purple-100 '
- : item.value >= 0
- ? 'bg-blue-100 '
- : 'bg-orange-100 '
- ]"
- >
- <!-- 余额类型图标 -->
- <Icon
- v-if="isBalanceType(item.type)"
- name="dollar"
- size="md"
- :class="
- item.value >= 0
- ? 'text-emerald-600 '
- : 'text-red-600 '
- "
- />
- <!-- 订阅类型图标 -->
- <Icon
- v-else-if="isSubscriptionType(item.type)"
- name="badge"
- size="md"
- class="text-purple-600 "
- />
- <!-- 并发类型图标 -->
- <Icon
- v-else
- name="bolt"
- size="md"
- :class="
- item.value >= 0
- ? 'text-blue-600 '
- : 'text-orange-600 '
- "
- />
+ <DataTable :columns="historyColumns" :data="history" :loading="loadingHistory" row-key="id">
+ <template #cell-type="{ row }">
+ <div class="rh-type-cell">
+ <StatusBadge :tone="historyBadgeTone(row)">
+ <Icon :name="historyIcon(row)" size="xs" />
+ {{ getHistoryItemTitle(row) }}
+ </StatusBadge>
  </div>
- <div>
- <p class="text-sm font-medium text-foreground">
- {{ getHistoryItemTitle(item) }}
- </p>
- <p class="text-xs text-muted">
- {{ formatDateTime(item.used_at) }}
- </p>
+ </template>
+ <template #cell-code="{ row }">
+ <span v-if="!isAdminAdjustment(row.type)" class="text-mono rh-code">
+ {{ row.code.slice(0, 8) }}...
+ </span>
+ <span v-else class="rh-muted">{{ t('redeem.adminAdjustment') }}</span>
+ </template>
+ <template #cell-used_at="{ row }">
+ <span class="text-mono rh-muted">{{ formatDateTime(row.used_at) }}</span>
+ </template>
+ <template #cell-value="{ row }">
+ <span class="num" :class="historyValueClass(row)">{{ formatHistoryValue(row) }}</span>
+ </template>
+ <template #empty>
+ <div class="empty-state">
+ <Icon name="clock" size="xl" class="empty-state-icon" />
+ <p class="empty-state-description">{{ t('redeem.historyWillAppear') }}</p>
  </div>
- </div>
- <div class="text-right">
- <p
- :class="[
- 'text-sm font-semibold',
- isBalanceType(item.type)
- ? item.value >= 0
- ? 'text-emerald-600 '
- : 'text-red-600 '
- : isSubscriptionType(item.type)
- ? 'text-purple-600 '
- : item.value >= 0
- ? 'text-blue-600 '
- : 'text-orange-600 '
- ]"
- >
- {{ formatHistoryValue(item) }}
- </p>
- <p
- v-if="!isAdminAdjustment(item.type)"
- class="font-mono text-xs text-muted"
- >
- {{ item.code.slice(0, 8) }}...
- </p>
- <p v-else class="text-xs text-muted">
- {{ t('redeem.adminAdjustment') }}
- </p>
- <!-- Display notes for admin adjustments -->
- <p
- v-if="item.notes"
- class="mt-1 text-xs text-muted italic max-w-[200px] truncate"
- :title="item.notes"
- >
- {{ item.notes }}
- </p>
- </div>
- </div>
- </div>
+ </template>
+ </DataTable>
 
- <!-- Empty State -->
- <div v-else class="empty-state py-8">
- <div
- class="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-2"
- >
- <Icon name="clock" size="xl" class="text-muted" />
- </div>
- <p class="text-sm text-muted">
- {{ t('redeem.historyWillAppear') }}
- </p>
- </div>
+ <div v-if="historyTotal > historyPageSize" class="redeem-pagination">
+ <UiPagination
+ :page="historyPage"
+ :page-size="historyPageSize"
+ :total="historyTotal"
+ :show-page-size-selector="false"
+ @update:page="handleHistoryPageChange"
+ />
  </div>
  </div>
  </div>
@@ -343,7 +153,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
@@ -351,6 +161,12 @@ import { useSubscriptionStore } from '@/stores/subscriptions'
 import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
+import StatCard from '@/components/ui/StatCard.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
+import UiPagination from '@/components/ui/UiPagination.vue'
+import DataTable from '@/components/common/DataTable.vue'
+import type { Column } from '@/components/common/types'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
 
@@ -378,6 +194,27 @@ const errorMessage = ref('')
 const history = ref<RedeemHistoryItem[]>([])
 const loadingHistory = ref(false)
 const contactInfo = ref('')
+const totalRecharged = ref(0)
+const historyType = ref('')
+const historyPage = ref(1)
+const historyPageSize = ref(8)
+const historyTotal = ref(0)
+
+const historyColumns = computed<Column[]>(() => [
+  { key: 'type', label: t('redeem.columns.type') },
+  { key: 'code', label: t('redeem.columns.code') },
+  { key: 'used_at', label: t('redeem.columns.time') },
+  { key: 'value', label: t('redeem.columns.amount') }
+])
+
+const historyTypeOptions = computed(() => [
+  { value: '', label: t('redeem.filter.all') },
+  { value: 'balance', label: t('redeem.filter.balance') },
+  { value: 'concurrency', label: t('redeem.filter.concurrency') },
+  { value: 'subscription', label: t('redeem.filter.subscription') },
+  { value: 'admin_balance', label: t('redeem.filter.adminAdjustment') },
+  { value: 'admin_concurrency', label: t('redeem.filter.adminAdjustment') }
+])
 
 // Helper functions for history display
 const isBalanceType = (type: string) => {
@@ -407,6 +244,22 @@ const getHistoryItemTitle = (item: RedeemHistoryItem) => {
   return t('common.unknown')
 }
 
+const historyIcon = (item: RedeemHistoryItem) => {
+  if (isBalanceType(item.type)) return 'dollar'
+  if (isSubscriptionType(item.type)) return 'badge'
+  return 'bolt'
+}
+
+const historyBadgeTone = (item: RedeemHistoryItem): 'accent' | 'success' | 'danger' => {
+  if (isSubscriptionType(item.type)) return 'accent'
+  return item.value >= 0 ? 'success' : 'danger'
+}
+
+const historyValueClass = (item: RedeemHistoryItem) => {
+  if (isSubscriptionType(item.type)) return 'text-accent'
+  return item.value >= 0 ? 'text-success-text' : 'text-danger-text'
+}
+
 const formatHistoryValue = (item: RedeemHistoryItem) => {
   if (isBalanceType(item.type)) {
     const sign = item.value >= 0 ? '+' : ''
@@ -425,12 +278,26 @@ const formatHistoryValue = (item: RedeemHistoryItem) => {
 const fetchHistory = async () => {
   loadingHistory.value = true
   try {
-    history.value = await redeemAPI.getHistory()
+    const res = await redeemAPI.getHistoryPaginated(historyPage.value, historyPageSize.value, historyType.value || undefined)
+    history.value = res.items || []
+    historyTotal.value = res.total || 0
+    totalRecharged.value = res.total_recharged || 0
   } catch (error) {
     console.error('Failed to fetch history:', error)
   } finally {
     loadingHistory.value = false
   }
+}
+
+const handleHistoryTypeChange = (value: string | number | boolean | null) => {
+  historyType.value = typeof value === 'string' ? value : ''
+  historyPage.value = 1
+  fetchHistory()
+}
+
+const handleHistoryPageChange = (page: number) => {
+  historyPage.value = page
+  fetchHistory()
 }
 
 const handleRedeem = async () => {
@@ -465,6 +332,7 @@ const handleRedeem = async () => {
     redeemCode.value = ''
 
     // Refresh history
+    historyPage.value = 1
     await fetchHistory()
 
     // Show success toast
@@ -490,6 +358,107 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.redeem-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: var(--action-page-max);
+}
+
+.redeem-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.redeem-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.redeem-code-field {
+  height: 36px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.redeem-submit-btn {
+  width: 100%;
+}
+
+.notice-icon {
+  flex: none;
+  margin-top: 1px;
+}
+
+.notice-title {
+  margin-bottom: 2px;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+}
+
+.redeem-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  padding-left: 18px;
+  list-style: disc;
+  font-size: var(--fs-12-5);
+  color: var(--muted);
+}
+
+.redeem-history-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.redeem-history-card .card-header {
+  padding: 16px 20px 12px;
+}
+
+.redeem-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.redeem-history-filter {
+  flex: none;
+}
+
+.rh-type-cell {
+  display: flex;
+  align-items: center;
+}
+
+.rh-code,
+.rh-muted {
+  color: var(--muted);
+}
+
+.redeem-pagination {
+  padding: 10px 20px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 640px) {
+  .redeem-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .redeem-history-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .redeem-history-filter {
+    width: 100%;
+  }
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: all 0.3s ease;

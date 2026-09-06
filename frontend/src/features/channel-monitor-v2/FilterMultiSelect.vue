@@ -252,7 +252,8 @@ onBeforeUnmount(() => {
 }
 
 .filter-dropdown {
- @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-xl border border-line bg-surface shadow-lg;
+ @apply w-max min-w-[200px] max-h-[min(50vh,360px)] overflow-y-auto rounded-xl border border-line bg-surface;
+ box-shadow: var(--shadow-pop);
 }
 
 .dropdown-item {

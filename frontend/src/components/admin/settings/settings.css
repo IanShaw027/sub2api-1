@@ -1,0 +1,452 @@
+/* 由 frontend-health-cleanup 6.3 从 SettingsView.vue 的 <style scoped> 拆出。
+   拆分为 tab 组件后，卡片/行/列表等布局类会被子组件渲染，Vue 的 scoped 属性
+   选择器无法穿透组件边界命中它们，因此改为普通全局样式表，由父组件
+   SettingsView.vue 通过 `import "./settings.css"` 侧效应引入一次。
+   类名均带 settings-/default-sub- 前缀，属于设置页私有命名空间，不会与其他页面冲突。 */
+
+.default-sub-group-select :deep(.select-trigger) {
+ @apply h-[42px];
+}
+
+.default-sub-delete-btn {
+ @apply h-[42px];
+}
+
+/* ============ 系统设置：分区导航 + 表单节奏（对齐原型 06） ============ */
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.settings-page .ui-page-header.ui-page-header {
+  /* Specificity boosted (repeated class) to match the original scoped-style
+     override, which won over PageHeader.vue's own scoped `.ui-page-header`
+     rule via Vue's automatic parent-scope-id-on-child-root behavior. Once
+     this rule became a plain global rule, it tied on specificity with
+     PageHeader's scoped rule and lost on source order — reintroducing
+     PageHeader's default 14px margin-bottom (doubling the .settings-page
+     flex gap to 28px). See 10-split verification notes. */
+  margin-bottom: 0;
+}
+.settings-dirty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--warning-text);
+  white-space: nowrap;
+}
+.settings-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--warning);
+  flex: none;
+}
+.settings-layout {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.settings-nav {
+  position: sticky;
+  top: 4.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-nav-mobile {
+  display: none;
+}
+.settings-tabs-scroll {
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: 14px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
+  padding: 8px;
+}
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.settings-tab:hover,
+.settings-tab:focus-visible {
+  background: color-mix(in oklch, var(--foreground) 5%, transparent);
+  outline: none;
+}
+.settings-tab-active,
+.settings-tab-active:hover {
+  background: color-mix(in oklch, var(--surface) 92%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 var(--btn-hi),
+    var(--shadow-hover),
+    0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
+}
+.settings-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-tab-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--warning);
+}
+.settings-deploy {
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: 14px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.settings-deploy-title {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.settings-deploy-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.settings-deploy-value {
+  font-family: var(--font-mono);
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.settings-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.settings-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border-bottom: 2px solid var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---------- 设置卡片 ---------- */
+.settings-card {
+  border-radius: 14px;
+  overflow: hidden;
+}
+.settings-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+  letter-spacing: 0;
+}
+.settings-card-desc {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.settings-card-head .settings-card-desc {
+  margin-top: 0;
+}
+
+/* ---------- 表单行节奏：240px / 1fr ---------- */
+.settings-card-body > *,
+.settings-row-group > * {
+  padding: 14px 20px;
+}
+.settings-card-body > * + *,
+.settings-row-group > * + * {
+  border-top: 1px solid var(--border);
+}
+.settings-row-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+.settings-row {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  column-gap: 24px;
+  row-gap: 2px;
+  align-items: center;
+}
+.settings-row > .settings-row-label {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: 1.4;
+}
+.settings-row > .settings-row-hint {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.settings-row > :not(.settings-row-label):not(.settings-row-hint) {
+  grid-column: 2;
+  min-width: 0;
+}
+.settings-row > .settings-row-label + :not(.settings-row-hint) {
+  grid-row: 1 / span 2;
+}
+.settings-row .settings-sub-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.settings-sub-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 控件尺寸对齐原型：文本 36px / max 420，数字 120 */
+.settings-content .input,
+.settings-content .field {
+  font-size: 13px;
+}
+.settings-content .text-sm {
+  font-size: 13px;
+}
+.settings-row > .input,
+.settings-row > .field {
+  max-width: 420px;
+}
+.settings-row > input[type="number"].input,
+.settings-row > input[type="number"].field {
+  width: 120px;
+  max-width: 120px;
+}
+.settings-row > textarea.input,
+.settings-row > textarea.field {
+  max-width: 100%;
+}
+
+/* 开关/说明行：左侧 240px 标签块 + 右侧控件 */
+.settings-card-body > .flex.items-center.justify-between,
+.settings-card-body > .flex.items-start.justify-between,
+.settings-row-group > .flex.items-center.justify-between,
+.settings-card-body > * > .flex.items-center.justify-between.border-t {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  column-gap: 24px;
+  align-items: center;
+}
+.settings-card-body > .flex.items-center.justify-between > *:first-child,
+.settings-card-body > .flex.items-start.justify-between > *:first-child,
+.settings-row-group > .flex.items-center.justify-between > *:first-child {
+  min-width: 0;
+}
+.settings-card-body h3,
+.settings-row-group h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* 危险/警告提示 */
+.settings-warning-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--warning-text);
+}
+
+/* 嵌套行分组（子标题下的行）拉齐到卡片边缘 */
+.settings-card-body > * .settings-row-group {
+  margin: 12px -20px -14px;
+}
+.settings-card-body > * .settings-row-group > *:first-child {
+  border-top: 1px solid var(--border);
+}
+
+/* 开关行内的标签/说明排版 */
+.settings-card-body > .flex > div > label,
+.settings-card-body > .flex > div > h3,
+.settings-row-group > .flex > div > label,
+.settings-row-group > .flex > div > h3 {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.settings-card-body > .flex > div > p,
+.settings-row-group > .flex > div > p {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+/* 重复项编辑器（自定义端点等） */
+.settings-list-head {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.settings-list-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.settings-btn-sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  flex: none;
+}
+.settings-empty-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.settings-list-row {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr) minmax(0, 1fr) 32px;
+  gap: 12px;
+  align-items: center;
+}
+.settings-card-body > .settings-list-row {
+  padding: 12px 20px;
+}
+.settings-icon-danger {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger-text);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  flex: none;
+}
+.settings-icon-danger:hover {
+  background: color-mix(in oklch, var(--danger) 10%, transparent);
+}
+
+.default-sub-group-select :deep(.select-trigger) {
+  height: 36px;
+}
+.default-sub-delete-btn {
+  height: 36px;
+}
+
+@media (max-width: 767px) {
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+  .settings-nav {
+    position: static;
+  }
+  .settings-nav-mobile {
+    display: block;
+  }
+  .settings-tabs-scroll,
+  .settings-deploy {
+    display: none;
+  }
+  .settings-row {
+    grid-template-columns: 1fr;
+    row-gap: 4px;
+  }
+  .settings-row > :not(.settings-row-label):not(.settings-row-hint),
+  .settings-row > .settings-row-label + :not(.settings-row-hint) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .settings-row > .settings-row-hint {
+    grid-row: auto;
+  }
+  .settings-card-body > *,
+  .settings-row-group > * {
+    padding: 14px 16px;
+  }
+  .settings-card-body > .flex.items-center.justify-between,
+  .settings-card-body > .flex.items-start.justify-between,
+  .settings-row-group > .flex.items-center.justify-between {
+    grid-template-columns: 1fr;
+    row-gap: 10px;
+  }
+  .settings-list-row {
+    grid-template-columns: minmax(0, 1fr) 32px;
+  }
+  .settings-list-row > *:nth-child(2),
+  .settings-list-row > *:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+  .settings-card-body > * .settings-row-group {
+    margin: 12px -16px -14px;
+  }
+}

@@ -322,19 +322,27 @@ onUnmounted(() => {
 
 <style scoped>
 .date-picker-trigger {
- @apply flex items-center gap-2;
- @apply rounded-lg px-3 py-2 text-sm;
- @apply bg-surface;
- @apply border border-line;
- @apply text-foreground;
- @apply transition-all duration-200;
- @apply focus:border-accent focus:outline-none focus:ring-2 focus:ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
- @apply hover:border-line;
- @apply cursor-pointer;
+ display: flex;
+ align-items: center;
+ gap: 8px;
+ height: 36px;
+ padding: 0 12px;
+ border-radius: var(--radius-field);
+ background: color-mix(in oklch, var(--surface) 85%, transparent);
+ border: 1px solid var(--border);
+ box-shadow: var(--field-shadow);
+ color: var(--foreground);
+ font-size: 13px;
+ transition: border-color 0.15s ease, box-shadow 0.15s ease;
+ cursor: pointer;
 }
 
+.date-picker-trigger:focus,
+.date-picker-trigger:focus-visible,
 .date-picker-trigger-open {
- @apply border-accent ring-2 ring-[color-mix(in_oklch,var(--accent)_30%,transparent)];
+ outline: none;
+ border-color: var(--accent);
+ box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
 }
 
 .date-picker-icon {
@@ -350,13 +358,19 @@ onUnmounted(() => {
 }
 
 .date-picker-dropdown {
- @apply absolute left-0 z-[100] mt-2;
- @apply bg-surface;
- @apply rounded-xl;
- @apply border border-line;
- @apply shadow-lg shadow-black/10;
- @apply overflow-hidden;
- @apply min-w-[320px];
+ position: absolute;
+ left: 0;
+ z-index: 100;
+ margin-top: 8px;
+ min-width: 320px;
+ padding: 6px;
+ border-radius: 12px;
+ background: color-mix(in oklch, var(--surface) 92%, transparent);
+ border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+ box-shadow: var(--shadow-pop);
+ backdrop-filter: blur(20px);
+ -webkit-backdrop-filter: blur(20px);
+ overflow: hidden;
 }
 
 .date-picker-presets {

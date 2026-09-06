@@ -340,9 +340,9 @@ function severityBadgeClass(severity: string | undefined): string {
 
 function statusBadgeClass(status: string | undefined): string {
   const s = String(status || '').trim().toLowerCase()
-  if (s === 'firing') return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-red-600/20   '
-  if (s === 'resolved') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-green-600/20   '
-  if (s === 'manual_resolved') return 'bg-slate-500/15 text-slate-700 ring-slate-600/20   '
+  if (s === 'firing') return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text ring-danger-600/20   '
+  if (s === 'resolved') return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text ring-success-600/20   '
+  if (s === 'manual_resolved') return 'bg-[color-mix(in_oklch,var(--muted)_15%,transparent)] text-[color-mix(in_oklch,var(--muted)_40%,var(--foreground))] ring-[color-mix(in_oklch,var(--muted)_20%,transparent)]   '
   return 'bg-surface-2 text-foreground ring-[color-mix(in_oklch,var(--foreground)_20%,transparent)]   '
 }
 
@@ -359,7 +359,7 @@ const empty = computed(() => events.value.length === 0 && !loading.value)
 </script>
 
 <template>
-  <div class="rounded-3xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
+  <div class="rounded-xl bg-surface p-6 shadow-sm ring-1 ring-[color-mix(in_oklch,var(--foreground)_8%,transparent)]  ">
     <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
       <div>
         <h3 class="text-sm font-bold text-foreground ">{{ t('admin.ops.alertEvents.title') }}</h3>

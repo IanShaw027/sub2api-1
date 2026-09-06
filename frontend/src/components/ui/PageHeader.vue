@@ -43,7 +43,7 @@ const descriptionText = computed(() => props.description || props.subtitle)
   align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .ui-page-header-hero {
@@ -56,7 +56,7 @@ const descriptionText = computed(() => props.description || props.subtitle)
   font-size: 24px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.2;
+  line-height: 35px; /* prototype: line-height normal → 35px box */
   color: var(--foreground);
 }
 
@@ -80,6 +80,7 @@ const descriptionText = computed(() => props.description || props.subtitle)
 .ui-page-header-description {
   margin: 4px 0 0;
   font-size: 13px;
+  line-height: 19px; /* prototype: line-height normal → 19px box */
   color: var(--muted);
 }
 
@@ -94,5 +95,22 @@ const descriptionText = computed(() => props.description || props.subtitle)
   align-items: center;
   gap: 8px;
   flex: none;
+}
+
+/* <768px: a long description must not be squeezed into a narrow column beside the
+   actions — let the actions wrap under the title block when both cannot share the row. */
+@media (max-width: 767px) {
+  .ui-page-header {
+    flex-wrap: wrap;
+  }
+
+  .ui-page-header-main {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+
+  .ui-page-header-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

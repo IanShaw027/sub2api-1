@@ -3,12 +3,12 @@
  v-if="uniqueIps.length > 0"
  class="flex flex-shrink-0 items-center justify-end gap-2 border-b border-line px-4 py-2"
  >
- <span v-if="pendingCount > 0" class="text-xs text-muted">
+ <span v-if="pendingCount > 0" class="text-[11.5px] text-muted">
  {{ t('usage.ipGeo.pending', { count: pendingCount }) }}
  </span>
  <button
  type="button"
- class="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] disabled:cursor-not-allowed disabled:opacity-50"
+ class="btn btn-ghost btn-xs text-accent disabled:cursor-not-allowed disabled:opacity-50"
  :disabled="loading || pendingCount === 0"
  @click="run"
  >

@@ -1,5 +1,12 @@
 <template>
- <BaseDialog :show="show" :title="t('usage.errors.detail.title')" width="wide" @close="emit('update:show', false)">
+ <UiModal
+ :open="show"
+ :title="t('usage.errors.detail.title')"
+ width="lg"
+ :close-label="t('common.close')"
+ :close-on-overlay="false"
+ @close="emit('update:show', false)"
+ >
  <!-- Loading -->
  <div v-if="loading" class="flex justify-center py-10">
  <svg class="h-7 w-7 animate-spin text-accent" fill="none" viewBox="0 0 24 24">
@@ -9,7 +16,7 @@
  </div>
 
  <!-- Error state -->
- <div v-else-if="loadError" class="py-8 text-center text-sm text-red-500">
+ <div v-else-if="loadError" class="py-8 text-center text-sm text-danger-text">
  {{ t('usage.errors.detail.loadFailed') }}
  </div>
 
@@ -67,13 +74,13 @@
  <pre class="mt-1 overflow-auto max-h-[40vh] whitespace-pre-wrap break-all rounded-lg bg-surface-2 border border-line p-3 text-xs text-foreground">{{ detail.error_body }}</pre>
  </div>
  </div>
- </BaseDialog>
+ </UiModal>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import BaseDialog from '@/components/common/BaseDialog.vue'
+import UiModal from '@/components/ui/UiModal.vue'
 import { getMyErrorDetail } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
 import type { UserErrorRequestDetail } from '@/types'

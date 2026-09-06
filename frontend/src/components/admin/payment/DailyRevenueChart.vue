@@ -34,36 +34,32 @@ import {
 import { Line } from 'vue-chartjs'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import type { DailyPaymentStats } from '@/types/payment'
+import { alpha, baseChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend, Filler)
 
 const { t } = useI18n()
+const theme = useChartTheme()
 
 const props = defineProps<{
   data: DailyPaymentStats[]
   loading?: boolean
 }>()
 
-const colors = [
-  ['rgb(59, 130, 246)', 'rgba(59, 130, 246, 0.1)'],
-  ['rgb(168, 85, 247)', 'rgba(168, 85, 247, 0.1)'],
-  ['rgb(245, 158, 11)', 'rgba(245, 158, 11, 0.1)'],
-  ['rgb(239, 68, 68)', 'rgba(239, 68, 68, 0.1)'],
-]
-
 const chartData = computed(() => {
   if (!props.data || props.data.length === 0) return null
   const currencies = [...new Set(props.data.flatMap(day => Object.keys(day.amount)))].sort()
+  const series = theme.value.series
   return {
     labels: props.data.map(d => d.date),
     datasets: [
       ...currencies.map((currency, index) => {
-        const [borderColor, backgroundColor] = colors[index % colors.length]
+        const color = series[index % series.length]
         return {
           label: `${currency} ${t('payment.admin.revenue')}`,
           data: props.data.map(day => day.amount[currency] || 0),
-          borderColor,
-          backgroundColor,
+          borderColor: color,
+          backgroundColor: alpha(color, 12),
           fill: true,
           tension: 0.3,
           pointRadius: 3,
@@ -73,8 +69,8 @@ const chartData = computed(() => {
       {
         label: t('payment.admin.orderCount'),
         data: props.data.map(d => d.count),
-        borderColor: 'rgb(16, 185, 129)',
-        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+        borderColor: theme.value.success,
+        backgroundColor: alpha(theme.value.success, 12),
         fill: false,
         tension: 0.3,
         pointRadius: 3,
@@ -85,27 +81,34 @@ const chartData = computed(() => {
   }
 })
 
-const chartOptions = {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { mode: 'index' as const, intersect: false },
-  scales: {
-    y: {
-      type: 'linear' as const,
-      display: true,
-      position: 'left' as const,
-      title: { display: true, text: t('payment.admin.revenue') },
+const chartOptions = computed(() => {
+  const base = baseChartOptions(theme.value)
+  return {
+    ...base,
+    interaction: { mode: 'index' as const, intersect: false },
+    scales: {
+      x: base.scales.x,
+      y: {
+        ...base.scales.y,
+        type: 'linear' as const,
+        display: true,
+        position: 'left' as const,
+        title: { display: true, text: t('payment.admin.revenue'), color: theme.value.text },
+      },
+      y1: {
+        type: 'linear' as const,
+        display: true,
+        position: 'right' as const,
+        title: { display: true, text: t('payment.admin.orderCount'), color: theme.value.text },
+        grid: { drawOnChartArea: false },
+        border: { display: false },
+        ticks: { color: theme.value.text, font: { family: theme.value.font.family, size: theme.value.font.size } },
+      }
     },
-    y1: {
-      type: 'linear' as const,
-      display: true,
-      position: 'right' as const,
-      title: { display: true, text: t('payment.admin.orderCount') },
-      grid: { drawOnChartArea: false },
+    plugins: {
+      ...base.plugins,
+      legend: { ...base.plugins.legend, position: 'top' as const },
     }
-  },
-  plugins: {
-    legend: { position: 'top' as const },
   }
-}
+})
 </script>

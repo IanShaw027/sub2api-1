@@ -20,7 +20,7 @@
  >
  <div class="mobile-drawer-header">
  <div
- class="flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full text-xs font-bold"
+ class="flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full text-[13px] font-bold"
  style="background: color-mix(in oklch, var(--accent) 18%, transparent); color: var(--accent)"
  >
  <img
@@ -336,27 +336,30 @@ onBeforeUnmount(() => {
  position: fixed;
  inset: 0;
  z-index: 45;
- background: rgba(0, 0, 0, 0.28);
- backdrop-filter: blur(2px);
- -webkit-backdrop-filter: blur(2px);
+ background: color-mix(in oklch, var(--foreground) 40%, transparent);
+ backdrop-filter: blur(6px);
+ -webkit-backdrop-filter: blur(6px);
 }
 
+/* Design 08: full-height right drawer, 280px, 64px top inset for the status/top bar */
 .mobile-drawer {
  position: fixed;
- top: calc(56px + env(safe-area-inset-top, 0px));
+ top: 0;
  right: 0;
  bottom: 0;
  z-index: 50;
  display: flex;
  flex-direction: column;
- width: 300px;
+ gap: 2px;
+ width: 280px;
+ max-width: 88vw;
  box-sizing: border-box;
- padding: 14px 14px 24px;
+ padding: calc(64px + env(safe-area-inset-top, 0px)) 14px calc(24px + env(safe-area-inset-bottom, 0px));
  background: color-mix(in oklch, var(--background) 88%, transparent);
  backdrop-filter: blur(28px);
  -webkit-backdrop-filter: blur(28px);
  border-left: 1px solid var(--border);
- box-shadow: -30px 0 60px -30px rgba(0, 0, 0, 0.5);
+ box-shadow: -30px 0 60px -30px color-mix(in oklch, black 50%, transparent);
  color: var(--foreground);
 }
 
@@ -364,7 +367,7 @@ onBeforeUnmount(() => {
  display: flex;
  align-items: center;
  gap: 10px;
- margin-bottom: 16px;
+ padding: 0 6px 14px;
  flex: none;
 }
 
@@ -390,11 +393,15 @@ onBeforeUnmount(() => {
 .mobile-drawer-nav {
  display: flex;
  flex-direction: column;
- gap: 1px;
+ gap: 2px;
  flex: 1;
  min-height: 0;
  overflow-y: auto;
  scrollbar-width: none;
+}
+
+.mobile-drawer-nav :deep(.sidebar-section-title) {
+ padding: 10px 10px 4px;
 }
 
 .mobile-drawer-footer {
@@ -402,7 +409,9 @@ onBeforeUnmount(() => {
  flex-direction: column;
  gap: 8px;
  flex: none;
- margin-top: 16px;
+ margin-top: auto;
+ padding-top: 12px;
+ border-top: 1px solid var(--border);
 }
 
 .mobile-drawer-footer-row {
@@ -414,7 +423,7 @@ onBeforeUnmount(() => {
  display: inline-flex;
  align-items: center;
  justify-content: center;
- gap: 8px;
+ gap: 6px;
  height: 40px;
  min-height: 40px;
  flex: none;
@@ -422,8 +431,15 @@ onBeforeUnmount(() => {
  font-size: 13px;
  font-weight: 600;
  color: var(--foreground);
- background: color-mix(in oklch, var(--foreground) 6%, transparent);
+ background: color-mix(in oklch, var(--surface) 80%, transparent);
  border: 1px solid var(--border);
+ box-shadow: inset 0 1px 0 var(--btn-hi), 0 1px 2px color-mix(in oklch, black 6%, transparent);
+ cursor: pointer;
+ text-decoration: none;
+}
+
+.mobile-drawer-pill:active {
+ transform: scale(0.98);
 }
 
 .mobile-drawer-footer-row > .mobile-drawer-pill {

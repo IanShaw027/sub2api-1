@@ -33,7 +33,9 @@ describe('BaseDialog', () => {
     await nextTick()
 
     expect(document.body.querySelector<HTMLElement>('.modal-body')?.scrollTop).toBe(0)
-    expect(document.body.querySelector('.modal-content')?.classList.contains('glass-card-solid')).toBe(true)
+    // Solid panel styling now lives directly on `.modal-content` in style.css
+    // (the redundant `glass-card-solid` marker class was folded into it).
+    expect(document.body.querySelector('.modal-content')?.classList.contains('modal-content')).toBe(true)
     wrapper.unmount()
   })
 })

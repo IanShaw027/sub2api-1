@@ -184,10 +184,14 @@ describe('admin UsersView', () => {
     })
     await flushPromises()
 
-    const stats = () => wrapper.findComponent({ name: 'MiniStatCard' }).props('items')
+    const stats = () => wrapper.findAll('.summary-chip').map(chip => ({
+      label: chip.get('.summary-chip-label').text(),
+      value: Number(chip.get('.summary-chip-value').text())
+    }))
     expect(stats()).toEqual([
       { label: 'common.total', value: 40 },
       { label: 'This page: common.active', value: 1 },
+      { label: 'This page: admin.users.disabled', value: 0 },
       { label: 'This page: admin.users.admin', value: 1 }
     ])
 
@@ -196,6 +200,7 @@ describe('admin UsersView', () => {
     expect(stats()).toEqual([
       { label: 'common.total', value: 40 },
       { label: 'This page: common.active', value: 0 },
+      { label: 'This page: admin.users.disabled', value: 1 },
       { label: 'This page: admin.users.admin', value: 0 }
     ])
     wrapper.unmount()

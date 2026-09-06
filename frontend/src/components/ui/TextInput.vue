@@ -95,12 +95,12 @@ defineExpose({ focus: () => inputRef.value?.focus() })
 .ui-text-input-error:focus,
 .ui-text-input-error:focus-visible {
   border-color: var(--danger);
-  box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--danger) 18%, transparent);
+  box-shadow: var(--field-shadow), 0 0 0 3px color-mix(in oklch, var(--danger) 14%, transparent);
 }
 
 .ui-text-input-error-text {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--danger-text);
 }
 </style>

@@ -1,92 +1,64 @@
 <template>
- <div class="min-h-screen bg-background text-foreground">
- <header class="border-b border-line bg-surface/95">
- <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
- <RouterLink to="/home" class="flex min-w-0 items-center gap-3">
- <template v-if="settings">
- <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-surface shadow-sm ring-1 ring-[var(--border)] ">
- <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
- </span>
- <span class="truncate text-base font-semibold text-foreground">
- {{ siteName }}
- </span>
- </template>
- <template v-else>
- <span class="h-10 w-10 flex-shrink-0 animate-pulse rounded-xl bg-surface-2" aria-hidden="true"></span>
- <span class="h-5 w-28 animate-pulse rounded bg-surface-2" aria-hidden="true"></span>
- </template>
- </RouterLink>
- <RouterLink
- to="/login"
- class="btn-glass-primary"
- >
- {{ t('home.login') }}
- </RouterLink>
- </div>
- </header>
+  <PublicPageLayout>
+    <template #nav>
+      <header class="legal-nav glass">
+        <nav class="legal-nav-inner">
+          <RouterLink to="/home" class="legal-brand">
+            <template v-if="settings">
+              <span class="brand-mark">
+                <img :src="siteLogo || '/logo.svg'" alt="Logo" />
+              </span>
+              <span class="legal-brand-name">{{ siteName }}</span>
+            </template>
+            <template v-else>
+              <span class="brand-mark skeleton" aria-hidden="true"></span>
+              <span class="skeleton legal-brand-name-skeleton" aria-hidden="true"></span>
+            </template>
+          </RouterLink>
+          <RouterLink to="/login" class="btn-glass-primary">
+            {{ t('home.login') }}
+          </RouterLink>
+        </nav>
+      </header>
+    </template>
 
- <main class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:py-10">
- <div v-if="loading" class="flex min-h-[320px] items-center justify-center">
- <div class="h-8 w-8 animate-spin rounded-full border-b-2 border-[var(--accent)]"></div>
- </div>
+    <main class="legal-main">
+      <div v-if="loading" class="legal-loading">
+        <div class="spinner text-accent"></div>
+      </div>
 
- <section
- v-else-if="loadError"
- class="rounded-lg border border-[color-mix(in_oklch,var(--danger)_35%,transparent)] bg-[color-mix(in_oklch,var(--danger)_12%,transparent)] p-6 text-[var(--danger-text)]"
- >
- <h1 class="text-lg font-semibold">{{ t('legal.loadFailed') }}</h1>
- <p class="mt-2 text-sm">{{ t('legal.retryLater') }}</p>
- </section>
+      <div v-else-if="loadError" class="notice notice-danger">
+        <p class="legal-notice-title">{{ t('legal.loadFailed') }}</p>
+        <p class="legal-notice-desc">{{ t('legal.retryLater') }}</p>
+      </div>
 
- <section
- v-else-if="!currentDocument"
- class="rounded-lg border border-line bg-surface p-6 "
- >
- <div class="flex items-start gap-3">
- <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md bg-surface-2 text-muted ">
- <Icon name="document" size="sm" />
- </span>
- <div>
- <h1 class="text-lg font-semibold text-foreground">{{ t('legal.notFound') }}</h1>
- <p class="mt-2 text-sm leading-6 text-muted">
- {{ t('legal.notFoundDescription') }}
- </p>
- </div>
- </div>
- </section>
+      <div v-else-if="!currentDocument" class="empty-state legal-empty">
+        <Icon name="document" size="sm" class="empty-state-icon" />
+        <p class="empty-state-title">{{ t('legal.notFound') }}</p>
+        <p class="empty-state-description">{{ t('legal.notFoundDescription') }}</p>
+      </div>
 
- <article v-else>
- <div class="mb-8 border-b border-line pb-6 ">
- <div class="flex items-start gap-4">
- <span class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-md bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] text-accent ">
- <Icon :name="documentIcon" size="md" />
- </span>
- <div class="min-w-0">
- <p class="text-sm font-medium text-accent">{{ documentTypeLabel }}</p>
- <h1 class="mt-2 break-words text-2xl font-bold tracking-normal text-foreground sm:text-3xl">
- {{ currentDocument.title }}
- </h1>
- <p v-if="updatedAt" class="mt-3 text-sm text-muted">
- {{ t('legal.updatedAt', { date: updatedAt }) }}
- </p>
- </div>
- </div>
- </div>
+      <article v-else class="glass-card legal-card">
+        <div class="card-header legal-card-header">
+          <span class="legal-doc-icon">
+            <Icon :name="documentIcon" size="md" />
+          </span>
+          <div class="legal-doc-heading">
+            <p class="legal-doc-type">{{ documentTypeLabel }}</p>
+            <h1 class="section-title legal-doc-title">{{ currentDocument.title }}</h1>
+            <p v-if="updatedAt" class="legal-doc-updated">
+              {{ t('legal.updatedAt', { date: updatedAt }) }}
+            </p>
+          </div>
+        </div>
 
- <div
- v-if="hasContent"
- class="legal-document-content"
- v-html="renderedHtml"
- ></div>
- <div
- v-else
- class="rounded-lg border border-dashed border-line bg-surface px-6 py-14 text-center text-sm text-muted "
- >
- {{ t('legal.empty') }}
- </div>
- </article>
- </main>
- </div>
+        <div v-if="hasContent" class="card-body markdown-body legal-doc-content" v-html="renderedHtml"></div>
+        <div v-else class="card-body">
+          <p class="empty-state-description legal-doc-empty">{{ t('legal.empty') }}</p>
+        </div>
+      </article>
+    </main>
+  </PublicPageLayout>
 </template>
 
 <script setup lang="ts">
@@ -95,11 +67,13 @@ import { useRoute } from 'vue-router'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { useI18n } from 'vue-i18n'
+import PublicPageLayout from '@/components/layout/PublicPageLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { getLocale } from '@/i18n'
 import { sanitizeUrl } from '@/utils/url'
 import { useAppStore } from '@/stores/app'
 import type { LoginAgreementDocument } from '@/types'
+import '@/styles/announcement-markdown.css'
 import zhAdminCompliance from '../../../../docs/legal/admin-compliance.zh.md?raw'
 import enAdminCompliance from '../../../../docs/legal/admin-compliance.en.md?raw'
 
@@ -183,81 +157,125 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.legal-document-content {
-  line-height: 1.75;
+.legal-nav {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  border-bottom: 1px solid var(--border);
+}
+
+.legal-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 12px 24px;
+}
+
+.legal-brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+.legal-brand img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.legal-brand-name {
+  overflow: hidden;
+  font-size: var(--fs-15);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+
+.legal-brand-name-skeleton {
+  width: 112px;
+  height: 20px;
+  border-radius: var(--radius-5);
+}
+
+.legal-main {
+  width: 100%;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.legal-loading {
+  display: flex;
+  min-height: 320px;
+  align-items: center;
+  justify-content: center;
+}
+
+.legal-notice-desc {
+  margin-top: 8px;
+}
+
+.legal-empty {
+  padding: 56px 16px;
+}
+
+.legal-card-header {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.legal-doc-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-field);
+  background: color-mix(in oklch, var(--accent) 10%, transparent);
+  color: var(--accent);
+}
+
+.legal-doc-heading {
+  min-width: 0;
+}
+
+.legal-doc-type {
+  font-size: var(--fs-13);
+  font-weight: var(--fw-semibold);
+  color: var(--accent);
+}
+
+.legal-doc-title {
+  margin-top: 8px;
   overflow-wrap: anywhere;
-  color: inherit;
 }
 
-.legal-document-content :deep(h1) {
-  @apply mb-4 mt-8 border-b border-line pb-3 text-3xl font-bold;
+.legal-doc-updated {
+  margin-top: 10px;
+  font-size: var(--fs-13);
+  color: var(--muted);
 }
 
-.legal-document-content :deep(h2) {
-  @apply mb-3 mt-7 text-2xl font-bold;
+.legal-doc-content {
+  overflow-wrap: anywhere;
 }
 
-.legal-document-content :deep(h3) {
-  @apply mb-2 mt-6 text-xl font-semibold;
+.legal-doc-empty {
+  padding: 40px 0;
+  text-align: center;
 }
 
-.legal-document-content :deep(h4) {
-  @apply mb-2 mt-5 text-lg font-semibold;
-}
-
-.legal-document-content :deep(p) {
-  @apply mb-4 text-foreground;
-}
-
-.legal-document-content :deep(a) {
-  @apply text-accent underline underline-offset-4 hover:brightness-110;
-}
-
-.legal-document-content :deep(ul) {
-  @apply mb-4 list-disc pl-6;
-}
-
-.legal-document-content :deep(ol) {
-  @apply mb-4 list-decimal pl-6;
-}
-
-.legal-document-content :deep(li) {
-  @apply mb-1 text-foreground;
-}
-
-.legal-document-content :deep(blockquote) {
-  @apply my-5 border-l-4 border-line pl-4 text-muted;
-}
-
-.legal-document-content :deep(code) {
-  @apply rounded bg-surface-2 px-1.5 py-0.5 font-mono text-sm;
-}
-
-.legal-document-content :deep(pre) {
-  @apply my-5 overflow-x-auto rounded-lg bg-foreground p-4 text-background;
-}
-
-.legal-document-content :deep(pre code) {
-  @apply bg-transparent p-0 text-inherit;
-}
-
-.legal-document-content :deep(table) {
-  @apply my-5 block w-full overflow-x-auto border-collapse;
-}
-
-.legal-document-content :deep(th) {
-  @apply border border-line bg-surface-2 px-3 py-2 text-left font-semibold;
-}
-
-.legal-document-content :deep(td) {
-  @apply border border-line px-3 py-2;
-}
-
-.legal-document-content :deep(img) {
-  @apply my-5 h-auto max-w-full rounded-lg;
-}
-
-.legal-document-content :deep(hr) {
-  @apply my-7 border-line;
+@media (max-width: 640px) {
+  .legal-main {
+    padding: 32px 16px;
+  }
 }
 </style>

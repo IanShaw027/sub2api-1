@@ -3,31 +3,30 @@
  <!-- Mini Progress Display -->
  <button
  @click="toggleTooltip"
- class="flex cursor-pointer items-center gap-2 rounded-xl bg-purple-50 px-3 py-1.5 transition-colors hover:bg-purple-100"
+ class="filter-pill"
+ :class="{ 'is-active': tooltipOpen }"
  :title="t('subscriptionProgress.viewDetails')"
  >
- <Icon name="creditCard" size="sm" class="text-purple-600" />
- <div class="flex items-center gap-1.5">
+ <Icon name="creditCard" size="sm" class="text-accent" />
  <!-- Combined progress indicator -->
  <div class="flex items-center gap-0.5">
  <div
  v-for="(sub, index) in displaySubscriptions.slice(0, 3)"
  :key="index"
- class="h-2 w-2 rounded-full"
+ class="h-1.5 w-1.5 rounded-full"
  :class="getProgressDotClass(sub)"
  ></div>
  </div>
- <span class="text-xs font-medium text-purple-700">
+ <span class="filter-pill-value">
  {{ activeSubscriptions.length }}
  </span>
- </div>
  </button>
 
  <!-- Hover/Click Tooltip -->
  <transition name="dropdown">
  <div
  v-if="tooltipOpen"
- class="absolute right-0 z-50 mt-2 w-[340px] overflow-hidden rounded-xl border border-line bg-surface shadow-xl"
+ class="dropdown right-0 mt-2 w-[340px] overflow-hidden !p-0"
  >
  <div class="border-b border-line p-3">
  <h3 class="text-sm font-semibold text-foreground">
@@ -62,10 +61,10 @@
  <!-- Unlimited subscription badge -->
  <div
  v-if="isUnlimited(subscription)"
- class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50 px-2.5 py-1.5"
+ class="flex items-center gap-2 rounded-lg bg-[color-mix(in_oklch,var(--success)_14%,transparent)] px-2.5 py-1.5"
  >
- <span class="text-lg text-emerald-600">∞</span>
- <span class="text-xs font-medium text-emerald-700">
+ <span class="text-lg text-success-text">∞</span>
+ <span class="text-xs font-medium text-success-text">
  {{ t('subscriptionProgress.unlimited') }}
  </span>
  </div>
@@ -229,20 +228,20 @@ function isUnlimited(sub: UserSubscription): boolean {
 function getProgressDotClass(sub: UserSubscription): string {
  // Unlimited subscriptions get a special color
  if (isUnlimited(sub)) {
- return 'bg-emerald-500'
+ return 'bg-success'
  }
  const maxPercentage = getMaxUsagePercentage(sub)
- if (maxPercentage >= 90) return 'bg-red-500'
- if (maxPercentage >= 70) return 'bg-orange-500'
- return 'bg-green-500'
+ if (maxPercentage >= 90) return 'bg-danger'
+ if (maxPercentage >= 70) return 'bg-warning'
+ return 'bg-success'
 }
 
 function getProgressBarClass(used: number | undefined, limit: number | null | undefined): string {
  if (!limit || limit === 0) return 'bg-surface-3'
  const percentage = ((used || 0) / limit) * 100
- if (percentage >= 90) return 'bg-red-500'
- if (percentage >= 70) return 'bg-orange-500'
- return 'bg-green-500'
+ if (percentage >= 90) return 'bg-danger'
+ if (percentage >= 70) return 'bg-warning'
+ return 'bg-success'
 }
 
 function getProgressWidth(used: number | undefined, limit: number | null | undefined): string {
@@ -273,8 +272,8 @@ function getDaysRemainingClass(expiresAt: string): string {
  const expires = new Date(expiresAt)
  const diff = expires.getTime() - now.getTime()
  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
- if (days <= 3) return 'text-red-600'
- if (days <= 7) return 'text-orange-600'
+ if (days <= 3) return 'text-danger-text'
+ if (days <= 7) return 'text-warning-text'
  return 'text-muted'
 }
 

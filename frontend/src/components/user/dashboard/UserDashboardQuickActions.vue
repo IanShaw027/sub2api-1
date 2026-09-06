@@ -1,9 +1,9 @@
 <template>
- <GlassCard padding="sm">
- <template #header>
- <h2 class="text-lg font-semibold text-foreground">{{ t('dashboard.quickActions') }}</h2>
- </template>
- <div class="space-y-3">
+ <GlassCard padding="md" class="dash-qa-card">
+ <div class="card-header">
+ <span class="card-title">{{ t('dashboard.quickActions') }}</span>
+ </div>
+ <div class="dash-qa-list">
  <button type="button" class="dash-action" @click="router.push('/keys')">
  <span class="dash-action-icon"><Icon name="key" size="lg" /></span>
  <span class="min-w-0 flex-1 text-left">
@@ -59,17 +59,31 @@ onMounted(() => {
 })
 </script>
 <style scoped>
+.dash-qa-card {
+ padding: 0 !important;
+}
+.dash-qa-list {
+ display: flex;
+ flex-direction: column;
+ gap: 8px;
+ padding: 12px 16px 16px;
+}
 .dash-action {
  display: flex;
  align-items: center;
  gap: 12px;
  width: 100%;
- padding: 12px;
+ min-height: 44px;
+ padding: 10px 12px;
  border-radius: 12px;
  background: color-mix(in oklch, var(--surface-secondary) 70%, transparent);
  border: 0;
  cursor: pointer;
  text-align: left;
+ transition: background 0.15s ease;
+}
+.dash-action:hover {
+ background: color-mix(in oklch, var(--surface-secondary) 100%, transparent);
 }
 .dash-action-icon {
  width: 40px;

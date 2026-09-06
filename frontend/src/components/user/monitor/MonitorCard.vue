@@ -1,7 +1,7 @@
 <template>
  <button
  type="button"
- class="group text-left p-5 rounded-2xl min-h-[280px] w-full bg-surface/70 backdrop-blur-xl border border-line/80 shadow-card hover:-translate-y-1 hover:shadow-card-hover hover:border-line transition-all duration-300 ease-out flex flex-col"
+ class="group text-left p-5 rounded-[var(--radius-card)] min-h-[280px] w-full bg-surface/70 backdrop-blur-xl border border-line/80 shadow-card hover:-translate-y-1 hover:shadow-card-hover hover:border-line transition-all duration-300 ease-out flex flex-col"
  @click="emit('click')"
  >
  <!-- Header: icon + name/model + status chip -->
@@ -91,16 +91,16 @@ import MonitorAvailabilityRow from './MonitorAvailabilityRow.vue'
 import MonitorTimeline from './MonitorTimeline.vue'
 import MonitorQuotaView from '@/components/common/MonitorQuotaView.vue'
 
-// 图标配色与 utils/platformColors.ts 的平台色对齐（新 4 家）。
+// 图标配色（token 组合，与 useChannelMonitorFormat 的 PROVIDER_TOKEN 保持一致）。
 const PROVIDER_TINT: Record<string, string> = {
- openai: 'text-emerald-600',
- anthropic: 'text-orange-600',
- gemini: 'text-sky-600',
- grok: 'text-zinc-700',
- antigravity: 'text-purple-600',
- kimi: 'text-pink-600',
- zhipu: 'text-indigo-600',
- deepseek: 'text-teal-600',
+ openai: 'text-[var(--success)]',
+ anthropic: 'text-[var(--warning)]',
+ gemini: 'text-[var(--accent)]',
+ grok: 'text-muted',
+ antigravity: 'text-[color-mix(in_oklch,var(--accent)_55%,var(--danger)_45%)]',
+ kimi: 'text-[color-mix(in_oklch,var(--danger)_80%,var(--accent)_20%)]',
+ zhipu: 'text-[color-mix(in_oklch,var(--accent)_70%,var(--danger)_30%)]',
+ deepseek: 'text-[color-mix(in_oklch,var(--accent)_50%,var(--success)_50%)]',
 }
 
 const props = defineProps<{

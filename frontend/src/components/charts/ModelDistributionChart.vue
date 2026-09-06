@@ -127,7 +127,7 @@
  >
  <td
  class="max-w-[100px] truncate py-1.5 font-medium"
- :class="enableBreakdown ? 'text-blue-600 hover:text-blue-800' : 'text-foreground'"
+ :class="enableBreakdown ? 'text-accent hover:underline' : 'text-foreground'"
  :title="model.model"
  >
  <span class="inline-flex items-center gap-1">
@@ -142,10 +142,10 @@
  <td class="py-1.5 text-right text-muted">
  {{ formatTokens(model.total_tokens) }}
  </td>
- <td class="py-1.5 text-right text-green-600">
+ <td class="py-1.5 text-right text-success-text">
  ${{ formatCost(model.actual_cost) }}
  </td>
- <td v-if="showAccountCost" class="py-1.5 text-right text-orange-500">
+ <td v-if="showAccountCost" class="py-1.5 text-right text-warning-text">
  ${{ formatCost(model.account_cost) }}
  </td>
  <td class="py-1.5 text-right text-muted">
@@ -225,7 +225,7 @@
  <td class="py-1.5 text-right text-muted">
  {{ formatTokens(item.tokens) }}
  </td>
- <td class="py-1.5 text-right text-green-600">
+ <td class="py-1.5 text-right text-success-text">
  ${{ formatCost(item.actual_cost) }}
  </td>
  </tr>
@@ -251,10 +251,12 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserBreakdownSubTable from './UserBreakdownSubTable.vue'
 import type { ModelStat, UserSpendingRankingItem, UserBreakdownItem } from '@/types'
 import { getUserBreakdown } from '@/api/admin/dashboard'
+import { pieChartOptions, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
 const { t } = useI18n()
+const theme = useChartTheme()
 
 type DistributionMetric = 'tokens' | 'actual_cost'
 type ModelSource = 'requested' | 'upstream' | 'mapping'
@@ -339,20 +341,11 @@ const showAccountCost = computed(() => props.showAccountCost)
 const distributionColspan = computed(() => showAccountCost.value ? 6 : 5)
 const activeView = ref<'model_distribution' | 'spending_ranking'>('model_distribution')
 
-const chartColors = [
- '#3b82f6',
- '#10b981',
- '#f59e0b',
- '#ef4444',
- '#8b5cf6',
- '#ec4899',
- '#14b8a6',
- '#f97316',
- '#6366f1',
- '#84cc16',
- '#06b6d4',
- '#a855f7'
-]
+/** Cycles through the token series palette so any slice count stays on-brand. */
+const seriesColor = (index: number): string => {
+ const series = theme.value.series
+ return series[index % series.length]
+}
 
 const displayModelStats = computed(() => {
  const sourceStats = props.source === 'upstream'
@@ -374,7 +367,7 @@ const chartData = computed(() => {
  datasets: [
  {
  data: displayModelStats.value.map((m) => toFiniteNumber(props.metric === 'actual_cost' ? m.actual_cost : m.total_tokens)),
- backgroundColor: chartColors.slice(0, displayModelStats.value.length),
+ backgroundColor: displayModelStats.value.map((_, i) => seriesColor(i)),
  borderWidth: 0
  }
  ]
@@ -386,12 +379,12 @@ const rankingChartData = computed(() => {
 
  const labels = props.rankingItems.map((item, index) => `#${index + 1} ${getRankingUserLabel(item)}`)
  const data = props.rankingItems.map((item) => toFiniteNumber(item.actual_cost))
- const backgroundColor = chartColors.slice(0, props.rankingItems.length)
+ const backgroundColor = props.rankingItems.map((_, i) => seriesColor(i))
 
  if (otherRankingItem.value) {
  labels.push(t('admin.dashboard.spendingRankingOther'))
  data.push(otherRankingItem.value.actual_cost)
- backgroundColor.push('#94a3b8')
+ backgroundColor.push(theme.value.text)
  }
 
  return {
@@ -437,14 +430,15 @@ const rankingDisplayItems = computed<RankingDisplayItem[]>(() => {
  : [...props.rankingItems]
 })
 
-const doughnutOptions = computed(() => ({
- responsive: true,
- maintainAspectRatio: false,
+const doughnutOptions = computed(() => {
+ const base = pieChartOptions(theme.value)
+ return {
+ ...base,
  plugins: {
- legend: {
- display: false
- },
+ ...base.plugins,
+ legend: { display: false },
  tooltip: {
+ ...base.plugins.tooltip,
  callbacks: {
  label: (context: any) => {
  const value = context.raw as number
@@ -458,16 +452,18 @@ const doughnutOptions = computed(() => ({
  }
  }
  }
-}))
+ }
+})
 
-const rankingDoughnutOptions = computed(() => ({
- responsive: true,
- maintainAspectRatio: false,
+const rankingDoughnutOptions = computed(() => {
+ const base = pieChartOptions(theme.value)
+ return {
+ ...base,
  plugins: {
- legend: {
- display: false
- },
+ ...base.plugins,
+ legend: { display: false },
  tooltip: {
+ ...base.plugins.tooltip,
  callbacks: {
  label: (context: any) => {
  const value = context.raw as number
@@ -478,7 +474,8 @@ const rankingDoughnutOptions = computed(() => ({
  }
  }
  }
-}))
+ }
+})
 
 const formatTokens = (value: number): string => {
  if (value >= 1_000_000_000) {

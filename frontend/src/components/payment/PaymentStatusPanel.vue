@@ -6,8 +6,8 @@
  <template v-if="outcome === 'success'">
  <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
- <div class="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
- <Icon name="check" size="lg" class="text-green-500" />
+ <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success-100">
+ <Icon name="check" size="lg" class="text-success-500" />
  </div>
  <p class="text-lg font-bold text-foreground">{{ props.orderType === 'subscription' ? t('payment.result.subscriptionSuccess') : t('payment.result.success') }}</p>
  <div v-if="paidOrder" class="w-full rounded-xl bg-surface-2 p-4">
@@ -55,8 +55,8 @@
  <template v-else-if="outcome === 'expired'">
  <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4 py-4">
- <div class="flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
- <svg class="h-8 w-8 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+ <div class="flex h-16 w-16 items-center justify-center rounded-full bg-warning-100">
+ <svg class="h-8 w-8 text-warning-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
  <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
  </svg>
  </div>
@@ -76,15 +76,16 @@
  <div class="flex flex-col items-center space-y-4 py-4 text-center">
  <div
  v-if="deepLinkState === 'launching'"
-              class="h-10 w-10 animate-spin rounded-full border-4 border-[#00AEEF] border-t-transparent"
+              class="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent"
+              :style="{ borderColor: ALIPAY_BRAND_COLOR, borderTopColor: 'transparent' }"
  ></div>
  <div
  v-else
- class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50"
+ class="flex h-12 w-12 items-center justify-center rounded-full bg-accent-50"
  >
-              <Icon name="checkCircle" size="lg" class="text-[#00AEEF]" />
+              <Icon name="checkCircle" size="lg" :style="{ color: ALIPAY_BRAND_COLOR }" />
  </div>
- <p class="text-lg font-semibold text-foreground">
+ <p class="font-semibold text-lg text-foreground">
  {{ deepLinkState === 'backgrounded' ? t('payment.qr.alipayContinueInApp') : t('payment.qr.alipayOpening') }}
  </p>
  <p class="text-sm text-muted">{{ t('payment.qr.alipayWaitingHint') }}</p>
@@ -109,7 +110,7 @@
  <div data-test="alipay-qr-fallback" class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4">
  <div class="text-center">
- <p class="text-lg font-semibold text-foreground">{{ t('payment.qr.alipayFallbackTitle') }}</p>
+ <p class="font-semibold text-lg text-foreground">{{ t('payment.qr.alipayFallbackTitle') }}</p>
  <p class="mt-1 text-sm text-muted">{{ t('payment.qr.alipayFallbackHint') }}</p>
  </div>
  <div class="w-full space-y-2 border-y border-line py-3 text-sm">
@@ -128,10 +129,10 @@
  <span class="font-semibold tabular-nums text-foreground">{{ countdownDisplay }}</span>
  </div>
  </div>
- <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]">
+ <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]" :style="qrBorderStyle">
  <canvas ref="qrCanvas" class="mx-auto"></canvas>
  <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
- <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]">
+ <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]" :style="qrLogoBgStyle">
  <img :src="qrLogoIcon" alt="" class="h-5 w-5 brightness-0 invert" />
  </span>
  </div>
@@ -169,12 +170,12 @@
  <template v-else-if="showQRCode">
  <div class="glass-card p-6">
  <div class="flex flex-col items-center space-y-4">
- <p class="text-lg font-semibold text-foreground">{{ scanTitle }}</p>
- <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]">
+ <p class="font-semibold text-lg text-foreground">{{ scanTitle }}</p>
+ <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]" :style="qrBorderStyle">
  <canvas ref="qrCanvas" class="mx-auto"></canvas>
  <!-- Brand logo overlay -->
  <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
- <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]">
+ <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]" :style="qrLogoBgStyle">
  <img :src="qrLogoIcon" alt="" class="h-5 w-5 brightness-0 invert" />
  </span>
  </div>
@@ -226,6 +227,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
 import { currencySymbol, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
+import { ALIPAY_BRAND_COLOR, WECHAT_BRAND_COLOR } from '@/components/payment/paymentBrandColors'
 import type { PaymentOrder } from '@/types/payment'
 import Icon from '@/components/icons/Icon.vue'
 import QRCode from 'qrcode'
@@ -296,17 +298,23 @@ const isWxpay = computed(() => isBuiltInWxpayMethod(props.paymentType))
 const isMobileAlipayDeepLink = computed(() => props.mobileAlipayDeepLink === true && isAlipay.value && !!qrUrl.value)
 const showQRCode = computed(() => !!qrUrl.value && (!isMobileAlipayDeepLink.value || deepLinkFallbackVisible.value))
 
+const qrBrandColor = computed(() => {
+ if (isAlipay.value) return ALIPAY_BRAND_COLOR
+ if (isWxpay.value) return WECHAT_BRAND_COLOR
+ return null
+})
+
 const qrBorderClass = computed(() => {
-  if (isAlipay.value) return 'border-[#00AEEF] bg-blue-50'
-  if (isWxpay.value) return 'border-[#2BB741] bg-green-50'
+ if (isAlipay.value) return 'bg-accent-50'
+ if (isWxpay.value) return 'bg-success-50'
  return 'border-line bg-surface'
 })
 
-const qrLogoBgClass = computed(() => {
-  if (isAlipay.value) return 'bg-[#00AEEF]'
-  if (isWxpay.value) return 'bg-[#2BB741]'
- return 'bg-surface-3'
-})
+const qrBorderStyle = computed(() => (qrBrandColor.value ? { borderColor: qrBrandColor.value } : undefined))
+
+const qrLogoBgClass = computed(() => (qrBrandColor.value ? '' : 'bg-surface-3'))
+
+const qrLogoBgStyle = computed(() => (qrBrandColor.value ? { backgroundColor: qrBrandColor.value } : undefined))
 
 const qrLogoIcon = computed(() => {
  if (isAlipay.value) return alipayIcon

@@ -1,120 +1,112 @@
 <template>
- <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border bg-surface">
- <div class="border-b border-line px-5 py-4">
- <h2 class="text-base font-semibold text-foreground">{{ title }}</h2>
- <p v-if="subtitle" class="mt-1 text-sm text-muted">{{ subtitle }}</p>
+ <div class="glass-card conversation-pane">
+ <div class="card-header">
+ <p class="card-title">{{ title }}</p>
+ <p v-if="subtitle" class="card-subtitle font-mono">{{ subtitle }}</p>
  </div>
 
- <div ref="messageContainerRef" class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+ <div ref="messageContainerRef" class="conversation-messages">
  <template v-if="messages.length > 0">
  <div
  v-for="message in messages"
  :key="message.id || `${message.sender_role}-${message.created_at}-${message.content}`"
- class="flex gap-3"
+ class="message-row"
  :class="message.sender_role === 'user' ? 'justify-end' : 'justify-start'"
  >
  <template v-if="message.message_type === 'system'">
- <div class="w-full py-2">
- <div class="mx-auto flex max-w-2xl flex-wrap items-center justify-center gap-2 rounded-full bg-surface-2 px-4 py-2 text-center text-xs text-muted">
+ <div class="system-message-wrap">
+ <div class="system-message">
  <span class="break-words">{{ message.content }}</span>
- <span class="text-muted">{{ formatDateTime(message.created_at) }}</span>
+ <span class="font-mono">{{ formatDateTime(message.created_at) }}</span>
  </div>
  </div>
  </template>
 
  <template v-else>
  <template v-if="message.sender_role !== 'user'">
- <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-2 text-sm font-semibold text-muted">
+ <div class="message-avatar">
  <span>{{ (message.sender_name_snapshot || '?').slice(0, 1).toUpperCase() }}</span>
  </div>
  </template>
 
- <div class="max-w-[80%]">
- <div class="mb-1 flex items-center gap-2" :class="message.sender_role === 'user' ? 'justify-end' : 'justify-start'">
- <span class="text-sm font-medium text-foreground">{{ message.sender_name_snapshot }}</span>
- <span class="whitespace-nowrap text-xs text-muted">{{ formatDateTime(message.created_at) }}</span>
+ <div class="message-content">
+ <div class="message-meta" :class="message.sender_role === 'user' ? 'justify-end' : 'justify-start'">
+ <span class="message-sender">{{ message.sender_name_snapshot }}</span>
+ <span class="message-time font-mono">{{ formatDateTime(message.created_at) }}</span>
  </div>
  <div
- class="rounded-2xl px-4 py-3 text-sm leading-6"
- :class="bubbleClass(message.sender_role)"
+ class="message-bubble"
+ :class="message.sender_role === 'user' ? 'message-bubble-me' : 'message-bubble-other'"
  >
  <div v-if="message.content" class="whitespace-pre-wrap break-words">{{ message.content }}</div>
- <div v-if="message.attachments?.length" class="mt-2 flex flex-wrap gap-2" :class="{ 'mt-0': !message.content }">
+ <div v-if="message.attachments?.length" class="attachment-list" :class="{ 'mt-0': !message.content }">
+ <template v-for="att in message.attachments" :key="att.media_id">
  <button
- v-for="att in message.attachments"
- :key="att.media_id"
+ v-if="att.content_type?.startsWith('image/') && previewUrls[att.media_id]"
  type="button"
- class="overflow-hidden rounded-lg border text-xs transition-colors"
- :class="message.sender_role === 'user'
- ? 'border-white/30 hover:bg-surface/10'
- : 'border-line hover:bg-surface-2'"
+ class="attachment-thumb"
  @click="openAttachment(att.media_id)"
  >
- <img
- v-if="att.content_type?.startsWith('image/') && previewUrls[att.media_id]"
- :src="previewUrls[att.media_id]"
- :alt="att.file_name"
- class="h-24 w-24 object-cover"
- />
- <span v-else class="flex items-center gap-2 px-3 py-2">
- <span class="max-w-[160px] truncate">{{ att.file_name }}</span>
- <span :class="message.sender_role === 'user' ? 'text-white/70' : 'text-muted'">{{ formatFileSize(att.size_bytes) }}</span>
- </span>
+ <img :src="previewUrls[att.media_id]" :alt="att.file_name" />
  </button>
+ <button v-else type="button" class="chip attachment-chip" @click="openAttachment(att.media_id)">
+ <span class="max-w-[140px] truncate">{{ att.file_name }}</span>
+ <span class="attachment-size">{{ formatFileSize(att.size_bytes) }}</span>
+ </button>
+ </template>
  </div>
  </div>
  </div>
 
  <template v-if="message.sender_role === 'user'">
- <div class="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-surface-2 text-sm font-semibold text-muted">
+ <div class="message-avatar">
  <span>{{ (message.sender_name_snapshot || '?').slice(0, 1).toUpperCase() }}</span>
  </div>
  </template>
  </template>
  </div>
  </template>
- <div v-else class="flex h-full items-center justify-center text-sm text-muted">
+ <div v-else class="conversation-empty">
  {{ emptyText }}
  </div>
  </div>
 
- <div v-if="showComposer" class="border-t border-line px-5 py-4">
+ <div v-if="showComposer" class="composer">
  <textarea
  v-model="composerValue"
- class="input min-h-[96px]"
+ class="field composer-textarea"
  :placeholder="composerPlaceholder"
  @compositionstart="handleCompositionStart"
  @compositionend="handleCompositionEnd"
  @keydown="handleComposerKeydown"
  />
- <div v-if="pendingAttachments.length > 0" class="mt-2 flex flex-wrap gap-2">
+ <div v-if="pendingAttachments.length > 0" class="pending-attachments">
  <div
  v-for="(att, idx) in pendingAttachments"
  :key="att.media_id"
- class="group relative overflow-hidden rounded-lg border border-line"
+ class="group pending-attachment"
  >
  <img
  v-if="att.preview_url && att.content_type?.startsWith('image/')"
  :src="att.preview_url"
  :alt="att.file_name"
- class="h-16 w-16 object-cover"
  />
- <div v-else class="flex h-16 w-16 items-center justify-center bg-surface-2 text-xs text-muted">
+ <div v-else class="pending-attachment-icon">
  {{ att.file_name?.split('.').pop() }}
  </div>
  <button
  type="button"
- class="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
+ class="pending-attachment-remove"
  @click="removePendingAttachment(idx)"
  >
  &times;
  </button>
  </div>
  </div>
- <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
+ <div class="composer-actions">
  <div class="flex items-center gap-2">
  <slot name="composer-actions" />
- <label class="btn btn-secondary btn-sm cursor-pointer">
+ <label class="btn btn-secondary cursor-pointer">
  <input
  type="file"
  multiple
@@ -343,11 +335,240 @@ function handleComposerKeydown(event: KeyboardEvent) {
  event.preventDefault()
  submitReply()
 }
-
-function bubbleClass(role: SupportTicketMessage['sender_role']) {
- if (role === 'user') {
- return 'bg-blue-600 text-white'
- }
- return 'bg-surface-2 text-foreground'
-}
 </script>
+
+<style scoped>
+.conversation-pane {
+ display: flex;
+ height: 100%;
+ min-height: 0;
+ flex-direction: column;
+ overflow: hidden;
+ padding: 0;
+}
+
+.conversation-messages {
+ min-height: 0;
+ flex: 1;
+ overflow-y: auto;
+ padding: 16px 18px;
+ display: flex;
+ flex-direction: column;
+ gap: 16px;
+}
+
+.conversation-empty {
+ display: flex;
+ height: 100%;
+ align-items: center;
+ justify-content: center;
+ font-size: 13px;
+ color: var(--muted);
+}
+
+.message-row {
+ display: flex;
+ gap: 10px;
+}
+
+.system-message-wrap {
+ width: 100%;
+ padding: 4px 0;
+}
+
+.system-message {
+ margin: 0 auto;
+ display: flex;
+ max-width: 32rem;
+ flex-wrap: wrap;
+ align-items: center;
+ justify-content: center;
+ gap: 8px;
+ border-radius: 999px;
+ background: var(--surface-secondary);
+ padding: 8px 16px;
+ text-align: center;
+ font-size: 12px;
+ color: var(--muted);
+}
+
+.message-avatar {
+ display: flex;
+ height: 32px;
+ width: 32px;
+ flex: none;
+ align-items: center;
+ justify-content: center;
+ border-radius: 999px;
+ background: color-mix(in oklch, var(--accent) 18%, transparent);
+ color: var(--accent);
+ font-size: 13px;
+ font-weight: 700;
+}
+
+.message-content {
+ max-width: 80%;
+ min-width: 0;
+}
+
+.message-meta {
+ margin-bottom: 5px;
+ display: flex;
+ align-items: center;
+ gap: 8px;
+}
+
+.message-sender {
+ font-size: 12.5px;
+ font-weight: 600;
+ color: var(--foreground);
+}
+
+.message-time {
+ white-space: nowrap;
+ font-size: 12.5px;
+ color: var(--muted);
+}
+
+.message-bubble {
+ border-radius: var(--radius-field);
+ padding: 12px 14px;
+ font-size: 13px;
+ line-height: 1.6;
+}
+
+.message-bubble-other {
+ background: var(--surface-secondary);
+ color: var(--foreground);
+}
+
+.message-bubble-me {
+ background: color-mix(in oklch, var(--accent) 12%, transparent);
+ color: var(--foreground);
+}
+
+.attachment-list {
+ margin-top: 8px;
+ display: flex;
+ flex-wrap: wrap;
+ gap: 8px;
+}
+
+.attachment-thumb {
+ overflow: hidden;
+ border-radius: 10px;
+ border: 1px solid var(--border);
+ padding: 0;
+ cursor: pointer;
+}
+
+.attachment-thumb img {
+ display: block;
+ height: 72px;
+ width: 72px;
+ object-fit: cover;
+}
+
+.attachment-chip {
+ cursor: pointer;
+ height: 26px;
+}
+
+.attachment-size {
+ color: var(--muted);
+}
+
+.composer {
+ border-top: 1px solid var(--border);
+ padding: 14px 18px;
+}
+
+.composer-textarea {
+ min-height: 96px;
+ padding: 10px 12px;
+}
+
+.pending-attachments {
+ margin-top: 10px;
+ display: flex;
+ flex-wrap: wrap;
+ gap: 8px;
+}
+
+.pending-attachment {
+ position: relative;
+ overflow: hidden;
+ border-radius: 10px;
+ border: 1px solid var(--border);
+ height: 56px;
+ width: 56px;
+}
+
+.pending-attachment img {
+ height: 100%;
+ width: 100%;
+ object-fit: cover;
+}
+
+.pending-attachment-icon {
+ display: flex;
+ height: 100%;
+ width: 100%;
+ align-items: center;
+ justify-content: center;
+ background: var(--surface-secondary);
+ font-size: 11px;
+ color: var(--muted);
+}
+
+.pending-attachment-remove {
+ position: absolute;
+ right: -1px;
+ top: -1px;
+ display: flex;
+ height: 18px;
+ width: 18px;
+ align-items: center;
+ justify-content: center;
+ border-radius: 999px;
+ background: var(--danger);
+ color: white;
+ font-size: 11px;
+ opacity: 0;
+ transition: opacity 0.15s ease;
+}
+
+.pending-attachment:hover .pending-attachment-remove {
+ opacity: 1;
+}
+
+.composer-actions {
+ margin-top: 12px;
+ display: flex;
+ flex-wrap: wrap;
+ align-items: center;
+ justify-content: space-between;
+ gap: 12px;
+}
+
+@media (max-width: 767px) {
+ .conversation-pane {
+ min-height: 0;
+ }
+
+ .message-content {
+ max-width: 88%;
+ }
+
+ .composer {
+ position: sticky;
+ bottom: 0;
+ background: color-mix(in oklch, var(--surface) 92%, transparent);
+ backdrop-filter: blur(20px);
+ }
+
+ .composer-actions .btn {
+ min-height: 44px;
+ }
+}
+</style>

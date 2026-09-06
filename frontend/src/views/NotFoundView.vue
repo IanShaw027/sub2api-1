@@ -1,86 +1,32 @@
 <template>
- <div
- class="relative flex min-h-screen items-center justify-center overflow-hidden bg-background px-4"
- >
- <!-- Background Decoration -->
- <div class="pointer-events-none absolute inset-0 overflow-hidden">
- <div
- class="absolute -right-40 -top-40 h-80 w-80 rounded-full bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] blur-3xl"
- ></div>
- <div
- class="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] blur-3xl"
- ></div>
- </div>
+  <PublicPageLayout>
+    <div class="not-found-wrap">
+      <div class="glass-card not-found-card">
+        <p class="text-gradient text-display text-[64px] leading-none">404</p>
+        <h1 class="mt-2 text-xl font-bold text-foreground">{{ t('errors.pageNotFound') }}</h1>
+        <p class="mt-2 text-sm text-muted">{{ t('notFound.description') }}</p>
 
- <div class="relative z-10 w-full max-w-md text-center">
- <!-- 404 Display -->
- <div class="mb-8">
- <div class="relative inline-block">
- <span class="text-[12rem] font-bold leading-none text-muted/30"
- >404</span
- >
- <div class="absolute inset-0 flex items-center justify-center">
- <div
- class="flex h-24 w-24 items-center justify-center rounded-2xl bg-[var(--accent)] shadow-lg"
- >
- <svg
- class="h-12 w-12 text-[var(--background)]"
- fill="none"
- viewBox="0 0 24 24"
- stroke="currentColor"
- stroke-width="1.5"
- >
- <path
- stroke-linecap="round"
- stroke-linejoin="round"
- d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
- />
- </svg>
- </div>
- </div>
- </div>
- </div>
-
- <!-- Text Content -->
- <div class="mb-8">
- <h1 class="mb-3 text-2xl font-bold text-foreground">
- {{ t('errors.pageNotFound') }}
- </h1>
- <p class="text-muted">
- The page you are looking for doesn't exist or has been moved.
- </p>
- </div>
-
- <!-- Action Buttons -->
- <div class="flex flex-col justify-center gap-3 sm:flex-row">
- <button @click="goBack" class="btn-glass-secondary">
- <Icon name="arrowLeft" size="md" class="mr-2" />
- Go Back
- </button>
- <router-link to="/dashboard" class="btn-glass-primary">
- <Icon name="home" size="md" class="mr-2" />
- Go to Dashboard
- </router-link>
- </div>
-
- <!-- Help Link -->
- <p class="mt-8 text-sm text-muted">
- Need help?
- <a
- href="#"
- class="text-accent transition-colors hover:text-accent"
- >
- Contact support
- </a>
- </p>
- </div>
- </div>
+        <div class="not-found-actions">
+          <button type="button" class="btn-glass-secondary" @click="goBack">
+            <Icon name="arrowLeft" size="sm" />
+            {{ t('notFound.goBack') }}
+          </button>
+          <Button variant="primary" to="/home">
+            <Icon name="home" size="sm" />
+            {{ t('notFound.backHome') }}
+          </Button>
+        </div>
+      </div>
+    </div>
+  </PublicPageLayout>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import PublicPageLayout from '@/components/layout/PublicPageLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
+import Button from '@/components/ui/Button.vue'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -89,3 +35,40 @@ function goBack(): void {
   router.back()
 }
 </script>
+
+<style scoped>
+.not-found-wrap {
+  display: flex;
+  width: 100%;
+  min-height: calc(100vh - 64px);
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.not-found-card {
+  display: flex;
+  max-width: 26rem;
+  width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 48px 32px;
+  text-align: center;
+}
+
+.not-found-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+  width: 100%;
+}
+
+@media (min-width: 480px) {
+  .not-found-actions {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+</style>

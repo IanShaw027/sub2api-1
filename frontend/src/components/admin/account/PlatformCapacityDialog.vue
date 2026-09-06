@@ -101,7 +101,7 @@
 
       <div
         v-else-if="error"
-        class="rounded-xl border border-red-200 bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] p-4 text-sm text-danger-text"
+        class="rounded-xl border border-[color-mix(in_oklch,var(--danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] p-4 text-sm text-danger-text"
       >
         {{ error }}
       </div>
@@ -133,23 +133,23 @@
             </h4>
             <div class="flex flex-wrap items-center gap-3 text-[11px] text-muted">
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 rounded bg-blue-500" />
+                <span class="inline-block h-0.5 w-4 rounded bg-accent" />
                 {{ t('admin.accounts.capacityForecast.chartActualSpend') }}
               </span>
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-blue-500" />
+                <span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-accent" />
                 {{ t('admin.accounts.capacityForecast.chartForecastSpend') }}
               </span>
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 rounded bg-emerald-500" />
+                <span class="inline-block h-0.5 w-4 rounded bg-[var(--success)]" />
                 {{ t('admin.accounts.capacityForecast.chartAvailable') }}
               </span>
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-emerald-500" />
+                <span class="inline-block h-0.5 w-4 border-t-2 border-dashed border-[var(--success)]" />
                 {{ t('admin.accounts.capacityForecast.chartForecastAvailable') }}
               </span>
               <span class="inline-flex items-center gap-1.5">
-                <span class="inline-block h-2 w-2 rounded-full bg-red-400/60" />
+                <span class="inline-block h-2 w-2 rounded-full bg-[color-mix(in_oklch,var(--danger)_60%,transparent)]" />
                 {{ t('admin.accounts.capacityForecast.chartShortfallBand') }}
               </span>
             </div>
@@ -270,7 +270,7 @@
 
         <div
           v-if="probeError"
-          class="rounded-lg border border-red-200 bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] p-3 text-sm text-danger-text"
+          class="rounded-lg border border-[color-mix(in_oklch,var(--danger)_30%,transparent)] bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] p-3 text-sm text-danger-text"
         >
           {{ probeError }}
         </div>
@@ -366,7 +366,7 @@ import type {
   CapacityTimeseries
 } from '@/api/admin/capacity'
 import type { AdminGroup, GroupPlatform } from '@/types'
-import { useTheme } from '@/composables/useTheme'
+import { alpha, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(Title, Tooltip, Legend, LineElement, LinearScale, PointElement, CategoryScale, Filler)
 
@@ -415,7 +415,7 @@ const groupSelectOptions = computed(() => [
 
 const events = computed<CapacityEvent[]>(() => series.value?.events ?? [])
 
-const { isDark: isDarkMode } = useTheme()
+const theme = useChartTheme()
 
 const kpiItems = computed(() => {
   if (!series.value) return []
@@ -427,7 +427,7 @@ const kpiItems = computed(() => {
       label: t('admin.accounts.capacityForecast.kpiCurrentAvailable'),
       value: usd(kpis.current_available_usd),
       icon: 'dollar' as const,
-      cardClass: 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white',
+      cardClass: 'border-[color-mix(in_oklch,var(--success)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--success)_14%,transparent)] to-transparent',
       iconWrapClass: 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)]',
       iconClass: 'text-success-text',
       valueClass: 'text-foreground'
@@ -437,7 +437,7 @@ const kpiItems = computed(() => {
       label: t('admin.accounts.capacityForecast.kpiFutureForecastSpend'),
       value: usd(kpis.future_forecast_spend_usd),
       icon: 'trendingUp' as const,
-      cardClass: 'border-blue-200 bg-gradient-to-br from-blue-50 to-white',
+      cardClass: 'border-[color-mix(in_oklch,var(--accent)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--accent)_14%,transparent)] to-transparent',
       iconWrapClass: 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]',
       iconClass: 'text-accent',
       valueClass: 'text-foreground'
@@ -450,8 +450,8 @@ const kpiItems = computed(() => {
         : t('admin.accounts.capacityForecast.kpiNoShortfall'),
       icon: hasShortfall ? ('exclamationTriangle' as const) : ('check' as const),
       cardClass: hasShortfall
-        ? 'border-red-200 bg-gradient-to-br from-red-50 to-white'
-        : 'border-emerald-200 bg-gradient-to-br from-emerald-50 to-white',
+        ? 'border-[color-mix(in_oklch,var(--danger)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--danger)_14%,transparent)] to-transparent'
+        : 'border-[color-mix(in_oklch,var(--success)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--success)_14%,transparent)] to-transparent',
       iconWrapClass: hasShortfall ? 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)]' : 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)]',
       iconClass: hasShortfall ? 'text-danger-text' : 'text-success-text',
       valueClass: hasShortfall ? 'text-danger-text' : 'text-success-text'
@@ -461,9 +461,9 @@ const kpiItems = computed(() => {
       label: t('admin.accounts.capacityForecast.kpiSuggestAccounts'),
       value: String(kpis.suggest_accounts),
       icon: 'calculator' as const,
-      cardClass: 'border-purple-200 bg-gradient-to-br from-purple-50 to-white',
-      iconWrapClass: 'bg-purple-100',
-      iconClass: 'text-purple-600',
+      cardClass: 'border-[color-mix(in_oklch,var(--accent)_30%,transparent)] bg-gradient-to-br from-[color-mix(in_oklch,var(--accent)_14%,transparent)] to-transparent',
+      iconWrapClass: 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]',
+      iconClass: 'text-accent',
       valueClass: 'text-foreground'
     }
   ]
@@ -525,8 +525,8 @@ const chartData = computed<ChartData<'line'> | null>(() => {
     return p.segment === 'current' ? p.available_usd : null
   })
 
-  const blue = '#3b82f6'
-  const green = '#10b981'
+  const blue = theme.value.accent
+  const green = theme.value.success
 
   const recoveredPointRadius = (ctx: ScriptableContext<'line'>) =>
     (points[ctx.dataIndex]?.recovered_usd ?? 0) > 0 ? 5 : 0
@@ -536,7 +536,7 @@ const chartData = computed<ChartData<'line'> | null>(() => {
       label: t('admin.accounts.capacityForecast.chartActualSpend'),
       data: actualSpend,
       borderColor: blue,
-      backgroundColor: `${blue}20`,
+      backgroundColor: alpha(blue, 12),
       borderWidth: 2,
       tension: 0.3,
       fill: false,
@@ -565,7 +565,7 @@ const chartData = computed<ChartData<'line'> | null>(() => {
       label: t('admin.accounts.capacityForecast.chartAvailable'),
       data: actualAvailable,
       borderColor: green,
-      backgroundColor: `${green}20`,
+      backgroundColor: alpha(green, 12),
       borderWidth: 2,
       tension: 0.3,
       fill: false,
@@ -612,7 +612,7 @@ const nowLinePlugin: Plugin<'line'> = {
     ctx.beginPath()
     ctx.setLineDash([4, 4])
     ctx.lineWidth = 1.5
-    ctx.strokeStyle = isDarkMode.value ? 'rgba(226,232,240,0.55)' : 'rgba(51,65,85,0.55)'
+    ctx.strokeStyle = alpha(theme.value.text, 55)
     ctx.moveTo(x, yScale.top)
     ctx.lineTo(x, yScale.bottom)
     ctx.stroke()
@@ -635,7 +635,7 @@ const shortfallBandPlugin: Plugin<'line'> = {
     const diff = Math.abs(p1 - p0)
     const half = Number.isFinite(diff) && diff > 0 ? diff / 2 : 10
     ctx.save()
-    ctx.fillStyle = isDarkMode.value ? 'rgba(248,113,113,0.16)' : 'rgba(248,113,113,0.14)'
+    ctx.fillStyle = alpha(theme.value.danger, 15)
     for (const idx of idxs) {
       const xCenter = xScale.getPixelForValue(idx)
       ctx.fillRect(xCenter - half, yScale.top, half * 2, yScale.bottom - yScale.top)
@@ -647,8 +647,8 @@ const shortfallBandPlugin: Plugin<'line'> = {
 const chartPlugins = [shortfallBandPlugin, nowLinePlugin]
 
 const chartOptions = computed<ChartOptions<'line'>>(() => {
-  const grid = isDarkMode.value ? '#374151' : '#e5e7eb'
-  const text = isDarkMode.value ? '#e5e7eb' : '#374151'
+  const grid = theme.value.grid
+  const text = theme.value.text
 
   return {
     responsive: true,
@@ -661,12 +661,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
         labels: { color: text, usePointStyle: true, pointStyle: 'circle', boxWidth: 6, font: { size: 11 } }
       },
       tooltip: {
-        backgroundColor: isDarkMode.value ? '#1f2937' : '#ffffff',
-        titleColor: isDarkMode.value ? '#f3f4f6' : '#111827',
-        bodyColor: isDarkMode.value ? '#d1d5db' : '#4b5563',
-        borderColor: grid,
-        borderWidth: 1,
-        padding: 10,
+        ...theme.value.tooltip,
         callbacks: {
           title(items: TooltipItem<'line'>[]) {
             const idx = items[0]?.dataIndex ?? 0

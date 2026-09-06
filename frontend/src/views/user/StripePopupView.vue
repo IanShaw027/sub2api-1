@@ -1,7 +1,7 @@
 <template>
  <div class="flex min-h-screen items-center justify-center bg-background p-4 ">
  <div
- class="glass-card w-full max-w-md space-y-4 p-6"
+ class="stripe-popup-card glass-card w-full space-y-4 p-6"
  >
  <!-- Amount + Order ID -->
  <div v-if="amount" class="text-center">
@@ -14,7 +14,7 @@
  <!-- Error -->
  <div v-if="error" class="space-y-3">
  <div
- class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600 "
+ class="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-text "
  >
  {{ error }}
  </div>
@@ -29,7 +29,7 @@
 
  <!-- Success -->
  <div v-else-if="success" class="space-y-3 py-4 text-center">
- <div class="text-5xl text-green-600 ">✓</div>
+ <div class="text-5xl text-success-text ">✓</div>
  <p class="text-sm text-muted ">{{ t('payment.result.success') }}</p>
  <button
  class="text-sm underline"
@@ -59,16 +59,17 @@ import { useRoute } from 'vue-router'
 import { extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import { buildApiUrl } from '@/api/client'
+import { ALIPAY_BRAND_COLOR, WECHAT_BRAND_COLOR, STRIPE_BRAND_FROM } from '@/components/payment/paymentBrandColors'
 
 interface StripeWithWechatPay {
   confirmWechatPayPayment(clientSecret: string, options: Record<string, unknown>): Promise<{ error?: { message?: string }; paymentIntent?: { status: string } }>
 }
 
 const METHOD_COLORS: Record<string, string> = {
-  alipay: '#00AEEF',
-  wechat_pay: '#07C160',
+  alipay: ALIPAY_BRAND_COLOR,
+  wechat_pay: WECHAT_BRAND_COLOR,
 }
-const DEFAULT_METHOD_COLOR = '#635bff'
+const DEFAULT_METHOD_COLOR = STRIPE_BRAND_FROM
 
 const { t } = useI18n()
 const route = useRoute()
@@ -196,3 +197,9 @@ function startPolling() {
   }, 3000)
 }
 </script>
+
+<style scoped>
+.stripe-popup-card {
+  max-width: 440px;
+}
+</style>
