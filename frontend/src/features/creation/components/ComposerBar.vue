@@ -10,14 +10,14 @@ const store = useCreationStore()
 const draft = ref('')
 
 const canSubmit = computed(() => {
-  if (!draft.value.trim() || store.streaming) return false
+  if (!draft.value.trim() || store.streaming || store.sessionLoading || store.messagesLoading || store.modelUpdating || !store.selectedSessionId) return false
   if (store.isImageSession && !store.hasImageModels) return false
   return true
 })
 
 async function submit() {
   const text = draft.value.trim()
-  if (!text || store.streaming) return
+  if (!canSubmit.value) return
   if (store.isImageSession && !store.hasImageModels) return
   draft.value = ''
   try {
@@ -35,7 +35,7 @@ async function submit() {
       class="studio-composer-input"
       rows="3"
       :placeholder="store.isImageSession ? t('studio.composer.placeholderImage') : t('studio.composer.placeholderChat')"
-      :disabled="store.streaming || (store.isImageSession && !store.hasImageModels)"
+      :disabled="store.streaming || store.sessionLoading || store.messagesLoading || store.modelUpdating || (store.isImageSession && !store.hasImageModels)"
       @keydown.enter.exact.prevent="submit"
     />
     <div class="studio-composer-actions">
@@ -47,7 +47,7 @@ async function submit() {
       >
         {{ store.streaming ? t('studio.composer.sending') : t('studio.composer.send') }}
       </Button>
-      <Button v-if="store.lastFailedSend" variant="secondary" @click="store.retryLastFailed">
+      <Button v-if="store.lastFailedSend" variant="secondary" :disabled="store.streaming || store.sessionLoading || store.modelUpdating" @click="store.retryLastFailed">
         {{ t('studio.retry') }}
       </Button>
     </div>

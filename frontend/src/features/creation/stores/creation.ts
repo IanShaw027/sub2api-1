@@ -18,6 +18,15 @@ import type {
 
 const IMAGE_POLL_INTERVAL_MS = 3000
 
+async function loadAllPages<T>(fetchPage: (page: number) => Promise<{ items: T[]; total: number }>): Promise<T[]> {
+  const items: T[] = []
+  for (let page = 1; ; page += 1) {
+    const response = await fetchPage(page)
+    items.push(...response.items)
+    if (response.items.length === 0 || items.length >= response.total) return items
+  }
+}
+
 type ImagePoller = {
   timer: ReturnType<typeof setInterval>
   sessionId: number
@@ -38,6 +47,7 @@ function isAbortError(err: unknown): boolean {
 export const useCreationStore = defineStore('creation', () => {
   const sessions = ref<CreationSession[]>([])
   const sessionsLoading = ref(false)
+  const sessionLoading = ref(false)
   const selectedSessionId = ref<number | null>(null)
   const sessionModeFilter = ref<CreationSessionMode>('chat')
 
@@ -67,6 +77,8 @@ export const useCreationStore = defineStore('creation', () => {
   let messagesRequestId = 0
   let imageTasksRequestId = 0
   let selectionRequestId = 0
+  let sessionsRequestId = 0
+  const modelUpdates = ref(new Set<number>())
   const imagePollers = new Map<string, ImagePoller>
   let queueRunning = false
 
@@ -91,6 +103,7 @@ export const useCreationStore = defineStore('creation', () => {
   )
 
   const hasImageModels = computed(() => imageModels.value.length > 0)
+  const modelUpdating = computed(() => selectedSessionId.value != null && modelUpdates.value.has(selectedSessionId.value))
 
   function clearImagePollers() {
     for (const poller of imagePollers.values()) {
@@ -141,16 +154,17 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function loadSessions() {
+    const requestId = ++sessionsRequestId
     sessionsLoading.value = true
     error.value = null
     try {
-      const response = await creationAPI.listSessions({ page: 1, page_size: 100 })
-      sessions.value = response.items ?? []
+      const items = await loadAllPages((page) => creationAPI.listSessions({ page, page_size: 100 }))
+      if (requestId === sessionsRequestId) sessions.value = [...new Map(items.map((item) => [item.id, item])).values()]
     } catch (err) {
       error.value = err instanceof Error ? err.message : studioError('studio.errors.loadSessions')
       throw err
     } finally {
-      sessionsLoading.value = false
+      if (requestId === sessionsRequestId) sessionsLoading.value = false
     }
   }
 
@@ -203,8 +217,8 @@ export const useCreationStore = defineStore('creation', () => {
     }
     error.value = null
     try {
-      const response = await creationAPI.listImages({ session_id: sessionId, page: 1, page_size: 100 })
-      const merged = mergeImageTasksWithInFlight(response.items ?? [], sessionId)
+      const items = await loadAllPages((page) => creationAPI.listImages({ session_id: sessionId, page, page_size: 100 }))
+      const merged = mergeImageTasksWithInFlight([...new Map(items.map((item) => [item.id, item])).values()], sessionId)
       if (requestId === imageTasksRequestId && selectedSessionId.value === sessionId) {
         imageTasks.value = merged
         for (const task of merged) {
@@ -232,21 +246,36 @@ export const useCreationStore = defineStore('creation', () => {
     const requestId = ++selectionRequestId
     stopStreaming()
     pendingQueue.value = []
+    messagesRequestId += 1
+    imageTasksRequestId += 1
+    messages.value = []
+    imageTasks.value = []
+    messagesLoading.value = false
+    imageTasksLoading.value = false
     selectedSessionId.value = sessionId
     const session = sessions.value.find((item) => item.id === sessionId)
     if (!session) return
 
-    groupId.value = session.group_id
-    model.value = session.model || model.value
-    await loadModelsForGroup(session.group_id)
-    if (requestId !== selectionRequestId || selectedSessionId.value !== sessionId) return
+    sessionLoading.value = true
+    try {
+      groupId.value = session.group_id
+      model.value = session.model || ''
+      await loadModelsForGroup(session.group_id)
+      if (requestId !== selectionRequestId || selectedSessionId.value !== sessionId) return
 
-    if (session.mode === 'image') {
-      messages.value = []
-      await loadImageTasks(sessionId)
-    } else {
-      imageTasks.value = []
-      await loadMessages(sessionId)
+      if (session.mode === 'image') {
+        await loadImageTasks(sessionId)
+      } else {
+        await loadMessages(sessionId)
+      }
+    } catch (err) {
+      if (requestId === selectionRequestId) {
+        selectedSessionId.value = null
+        error.value = err instanceof Error ? err.message : studioError('studio.errors.loadMessages')
+      }
+      throw err
+    } finally {
+      if (requestId === selectionRequestId) sessionLoading.value = false
     }
   }
 
@@ -311,10 +340,23 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function setModel(nextModel: string) {
+    const session = selectedSession.value
+    if (session && modelUpdates.value.has(session.id)) return
     model.value = nextModel
-    if (selectedSession.value) {
-      await creationAPI.updateSession(selectedSession.value.id, { model: nextModel })
-      selectedSession.value.model = nextModel
+    if (!session) return
+    modelUpdates.value.add(session.id)
+    try {
+      await creationAPI.updateSession(session.id, { model: nextModel })
+      session.model = nextModel
+      if (selectedSessionId.value === session.id) model.value = nextModel
+    } catch (err) {
+      if (selectedSessionId.value === session.id) {
+        model.value = session.model
+        error.value = err instanceof Error ? err.message : studioError('studio.errors.send')
+      }
+      throw err
+    } finally {
+      modelUpdates.value.delete(session.id)
     }
   }
 
@@ -325,7 +367,7 @@ export const useCreationStore = defineStore('creation', () => {
 
   async function submitText(text: string) {
     const trimmed = text.trim()
-    if (!trimmed || !selectedSessionId.value) return
+    if (!trimmed || !selectedSessionId.value || sessionLoading.value || messagesLoading.value || modelUpdating.value) return
     enqueueSend(selectedSessionId.value, trimmed)
     if (!queueRunning && !streaming.value) {
       await processQueue()
@@ -346,9 +388,6 @@ export const useCreationStore = defineStore('creation', () => {
           lastFailedSend.value = null
         } catch (err) {
           lastFailedSend.value = { sessionId: job.sessionId, text: job.text }
-          if (isAbortError(err)) {
-            return
-          }
           if (pendingQueue.value[0] === job) {
             pendingQueue.value.shift()
           }
@@ -363,6 +402,11 @@ export const useCreationStore = defineStore('creation', () => {
   async function sendMessage(text: string, sessionId = selectedSessionId.value) {
     const trimmed = text.trim()
     if (!trimmed || !sessionId) return
+    if (sessionId !== selectedSessionId.value) await selectSession(sessionId)
+    if (sessionId !== selectedSessionId.value) throw new DOMException('Aborted', 'AbortError')
+    if (sessionLoading.value || messagesLoading.value || modelUpdating.value) {
+      throw new Error(studioError('common.loading'))
+    }
 
     const session = sessions.value.find((item) => item.id === sessionId)
     if (!session) return
@@ -400,7 +444,7 @@ export const useCreationStore = defineStore('creation', () => {
         sessionId,
         platform: requestPlatform,
         model: requestModel,
-        messages: messages.value.filter((msg) => msg.id !== optimisticUser.id),
+        messages: messages.value.filter((msg) => msg.session_id === sessionId && msg.id !== optimisticUser.id),
         userText: trimmed,
         signal: controller.signal,
         onDelta: (delta) => {
@@ -414,20 +458,17 @@ export const useCreationStore = defineStore('creation', () => {
       }
 
       const finalAssistant = assistantText || streamingContent.value
+      if (!finalAssistant.trim()) throw new Error(studioError('studio.errors.stream'))
 
       await creationAPI.createSessionMessage(sessionId, {
         role: 'user',
         content: trimmed,
       })
-      if (finalAssistant.trim()) {
-        await creationAPI.createSessionMessage(sessionId, {
-          role: 'assistant',
-          content: finalAssistant,
-          model: requestModel,
-        })
-      } else {
-        error.value = studioError('studio.errors.stream')
-      }
+      await creationAPI.createSessionMessage(sessionId, {
+        role: 'assistant',
+        content: finalAssistant,
+        model: requestModel,
+      })
       if (selectedSessionId.value === sessionId) {
         try {
           await loadMessages(sessionId)
@@ -577,6 +618,7 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function retryLastFailed() {
+    if (streaming.value || sessionLoading.value || modelUpdating.value) return
     const failed = lastFailedSend.value
     if (!failed) return
     lastFailedSend.value = null
@@ -615,6 +657,8 @@ export const useCreationStore = defineStore('creation', () => {
     clearImagePollers()
     sessions.value = []
     sessionsLoading.value = false
+    sessionLoading.value = false
+    modelUpdates.value.clear()
     selectedSessionId.value = null
     sessionModeFilter.value = 'chat'
     messages.value = []
@@ -638,11 +682,14 @@ export const useCreationStore = defineStore('creation', () => {
     messagesRequestId += 1
     imageTasksRequestId += 1
     selectionRequestId += 1
+    sessionsRequestId += 1
   }
 
   return {
     sessions,
     sessionsLoading,
+    sessionLoading,
+    modelUpdating,
     selectedSessionId,
     sessionModeFilter,
     messages,

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { flushPromises, mount } from '@vue/test-utils'
+import { i18n } from '@/i18n'
+import enStudio from '@/i18n/locales/en/studio'
+import SessionList from '../components/SessionList.vue'
+import ComposerBar from '../components/ComposerBar.vue'
 
 const creationApi = vi.hoisted(() => ({
   listSessions: vi.fn(),
@@ -36,6 +41,17 @@ import type { CreationImageJob, CreationSession } from '../types'
 
 const IMAGE_POLL_INTERVAL_MS = 3000
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej })
+  return { promise, resolve, reject }
+}
+
+function chatSession(id: number): CreationSession {
+  return imageSession({ id, mode: 'chat', model: 'gpt-4o' })
+}
+
 function imageSession(overrides: Partial<CreationSession> = {}): CreationSession {
   return {
     id: 5,
@@ -68,6 +84,7 @@ function imageJob(overrides: Partial<CreationImageJob> = {}): CreationImageJob {
 
 describe('creation store', () => {
   beforeEach(() => {
+    i18n.global.mergeLocaleMessage('en', enStudio)
     setActivePinia(createPinia())
     Object.values(creationApi).forEach((mock) => mock.mockReset())
     groupsApi.getAvailable.mockReset()
@@ -545,5 +562,168 @@ describe('creation store', () => {
     expect(store.messages).toEqual([])
     expect(store.groupId).toBeNull()
     expect(store.model).toBe('')
+  })
+
+  it('restores the failed session before retrying instead of sending the visible session history', async () => {
+    const store = useCreationStore()
+    store.sessions = [chatSession(1), chatSession(2)]
+    store.selectedSessionId = 1
+    creationApi.getModels.mockResolvedValue({ data: [{ id: 'gpt-4o' }] })
+    creationApi.listSessionMessages.mockImplementation(async (id: number) => [{
+      id: id * 10, session_id: id, role: 'assistant', content: `secret-${id}`, created_at: '',
+    }])
+    creationApi.streamCreationChat.mockRejectedValueOnce(new Error('failed')).mockResolvedValueOnce('answer')
+    creationApi.createSessionMessage.mockResolvedValue({})
+    await store.submitText('retry this')
+    await store.selectSession(2)
+    await store.retryLastFailed()
+
+    expect(store.selectedSessionId).toBe(1)
+    expect(creationApi.streamCreationChat.mock.lastCall?.[0]).toMatchObject({
+      sessionId: 1,
+      messages: [{ session_id: 1, content: 'secret-1' }],
+    })
+    expect(store.messages.every((message) => message.session_id === 1)).toBe(true)
+  })
+
+  it('keeps empty replies retryable without persisting a successful conversation turn', async () => {
+    const store = useCreationStore()
+    store.sessions = [chatSession(1)]
+    store.selectedSessionId = 1
+    creationApi.streamCreationChat.mockResolvedValue('')
+    await store.submitText('please answer')
+    expect(store.lastFailedSend).toEqual({ sessionId: 1, text: 'please answer' })
+    expect(creationApi.createSessionMessage).not.toHaveBeenCalled()
+  })
+
+  it('keeps the composer and sending locked until both models and session history load', async () => {
+    const store = useCreationStore()
+    store.sessions = [chatSession(1), chatSession(2)]
+    store.selectedSessionId = 1
+    store.messages = [{ id: 10, session_id: 1, role: 'assistant', content: 'secret-1', created_at: '' }]
+    const models = deferred<{ data: Array<{ id: string }> }>()
+    const history = deferred<Array<{ id: number; session_id: number; role: string; content: string; created_at: string }>>()
+    creationApi.getModels.mockReturnValue(models.promise)
+    creationApi.listSessionMessages.mockReturnValue(history.promise)
+    const wrapper = mount(ComposerBar, { global: { plugins: [i18n] } })
+    await wrapper.get('textarea').setValue('question-2')
+    const selection = store.selectSession(2)
+    await flushPromises()
+    expect(store.messages).toEqual([])
+    expect(wrapper.get('textarea').attributes('disabled')).toBeDefined()
+    await store.submitText('question-2')
+    expect(creationApi.streamCreationChat).not.toHaveBeenCalled()
+    models.resolve({ data: [{ id: 'gpt-4o' }] })
+    await flushPromises()
+    await store.submitText('question-2')
+    expect(creationApi.streamCreationChat).not.toHaveBeenCalled()
+    history.resolve([{ id: 20, session_id: 2, role: 'assistant', content: 'secret-2', created_at: '' }])
+    await selection
+    creationApi.streamCreationChat.mockResolvedValue('answer')
+    creationApi.createSessionMessage.mockResolvedValue({})
+    await store.submitText('question-2')
+    expect(creationApi.streamCreationChat.mock.lastCall?.[0].messages).toEqual([
+      expect.objectContaining({ session_id: 2, content: 'secret-2' }),
+    ])
+    wrapper.unmount()
+  })
+
+  it('does not permit sending after a session history load failed', async () => {
+    const store = useCreationStore()
+    store.sessions = [chatSession(1)]
+    creationApi.getModels.mockResolvedValue({ data: [{ id: 'gpt-4o' }] })
+    creationApi.listSessionMessages.mockRejectedValue(new Error('offline'))
+    await expect(store.selectSession(1)).rejects.toThrow('offline')
+    await store.submitText('must not send without history')
+    expect(store.selectedSessionId).toBeNull()
+    expect(creationApi.streamCreationChat).not.toHaveBeenCalled()
+  })
+
+  it('applies a completed model update only to its original session', async () => {
+    const store = useCreationStore()
+    store.sessions = [chatSession(1), chatSession(2)]
+    store.selectedSessionId = 1
+    store.model = 'gpt-4o'
+    const update = deferred<unknown>()
+    creationApi.updateSession.mockReturnValue(update.promise)
+    creationApi.getModels.mockResolvedValue({ data: [{ id: 'gpt-4o' }] })
+    creationApi.listSessionMessages.mockResolvedValue([])
+    const updating = store.setModel('gpt-5')
+    expect(store.modelUpdating).toBe(true)
+    await store.submitText('wait for the selected model')
+    expect(creationApi.streamCreationChat).not.toHaveBeenCalled()
+    await store.selectSession(2)
+    update.resolve({})
+    await updating
+    expect(creationApi.updateSession).toHaveBeenCalledWith(1, { model: 'gpt-5' })
+    expect(store.sessions[0].model).toBe('gpt-5')
+    expect(store.sessions[1].model).toBe('gpt-4o')
+    expect(store.model).toBe('gpt-4o')
+  })
+
+  it('uses the saved model after updating and restores the old selection on failure', async () => {
+    const store = useCreationStore()
+    store.sessions = [chatSession(1)]
+    store.selectedSessionId = 1
+    store.model = 'gpt-4o'
+    creationApi.updateSession.mockRejectedValueOnce(new Error('save failed')).mockResolvedValueOnce({})
+    await expect(store.setModel('bad-model')).rejects.toThrow('save failed')
+    expect(store.model).toBe('gpt-4o')
+    expect(store.modelUpdating).toBe(false)
+    await store.setModel('gpt-5')
+    creationApi.streamCreationChat.mockResolvedValue('answer')
+    creationApi.createSessionMessage.mockResolvedValue({})
+    creationApi.listSessionMessages.mockResolvedValue([])
+    await store.submitText('hello')
+    expect(creationApi.streamCreationChat.mock.lastCall?.[0].model).toBe('gpt-5')
+  })
+
+  it('deleting another session through the component preserves the current stream', async () => {
+    const store = useCreationStore()
+    store.sessions = [chatSession(1), chatSession(2)]
+    store.selectedSessionId = 2
+    const response = deferred<string>()
+    creationApi.streamCreationChat.mockReturnValue(response.promise)
+    creationApi.deleteSession.mockResolvedValue(undefined)
+    creationApi.createSessionMessage.mockResolvedValue({})
+    creationApi.listSessionMessages.mockResolvedValue([])
+    const send = store.submitText('keep generating')
+    const signal = creationApi.streamCreationChat.mock.lastCall?.[0].signal as AbortSignal
+    const wrapper = mount(SessionList, { global: { plugins: [i18n] } })
+    await wrapper.findAll('.studio-session-delete')[0].trigger('click')
+    await flushPromises()
+    expect(store.selectedSessionId).toBe(2)
+    expect(store.streaming).toBe(true)
+    expect(signal.aborted).toBe(false)
+    response.resolve('complete answer')
+    await send
+    expect(creationApi.createSessionMessage).toHaveBeenCalledWith(2, expect.objectContaining({ content: 'complete answer' }))
+    wrapper.unmount()
+  })
+
+  it('loads sessions beyond the first page including another mode', async () => {
+    creationApi.listSessions
+      .mockResolvedValueOnce({ items: Array.from({ length: 100 }, (_, index) => chatSession(index + 1)), total: 101 })
+      .mockResolvedValueOnce({ items: [imageSession({ id: 101 })], total: 101 })
+    const store = useCreationStore()
+    await store.loadSessions()
+    store.sessionModeFilter = 'image'
+    expect(creationApi.listSessions).toHaveBeenLastCalledWith({ page: 2, page_size: 100 })
+    expect(store.visibleSessions.map((session) => session.id)).toEqual([101])
+  })
+
+  it('loads older image pages and resumes polling a task outside the first page', async () => {
+    vi.useFakeTimers()
+    creationApi.listImages
+      .mockResolvedValueOnce({ items: Array.from({ length: 100 }, (_, index) => imageJob({ id: index + 1, status: 'completed' })), total: 101 })
+      .mockResolvedValueOnce({ items: [imageJob({ id: 101, provider_task_id: 'old-pending' })], total: 101 })
+    creationApi.getImageTask.mockResolvedValue({ task_id: 'old-pending', status: 'processing' })
+    const store = useCreationStore()
+    store.selectedSessionId = 5
+    await store.loadImageTasks(5)
+    expect(store.imageTasks).toHaveLength(101)
+    expect(creationApi.listImages).toHaveBeenLastCalledWith({ session_id: 5, page: 2, page_size: 100 })
+    await vi.advanceTimersByTimeAsync(IMAGE_POLL_INTERVAL_MS)
+    expect(creationApi.getImageTask).toHaveBeenCalledWith(2, 'old-pending')
   })
 })

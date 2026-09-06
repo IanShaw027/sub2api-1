@@ -13,7 +13,11 @@ const modelOptions = computed(() =>
 
 async function onModelChange(value: string | number | boolean | null) {
   if (typeof value === 'string') {
-    await store.setModel(value)
+    try {
+      await store.setModel(value)
+    } catch {
+      // The store exposes the error and restores the persisted selection.
+    }
   }
 }
 </script>
@@ -25,7 +29,7 @@ async function onModelChange(value: string | number | boolean | null) {
       :model-value="store.model"
       :options="modelOptions"
       :placeholder="t('studio.selectModel')"
-      :disabled="store.isImageSession && !store.hasImageModels"
+      :disabled="store.sessionLoading || store.modelUpdating || (store.isImageSession && !store.hasImageModels)"
       searchable="auto"
       @update:model-value="onModelChange"
     />

@@ -37,6 +37,7 @@ async function selectSession(id: number) {
 
 async function removeSession(id: number) {
   await store.deleteSession(id)
+  if (store.selectedSessionId !== null) return
   if (store.visibleSessions.length > 0) {
     await store.selectSession(store.visibleSessions[0].id)
   } else {

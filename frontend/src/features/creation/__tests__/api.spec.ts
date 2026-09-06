@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mapCreationImageJob, streamMessages } from '../api'
+import { mapCreationImageJob, streamCreationChat, streamMessages } from '../api'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -39,7 +39,7 @@ describe('mapCreationImageJob', () => {
 
 describe('streamMessages', () => {
   it('includes the Anthropic max_tokens requirement', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response('', { status: 200 }))
+    const fetchMock = vi.fn().mockResolvedValue(new Response('data: {"type":"message_stop"}\n\n', { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
 
     await streamMessages({
@@ -58,5 +58,50 @@ describe('streamMessages', () => {
       max_tokens: 4096,
       stream: true,
     })
+  })
+
+  const options = {
+    groupId: 2, sessionId: 5, platform: 'anthropic' as const, model: 'claude-sonnet-4',
+    messages: [], userText: 'hello', onDelta: vi.fn(),
+  }
+
+  it.each([
+    ['Anthropic', 'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"partial"}}\n\nevent: error\ndata: {"type":"error","error":{"message":"upstream disconnected"}}\n\n'],
+    ['OpenAI', 'data: {"choices":[{"delta":{"content":"partial"}}]}\n\ndata: {"error":{"message":"upstream disconnected"}}\n\n'],
+  ])('rejects %s error events after partial text', async (_protocol, payload) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(payload)))
+    await expect(streamCreationChat(options)).rejects.toThrow('upstream disconnected')
+  })
+
+  it.each(['', 'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'])('rejects EOF without a terminal event: %s', async (payload) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(payload)))
+    await expect(streamCreationChat(options)).rejects.toThrow('ended before completion')
+  })
+
+  it.each(['data: [DONE]\n\n', 'data: {"type":"message_stop"}\n\n'])('finishes and cancels the body at the terminal event: %s', async (terminal) => {
+    const cancel = vi.fn()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"answer"}}]}\n\n' + terminal))
+      },
+      cancel,
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)))
+    await expect(streamCreationChat(options)).resolves.toBe('answer')
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(body.locked).toBe(false)
+  })
+
+  it('handles a terminal event split between network chunks', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of ['data: {"choices":[{"delta":{"content":"answer"}}]}\n\ndata: [DO', 'NE]\r\n\r\n']) {
+          controller.enqueue(new TextEncoder().encode(chunk))
+        }
+        controller.close()
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)))
+    await expect(streamCreationChat(options)).resolves.toBe('answer')
   })
 })

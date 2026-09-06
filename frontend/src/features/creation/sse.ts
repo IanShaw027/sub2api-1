@@ -67,14 +67,27 @@ export function extractTextDeltaFromSSEData(data: string): string | null {
 /**
  * Consume an SSE buffer incrementally and return extracted text deltas.
  */
-export function parseSSEBuffer(buffer: string): { deltas: string[]; remainder: string } {
+export function parseSSEBuffer(buffer: string): { deltas: string[]; remainder: string; done: boolean } {
   const { lines, remainder } = splitSSEBuffer(buffer)
   const chunks = parseSSELines(lines)
   const deltas: string[] = []
+  let done = false
   for (const chunk of chunks) {
-    if (chunk.done) continue
+    if (chunk.done) {
+      done = true
+      break
+    }
+    const payload = JSON.parse(chunk.data) as Record<string, unknown>
+    if (payload.type === 'error' || payload.error) {
+      const error = payload.error as { message?: string } | string | undefined
+      throw new Error(typeof error === 'string' ? error : error?.message || 'Chat stream failed')
+    }
     const delta = extractTextDeltaFromSSEData(chunk.data)
     if (delta) deltas.push(delta)
+    if (payload.type === 'message_stop') {
+      done = true
+      break
+    }
   }
-  return { deltas, remainder }
+  return { deltas, remainder, done }
 }

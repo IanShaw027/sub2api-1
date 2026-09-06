@@ -324,28 +324,38 @@ async function readSSEText(
   const decoder = new TextDecoder()
   let buffer = ''
   let fullText = ''
+  let completed = false
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const { deltas, remainder } = parseSSEBuffer(buffer)
+  function consumeBuffer() {
+    const { deltas, remainder, done } = parseSSEBuffer(buffer)
     buffer = remainder
+    completed = done
     for (const delta of deltas) {
       fullText += delta
       onDelta(delta)
     }
   }
 
-  if (buffer.trim()) {
-    const { deltas } = parseSSEBuffer(`${buffer}\n`)
-    for (const delta of deltas) {
-      fullText += delta
-      onDelta(delta)
+  try {
+    while (!completed) {
+      const { done, value } = await reader.read()
+      if (done) {
+        buffer += decoder.decode()
+        if (buffer.trim()) {
+          buffer += '\n'
+          consumeBuffer()
+        }
+        break
+      }
+      buffer += decoder.decode(value, { stream: true })
+      consumeBuffer()
     }
+    if (!completed) throw new Error('Chat stream ended before completion')
+    return fullText
+  } finally {
+    await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
   }
-
-  return fullText
 }
 
 export function extractImageUrlFromTask(task: AsyncImageTask): string | undefined {
