@@ -1,0 +1,2855 @@
+{
+  "baseline": "f1c8ab7da6284179461613cec8a30a8f87f2c545",
+  "status": "manual-review-required",
+  "note": "Generated syntax candidates, not confirmed losses. References need final refresh after shared edits.",
+  "candidates": [
+    {
+      "id": "action-001",
+      "status": "unreviewed",
+      "value": "input:concurrency = Math.max(1, concurrency || 1)",
+      "file": "frontend/src/components/account/BulkEditAccountModal.vue",
+      "line": 730,
+      "tag": "input"
+    },
+    {
+      "id": "action-002",
+      "status": "unreviewed",
+      "value": "input:loadFactor = (loadFactor && loadFactor >= 1) ? loadFactor : null",
+      "file": "frontend/src/components/account/BulkEditAccountModal.vue",
+      "line": 759,
+      "tag": "input"
+    },
+    {
+      "id": "action-003",
+      "status": "unreviewed",
+      "value": "click:rpmLimitEnabled = !rpmLimitEnabled",
+      "file": "frontend/src/components/account/BulkEditAccountModal.vue",
+      "line": 1306,
+      "tag": "button"
+    },
+    {
+      "id": "action-004",
+      "status": "unreviewed",
+      "value": "click:form.platform = 'anthropic'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 76,
+      "tag": "button"
+    },
+    {
+      "id": "action-005",
+      "status": "unreviewed",
+      "value": "click:form.platform = 'openai'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 89,
+      "tag": "button"
+    },
+    {
+      "id": "action-006",
+      "status": "unreviewed",
+      "value": "click:form.platform = 'gemini'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 114,
+      "tag": "button"
+    },
+    {
+      "id": "action-007",
+      "status": "unreviewed",
+      "value": "click:form.platform = 'antigravity'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 139,
+      "tag": "button"
+    },
+    {
+      "id": "action-008",
+      "status": "unreviewed",
+      "value": "click:form.platform = 'grok'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 152,
+      "tag": "button"
+    },
+    {
+      "id": "action-009",
+      "status": "unreviewed",
+      "value": "click:form.platform = 'kiro'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 165,
+      "tag": "button"
+    },
+    {
+      "id": "action-010",
+      "status": "unreviewed",
+      "value": "click:selectCNPlatform('kimi')",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 181,
+      "tag": "button"
+    },
+    {
+      "id": "action-011",
+      "status": "unreviewed",
+      "value": "click:selectCNPlatform('zhipu')",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 194,
+      "tag": "button"
+    },
+    {
+      "id": "action-012",
+      "status": "unreviewed",
+      "value": "click:selectCNPlatform('deepseek')",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 207,
+      "tag": "button"
+    },
+    {
+      "id": "action-013",
+      "status": "unreviewed",
+      "value": "click:showGeminiHelpDialog = true",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 827,
+      "tag": "button"
+    },
+    {
+      "id": "action-014",
+      "status": "unreviewed",
+      "value": "click:handleSelectGeminiOAuthType('google_one')",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 971,
+      "tag": "button"
+    },
+    {
+      "id": "action-015",
+      "status": "unreviewed",
+      "value": "click:handleSelectGeminiOAuthType('code_assist')",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1014,
+      "tag": "button"
+    },
+    {
+      "id": "action-016",
+      "status": "unreviewed",
+      "value": "click:handleSelectGeminiOAuthType('ai_studio')",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1097,
+      "tag": "button"
+    },
+    {
+      "id": "action-017",
+      "status": "unreviewed",
+      "value": "click:antigravityAccountType = 'oauth'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1210,
+      "tag": "button"
+    },
+    {
+      "id": "action-018",
+      "status": "unreviewed",
+      "value": "click:antigravityAccountType = 'upstream'",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1236,
+      "tag": "button"
+    },
+    {
+      "id": "action-019",
+      "status": "unreviewed",
+      "value": "change:handleVertexServiceAccountFile",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1323,
+      "tag": "input"
+    },
+    {
+      "id": "action-020",
+      "status": "unreviewed",
+      "value": "dragenter:vertexServiceAccountDragActive = true",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1332,
+      "tag": "div"
+    },
+    {
+      "id": "action-021",
+      "status": "unreviewed",
+      "value": "dragover:vertexServiceAccountDragActive = true",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1333,
+      "tag": "div"
+    },
+    {
+      "id": "action-022",
+      "status": "unreviewed",
+      "value": "dragleave:vertexServiceAccountDragActive = false",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1334,
+      "tag": "div"
+    },
+    {
+      "id": "action-023",
+      "status": "unreviewed",
+      "value": "drop:handleVertexServiceAccountDrop",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1335,
+      "tag": "div"
+    },
+    {
+      "id": "action-024",
+      "status": "unreviewed",
+      "value": "click:vertexServiceAccountFileInput?.click()",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1350,
+      "tag": "button"
+    },
+    {
+      "id": "action-025",
+      "status": "unreviewed",
+      "value": "click:poolModeEnabled = !poolModeEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1808,
+      "tag": "button"
+    },
+    {
+      "id": "action-026",
+      "status": "unreviewed",
+      "value": "click:customErrorCodesEnabled = !customErrorCodesEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 1872,
+      "tag": "button"
+    },
+    {
+      "id": "action-027",
+      "status": "unreviewed",
+      "value": "click:poolModeEnabled = !poolModeEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2214,
+      "tag": "button"
+    },
+    {
+      "id": "action-028",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyEnabled:quotaNotifyState.daily.enabled = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2302,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-029",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThreshold:quotaNotifyState.daily.threshold = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2303,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-030",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThresholdType:quotaNotifyState.daily.thresholdType = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2304,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-031",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyEnabled:quotaNotifyState.weekly.enabled = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2305,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-032",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThreshold:quotaNotifyState.weekly.threshold = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2306,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-033",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThresholdType:quotaNotifyState.weekly.thresholdType = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2307,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-034",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalEnabled:quotaNotifyState.total.enabled = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2308,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-035",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThreshold:quotaNotifyState.total.threshold = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2309,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-036",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThresholdType:quotaNotifyState.total.thresholdType = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2310,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-037",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyEnabled:quotaNotifyState.daily.enabled = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2354,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-038",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThreshold:quotaNotifyState.daily.threshold = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2355,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-039",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThresholdType:quotaNotifyState.daily.thresholdType = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2356,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-040",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyEnabled:quotaNotifyState.weekly.enabled = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2357,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-041",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThreshold:quotaNotifyState.weekly.threshold = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2358,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-042",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThresholdType:quotaNotifyState.weekly.thresholdType = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2359,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-043",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalEnabled:quotaNotifyState.total.enabled = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2360,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-044",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThreshold:quotaNotifyState.total.threshold = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2361,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-045",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThresholdType:quotaNotifyState.total.thresholdType = $event",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2362,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-046",
+      "status": "unreviewed",
+      "value": "click:grokOAuthCustomBaseUrlEnabled = !grokOAuthCustomBaseUrlEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2387,
+      "tag": "button"
+    },
+    {
+      "id": "action-047",
+      "status": "unreviewed",
+      "value": "click:tempUnschedEnabled = !tempUnschedEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2609,
+      "tag": "button"
+    },
+    {
+      "id": "action-048",
+      "status": "unreviewed",
+      "value": "click:windowCostEnabled = !windowCostEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2801,
+      "tag": "button"
+    },
+    {
+      "id": "action-049",
+      "status": "unreviewed",
+      "value": "click:sessionLimitEnabled = !sessionLimitEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2861,
+      "tag": "button"
+    },
+    {
+      "id": "action-050",
+      "status": "unreviewed",
+      "value": "click:rpmLimitEnabled = !rpmLimitEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 2918,
+      "tag": "button"
+    },
+    {
+      "id": "action-051",
+      "status": "unreviewed",
+      "value": "click:sessionIdMaskingEnabled = !sessionIdMaskingEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3031,
+      "tag": "button"
+    },
+    {
+      "id": "action-052",
+      "status": "unreviewed",
+      "value": "click:cacheTTLOverrideEnabled = !cacheTTLOverrideEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3058,
+      "tag": "button"
+    },
+    {
+      "id": "action-053",
+      "status": "unreviewed",
+      "value": "click:customBaseUrlEnabled = !customBaseUrlEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3098,
+      "tag": "button"
+    },
+    {
+      "id": "action-054",
+      "status": "unreviewed",
+      "value": "click:tlsFingerprintEnabled = !tlsFingerprintEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3137,
+      "tag": "button"
+    },
+    {
+      "id": "action-055",
+      "status": "unreviewed",
+      "value": "click:anthropicPassthroughEnabled = !anthropicPassthroughEnabled",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3333,
+      "tag": "button"
+    },
+    {
+      "id": "action-056",
+      "status": "unreviewed",
+      "value": "click:autoPauseOnExpired = !autoPauseOnExpired",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3594,
+      "tag": "button"
+    },
+    {
+      "id": "action-057",
+      "status": "unreviewed",
+      "value": "click:goBackToBasicInfo",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3778,
+      "tag": "button"
+    },
+    {
+      "id": "action-058",
+      "status": "unreviewed",
+      "value": "close:showGeminiHelpDialog = false",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 3823,
+      "tag": "BaseDialog"
+    },
+    {
+      "id": "action-059",
+      "status": "unreviewed",
+      "value": "click:showGeminiHelpDialog = false",
+      "file": "frontend/src/components/account/CreateAccountModal.vue",
+      "line": 4028,
+      "tag": "button"
+    },
+    {
+      "id": "action-060",
+      "status": "unreviewed",
+      "value": "click:poolModeEnabled = !poolModeEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 556,
+      "tag": "button"
+    },
+    {
+      "id": "action-061",
+      "status": "unreviewed",
+      "value": "click:customErrorCodesEnabled = !customErrorCodesEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 620,
+      "tag": "button"
+    },
+    {
+      "id": "action-062",
+      "status": "unreviewed",
+      "value": "click:grokOAuthCustomBaseUrlEnabled = !grokOAuthCustomBaseUrlEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 744,
+      "tag": "button"
+    },
+    {
+      "id": "action-063",
+      "status": "unreviewed",
+      "value": "click:poolModeEnabled = !poolModeEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 1338,
+      "tag": "button"
+    },
+    {
+      "id": "action-064",
+      "status": "unreviewed",
+      "value": "click:tempUnschedEnabled = !tempUnschedEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 1519,
+      "tag": "button"
+    },
+    {
+      "id": "action-065",
+      "status": "unreviewed",
+      "value": "click:anthropicPassthroughEnabled = !anthropicPassthroughEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2040,
+      "tag": "button"
+    },
+    {
+      "id": "action-066",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyEnabled:quotaNotifyState.daily.enabled = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2134,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-067",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThreshold:quotaNotifyState.daily.threshold = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2135,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-068",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThresholdType:quotaNotifyState.daily.thresholdType = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2136,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-069",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyEnabled:quotaNotifyState.weekly.enabled = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2137,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-070",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThreshold:quotaNotifyState.weekly.threshold = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2138,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-071",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThresholdType:quotaNotifyState.weekly.thresholdType = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2139,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-072",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalEnabled:quotaNotifyState.total.enabled = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2140,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-073",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThreshold:quotaNotifyState.total.threshold = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2141,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-074",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThresholdType:quotaNotifyState.total.thresholdType = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2142,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-075",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyEnabled:quotaNotifyState.daily.enabled = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2185,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-076",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThreshold:quotaNotifyState.daily.threshold = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2186,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-077",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyDailyThresholdType:quotaNotifyState.daily.thresholdType = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2187,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-078",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyEnabled:quotaNotifyState.weekly.enabled = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2188,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-079",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThreshold:quotaNotifyState.weekly.threshold = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2189,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-080",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyWeeklyThresholdType:quotaNotifyState.weekly.thresholdType = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2190,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-081",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalEnabled:quotaNotifyState.total.enabled = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2191,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-082",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThreshold:quotaNotifyState.total.threshold = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2192,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-083",
+      "status": "unreviewed",
+      "value": "update:quotaNotifyTotalThresholdType:quotaNotifyState.total.thresholdType = $event",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2193,
+      "tag": "QuotaLimitCard"
+    },
+    {
+      "id": "action-084",
+      "status": "unreviewed",
+      "value": "click:autoPauseOnExpired = !autoPauseOnExpired",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2391,
+      "tag": "button"
+    },
+    {
+      "id": "action-085",
+      "status": "unreviewed",
+      "value": "click:autoPause5hDisabled = !autoPause5hDisabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2416,
+      "tag": "button"
+    },
+    {
+      "id": "action-086",
+      "status": "unreviewed",
+      "value": "click:autoPause7dDisabled = !autoPause7dDisabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2452,
+      "tag": "button"
+    },
+    {
+      "id": "action-087",
+      "status": "unreviewed",
+      "value": "click:autoResetCreditEnabled = !autoResetCreditEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2500,
+      "tag": "button"
+    },
+    {
+      "id": "action-088",
+      "status": "unreviewed",
+      "value": "click:windowCostEnabled = !windowCostEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2568,
+      "tag": "button"
+    },
+    {
+      "id": "action-089",
+      "status": "unreviewed",
+      "value": "click:sessionLimitEnabled = !sessionLimitEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2628,
+      "tag": "button"
+    },
+    {
+      "id": "action-090",
+      "status": "unreviewed",
+      "value": "click:rpmLimitEnabled = !rpmLimitEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2685,
+      "tag": "button"
+    },
+    {
+      "id": "action-091",
+      "status": "unreviewed",
+      "value": "click:sessionIdMaskingEnabled = !sessionIdMaskingEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2798,
+      "tag": "button"
+    },
+    {
+      "id": "action-092",
+      "status": "unreviewed",
+      "value": "click:cacheTTLOverrideEnabled = !cacheTTLOverrideEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2825,
+      "tag": "button"
+    },
+    {
+      "id": "action-093",
+      "status": "unreviewed",
+      "value": "click:customBaseUrlEnabled = !customBaseUrlEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2865,
+      "tag": "button"
+    },
+    {
+      "id": "action-094",
+      "status": "unreviewed",
+      "value": "click:tlsFingerprintEnabled = !tlsFingerprintEnabled",
+      "file": "frontend/src/components/account/EditAccountModal.vue",
+      "line": 2904,
+      "tag": "button"
+    },
+    {
+      "id": "action-095",
+      "status": "unreviewed",
+      "value": "click:localEnabled = !localEnabled",
+      "file": "frontend/src/components/account/QuotaLimitCard.vue",
+      "line": 150,
+      "tag": "button"
+    },
+    {
+      "id": "action-096",
+      "status": "unreviewed",
+      "value": "click:emit('update:enabled', !enabled)",
+      "file": "frontend/src/components/account/QuotaNotifyToggle.vue",
+      "line": 21,
+      "tag": "button"
+    },
+    {
+      "id": "action-097",
+      "status": "unreviewed",
+      "value": "change:toggleSelect(acc.crs_account_id)",
+      "file": "frontend/src/components/account/SyncFromCrsModal.vue",
+      "line": 129,
+      "tag": "input"
+    },
+    {
+      "id": "action-098",
+      "status": "unreviewed",
+      "value": "click:$emit('edit-filtered')",
+      "file": "frontend/src/components/admin/account/AccountBulkActionsBar.vue",
+      "line": 55,
+      "tag": "button"
+    },
+    {
+      "id": "action-099",
+      "status": "unreviewed",
+      "value": "click:selectedRange = option",
+      "file": "frontend/src/components/admin/account/OpenAIOAuthCapacityDialog.vue",
+      "line": 28,
+      "tag": "button"
+    },
+    {
+      "id": "action-100",
+      "status": "unreviewed",
+      "value": "click:$emit('run', row)",
+      "file": "frontend/src/components/admin/monitor/MonitorActionsCell.vue",
+      "line": 4,
+      "tag": "button"
+    },
+    {
+      "id": "action-101",
+      "status": "unreviewed",
+      "value": "click:$emit('duplicate', row)",
+      "file": "frontend/src/components/admin/monitor/MonitorActionsCell.vue",
+      "line": 15,
+      "tag": "button"
+    },
+    {
+      "id": "action-102",
+      "status": "unreviewed",
+      "value": "click:$emit('edit', row)",
+      "file": "frontend/src/components/admin/monitor/MonitorActionsCell.vue",
+      "line": 24,
+      "tag": "button"
+    },
+    {
+      "id": "action-103",
+      "status": "unreviewed",
+      "value": "click:$emit('delete', row)",
+      "file": "frontend/src/components/admin/monitor/MonitorActionsCell.vue",
+      "line": 31,
+      "tag": "button"
+    },
+    {
+      "id": "action-104",
+      "status": "unreviewed",
+      "value": "click:emit('cancel', order)",
+      "file": "frontend/src/components/admin/payment/AdminOrderDetail.vue",
+      "line": 92,
+      "tag": "button"
+    },
+    {
+      "id": "action-105",
+      "status": "unreviewed",
+      "value": "click:emit('retry', order)",
+      "file": "frontend/src/components/admin/payment/AdminOrderDetail.vue",
+      "line": 99,
+      "tag": "button"
+    },
+    {
+      "id": "action-106",
+      "status": "unreviewed",
+      "value": "click:emit('refund', order)",
+      "file": "frontend/src/components/admin/payment/AdminOrderDetail.vue",
+      "line": 106,
+      "tag": "button"
+    },
+    {
+      "id": "action-107",
+      "status": "unreviewed",
+      "value": "change:emitFiltersChanged",
+      "file": "frontend/src/components/admin/payment/AdminOrderTable.vue",
+      "line": 18,
+      "tag": "Select"
+    },
+    {
+      "id": "action-108",
+      "status": "unreviewed",
+      "value": "change:emitFiltersChanged",
+      "file": "frontend/src/components/admin/payment/AdminOrderTable.vue",
+      "line": 24,
+      "tag": "Select"
+    },
+    {
+      "id": "action-109",
+      "status": "unreviewed",
+      "value": "change:emitFiltersChanged",
+      "file": "frontend/src/components/admin/payment/AdminOrderTable.vue",
+      "line": 30,
+      "tag": "Select"
+    },
+    {
+      "id": "action-110",
+      "status": "unreviewed",
+      "value": "click:emit('detail', row)",
+      "file": "frontend/src/components/admin/payment/AdminOrderTable.vue",
+      "line": 91,
+      "tag": "button"
+    },
+    {
+      "id": "action-111",
+      "status": "unreviewed",
+      "value": "click:emit('cancel', row)",
+      "file": "frontend/src/components/admin/payment/AdminOrderTable.vue",
+      "line": 99,
+      "tag": "button"
+    },
+    {
+      "id": "action-112",
+      "status": "unreviewed",
+      "value": "click:emit('retry', row)",
+      "file": "frontend/src/components/admin/payment/AdminOrderTable.vue",
+      "line": 107,
+      "tag": "button"
+    },
+    {
+      "id": "action-113",
+      "status": "unreviewed",
+      "value": "click:emit('refund', row)",
+      "file": "frontend/src/components/admin/payment/AdminOrderTable.vue",
+      "line": 115,
+      "tag": "button"
+    },
+    {
+      "id": "action-114",
+      "status": "unreviewed",
+      "value": "change:handleCheckboxChange",
+      "file": "frontend/src/components/auth/LoginAgreementPrompt.vue",
+      "line": 12,
+      "tag": "input"
+    },
+    {
+      "id": "action-115",
+      "status": "unreviewed",
+      "value": "click:typeof pageNum === 'number' && goToPage(pageNum)",
+      "file": "frontend/src/components/common/Pagination.vue",
+      "line": 89,
+      "tag": "button"
+    },
+    {
+      "id": "action-116",
+      "status": "unreviewed",
+      "value": "click:copy(item.endpoint)",
+      "file": "frontend/src/components/keys/EndpointPopover.vue",
+      "line": 105,
+      "tag": "code"
+    },
+    {
+      "id": "action-117",
+      "status": "unreviewed",
+      "value": "keydown:copy(item.endpoint)",
+      "file": "frontend/src/components/keys/EndpointPopover.vue",
+      "line": 106,
+      "tag": "code"
+    },
+    {
+      "id": "action-118",
+      "status": "unreviewed",
+      "value": "keydown:copy(item.endpoint)",
+      "file": "frontend/src/components/keys/EndpointPopover.vue",
+      "line": 107,
+      "tag": "code"
+    },
+    {
+      "id": "action-119",
+      "status": "unreviewed",
+      "value": "click:copy(item.endpoint)",
+      "file": "frontend/src/components/keys/EndpointPopover.vue",
+      "line": 117,
+      "tag": "button"
+    },
+    {
+      "id": "action-120",
+      "status": "unreviewed",
+      "value": "click:copyContent(file.content, index)",
+      "file": "frontend/src/components/keys/UseKeyModal.vue",
+      "line": 154,
+      "tag": "button"
+    },
+    {
+      "id": "action-121",
+      "status": "unreviewed",
+      "value": "click:downloadCodexModelManifest",
+      "file": "frontend/src/components/keys/UseKeyModal.vue",
+      "line": 196,
+      "tag": "button"
+    },
+    {
+      "id": "action-122",
+      "status": "unreviewed",
+      "value": "click:loadCodexModelManifest",
+      "file": "frontend/src/components/keys/UseKeyModal.vue",
+      "line": 207,
+      "tag": "button"
+    },
+    {
+      "id": "action-123",
+      "status": "unreviewed",
+      "value": "click:handleGroupClick(item)",
+      "file": "frontend/src/components/layout/AppSidebar.vue",
+      "line": 49,
+      "tag": "button"
+    },
+    {
+      "id": "action-124",
+      "status": "unreviewed",
+      "value": "click:handleMenuItemClick(child.path)",
+      "file": "frontend/src/components/layout/AppSidebar.vue",
+      "line": 76,
+      "tag": "router-link"
+    },
+    {
+      "id": "action-125",
+      "status": "unreviewed",
+      "value": "click:handleMenuItemClick(item.path)",
+      "file": "frontend/src/components/layout/AppSidebar.vue",
+      "line": 103,
+      "tag": "router-link"
+    },
+    {
+      "id": "action-126",
+      "status": "unreviewed",
+      "value": "click:handleMenuItemClick(item.path)",
+      "file": "frontend/src/components/layout/AppSidebar.vue",
+      "line": 134,
+      "tag": "router-link"
+    },
+    {
+      "id": "action-127",
+      "status": "unreviewed",
+      "value": "click:handleMenuItemClick(item.path)",
+      "file": "frontend/src/components/layout/AppSidebar.vue",
+      "line": 160,
+      "tag": "router-link"
+    },
+    {
+      "id": "action-128",
+      "status": "unreviewed",
+      "value": "click:toggleSidebar",
+      "file": "frontend/src/components/layout/AppSidebar.vue",
+      "line": 194,
+      "tag": "button"
+    },
+    {
+      "id": "action-129",
+      "status": "unreviewed",
+      "value": "click:closeMobile",
+      "file": "frontend/src/components/layout/AppSidebar.vue",
+      "line": 211,
+      "tag": "div"
+    },
+    {
+      "id": "action-130",
+      "status": "unreviewed",
+      "value": "input:updateField('target_concurrency', ($event.target as HTMLInputElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormConcurrency.vue",
+      "line": 10,
+      "tag": "input"
+    },
+    {
+      "id": "action-131",
+      "status": "unreviewed",
+      "value": "input:updateField('usage_scenario', ($event.target as HTMLTextAreaElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormConcurrency.vue",
+      "line": 15,
+      "tag": "textarea"
+    },
+    {
+      "id": "action-132",
+      "status": "unreviewed",
+      "value": "input:updateField('peak_window', ($event.target as HTMLInputElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormConcurrency.vue",
+      "line": 19,
+      "tag": "input"
+    },
+    {
+      "id": "action-133",
+      "status": "unreviewed",
+      "value": "input:updateField('question', ($event.target as HTMLTextAreaElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormConsult.vue",
+      "line": 9,
+      "tag": "textarea"
+    },
+    {
+      "id": "action-134",
+      "status": "unreviewed",
+      "value": "input:updateField('details', ($event.target as HTMLTextAreaElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormOther.vue",
+      "line": 9,
+      "tag": "textarea"
+    },
+    {
+      "id": "action-135",
+      "status": "unreviewed",
+      "value": "input:updateField('target_rate', ($event.target as HTMLInputElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormRate.vue",
+      "line": 52,
+      "tag": "input"
+    },
+    {
+      "id": "action-136",
+      "status": "unreviewed",
+      "value": "input:updateField('usage_scenario', ($event.target as HTMLTextAreaElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormRate.vue",
+      "line": 57,
+      "tag": "textarea"
+    },
+    {
+      "id": "action-137",
+      "status": "unreviewed",
+      "value": "input:updateField('order_no', ($event.target as HTMLInputElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormRefund.vue",
+      "line": 6,
+      "tag": "input"
+    },
+    {
+      "id": "action-138",
+      "status": "unreviewed",
+      "value": "input:updateField('refund_amount', ($event.target as HTMLInputElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormRefund.vue",
+      "line": 10,
+      "tag": "input"
+    },
+    {
+      "id": "action-139",
+      "status": "unreviewed",
+      "value": "input:updateField('reason', ($event.target as HTMLTextAreaElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormRefund.vue",
+      "line": 15,
+      "tag": "textarea"
+    },
+    {
+      "id": "action-140",
+      "status": "unreviewed",
+      "value": "input:updateField('evidence', ($event.target as HTMLTextAreaElement).value)",
+      "file": "frontend/src/components/tickets/forms/TicketFormRefund.vue",
+      "line": 19,
+      "tag": "textarea"
+    },
+    {
+      "id": "action-141",
+      "status": "unreviewed",
+      "value": "update:startDate:$emit('update:startDate', $event)",
+      "file": "frontend/src/components/user/dashboard/UserDashboardCharts.vue",
+      "line": 8,
+      "tag": "DateRangePicker"
+    },
+    {
+      "id": "action-142",
+      "status": "unreviewed",
+      "value": "update:endDate:$emit('update:endDate', $event)",
+      "file": "frontend/src/components/user/dashboard/UserDashboardCharts.vue",
+      "line": 8,
+      "tag": "DateRangePicker"
+    },
+    {
+      "id": "action-143",
+      "status": "unreviewed",
+      "value": "change:$emit('dateRangeChange', $event)",
+      "file": "frontend/src/components/user/dashboard/UserDashboardCharts.vue",
+      "line": 8,
+      "tag": "DateRangePicker"
+    },
+    {
+      "id": "action-144",
+      "status": "unreviewed",
+      "value": "update:model-value:$emit('update:granularity', $event)",
+      "file": "frontend/src/components/user/dashboard/UserDashboardCharts.vue",
+      "line": 16,
+      "tag": "Select"
+    },
+    {
+      "id": "action-145",
+      "status": "unreviewed",
+      "value": "change:$emit('granularityChange')",
+      "file": "frontend/src/components/user/dashboard/UserDashboardCharts.vue",
+      "line": 16,
+      "tag": "Select"
+    },
+    {
+      "id": "action-146",
+      "status": "unreviewed",
+      "value": "click:emit('balance-history')",
+      "file": "frontend/src/components/user/dashboard/UserDashboardStats.vue",
+      "line": 5,
+      "tag": "div"
+    },
+    {
+      "id": "action-147",
+      "status": "unreviewed",
+      "value": "click:closeDeleteDialog",
+      "file": "frontend/src/components/user/profile/ProfilePasskeyCard.vue",
+      "line": 135,
+      "tag": "div"
+    },
+    {
+      "id": "action-148",
+      "status": "unreviewed",
+      "value": "submit:confirmDelete",
+      "file": "frontend/src/components/user/profile/ProfilePasskeyCard.vue",
+      "line": 145,
+      "tag": "form"
+    },
+    {
+      "id": "action-149",
+      "status": "unreviewed",
+      "value": "click:closeDeleteDialog",
+      "file": "frontend/src/components/user/profile/ProfilePasskeyCard.vue",
+      "line": 161,
+      "tag": "button"
+    },
+    {
+      "id": "action-150",
+      "status": "unreviewed",
+      "value": "click:showDisableDialog = true",
+      "file": "frontend/src/components/user/profile/ProfileTotpCard.vue",
+      "line": 54,
+      "tag": "button"
+    },
+    {
+      "id": "action-151",
+      "status": "unreviewed",
+      "value": "click:showSetupModal = true",
+      "file": "frontend/src/components/user/profile/ProfileTotpCard.vue",
+      "line": 80,
+      "tag": "button"
+    },
+    {
+      "id": "action-152",
+      "status": "unreviewed",
+      "value": "click:draft.refresh_interval_seconds = 60",
+      "file": "frontend/src/features/channel-monitor-v2/MonitorSettingsPanel.vue",
+      "line": 70,
+      "tag": "button"
+    },
+    {
+      "id": "action-153",
+      "status": "unreviewed",
+      "value": "click:draft.refresh_interval_seconds = 300",
+      "file": "frontend/src/features/channel-monitor-v2/MonitorSettingsPanel.vue",
+      "line": 78,
+      "tag": "button"
+    },
+    {
+      "id": "action-154",
+      "status": "unreviewed",
+      "value": "change:toggleOne(event.id)",
+      "file": "frontend/src/features/prompt-audit/components/EventWorkspace.vue",
+      "line": 77,
+      "tag": "input"
+    },
+    {
+      "id": "action-155",
+      "status": "unreviewed",
+      "value": "click:$emit('view', event.id)",
+      "file": "frontend/src/features/prompt-audit/components/EventWorkspace.vue",
+      "line": 95,
+      "tag": "button"
+    },
+    {
+      "id": "action-156",
+      "status": "unreviewed",
+      "value": "click:$emit('delete', event.id)",
+      "file": "frontend/src/features/prompt-audit/components/EventWorkspace.vue",
+      "line": 96,
+      "tag": "button"
+    },
+    {
+      "id": "action-157",
+      "status": "unreviewed",
+      "value": "click:setDailyUsageDays(option.value)",
+      "file": "frontend/src/views/KeyUsageView.vue",
+      "line": 303,
+      "tag": "button"
+    },
+    {
+      "id": "action-158",
+      "status": "unreviewed",
+      "value": "update:filters:(newFilters) => Object.assign(params, newFilters)",
+      "file": "frontend/src/views/admin/AccountsView.vue",
+      "line": 10,
+      "tag": "AccountTableFilters"
+    },
+    {
+      "id": "action-159",
+      "status": "unreviewed",
+      "value": "click:showCapacityForecast = true",
+      "file": "frontend/src/views/admin/AccountsView.vue",
+      "line": 20,
+      "tag": "button"
+    },
+    {
+      "id": "action-160",
+      "status": "unreviewed",
+      "value": "click: showAutoRefreshDropdown = !showAutoRefreshDropdown; showAccountToolsDropdown = false",
+      "file": "frontend/src/views/admin/AccountsView.vue",
+      "line": 29,
+      "tag": "button"
+    },
+    {
+      "id": "action-161",
+      "status": "unreviewed",
+      "value": "click:openSyncFromCrs",
+      "file": "frontend/src/views/admin/AccountsView.vue",
+      "line": 97,
+      "tag": "button"
+    },
+    {
+      "id": "action-162",
+      "status": "unreviewed",
+      "value": "click:openImportData",
+      "file": "frontend/src/views/admin/AccountsView.vue",
+      "line": 103,
+      "tag": "button"
+    },
+    {
+      "id": "action-163",
+      "status": "unreviewed",
+      "value": "click:openExportDataDialogFromMenu",
+      "file": "frontend/src/views/admin/AccountsView.vue",
+      "line": 109,
+      "tag": "button"
+    },
+    {
+      "id": "action-164",
+      "status": "unreviewed",
+      "value": "click:handleToggleSchedulable(row)",
+      "file": "frontend/src/views/admin/AccountsView.vue",
+      "line": 330,
+      "tag": "button"
+    },
+    {
+      "id": "action-165",
+      "status": "unreviewed",
+      "value": "click:downloadBackup(record.id)",
+      "file": "frontend/src/views/admin/BackupView.vue",
+      "line": 261,
+      "tag": "button"
+    },
+    {
+      "id": "action-166",
+      "status": "unreviewed",
+      "value": "click:restoreBackup(record.id)",
+      "file": "frontend/src/views/admin/BackupView.vue",
+      "line": 270,
+      "tag": "button"
+    },
+    {
+      "id": "action-167",
+      "status": "unreviewed",
+      "value": "click:removeBackup(record.id)",
+      "file": "frontend/src/views/admin/BackupView.vue",
+      "line": 278,
+      "tag": "button"
+    },
+    {
+      "id": "action-168",
+      "status": "unreviewed",
+      "value": "ranking-click:goToUserUsage",
+      "file": "frontend/src/views/admin/DashboardView.vue",
+      "line": 360,
+      "tag": "ModelDistributionChart"
+    },
+    {
+      "id": "action-169",
+      "status": "unreviewed",
+      "value": "change:loadGroups",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 29,
+      "tag": "Select"
+    },
+    {
+      "id": "action-170",
+      "status": "unreviewed",
+      "value": "change:loadGroups",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 36,
+      "tag": "Select"
+    },
+    {
+      "id": "action-171",
+      "status": "unreviewed",
+      "value": "change:loadGroups",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 43,
+      "tag": "Select"
+    },
+    {
+      "id": "action-172",
+      "status": "unreviewed",
+      "value": "click:openSortModal",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 96,
+      "tag": "button"
+    },
+    {
+      "id": "action-173",
+      "status": "unreviewed",
+      "value": "click:handleCompositeRoutes(row)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 409,
+      "tag": "button"
+    },
+    {
+      "id": "action-174",
+      "status": "unreviewed",
+      "value": "click:handleRateMultipliers(row)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 418,
+      "tag": "button"
+    },
+    {
+      "id": "action-175",
+      "status": "unreviewed",
+      "value": "click:handleRPMOverrides(row)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 427,
+      "tag": "button"
+    },
+    {
+      "id": "action-176",
+      "status": "unreviewed",
+      "value": "click:toggleLive('create')",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 1669,
+      "tag": "button"
+    },
+    {
+      "id": "action-177",
+      "status": "unreviewed",
+      "value": "click: createForm.allow_messages_dispatch = !createForm.allow_messages_dispatch",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 1704,
+      "tag": "button"
+    },
+    {
+      "id": "action-178",
+      "status": "unreviewed",
+      "value": "click:addCreateMessagesDispatchMapping",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 1836,
+      "tag": "button"
+    },
+    {
+      "id": "action-179",
+      "status": "unreviewed",
+      "value": "click:removeCreateMessagesDispatchMapping(row)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 1896,
+      "tag": "button"
+    },
+    {
+      "id": "action-180",
+      "status": "unreviewed",
+      "value": "click:addCreateMessagesDispatchMapping",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 1909,
+      "tag": "button"
+    },
+    {
+      "id": "action-181",
+      "status": "unreviewed",
+      "value": "click: createForm.model_routing_enabled = !createForm.model_routing_enabled",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 2064,
+      "tag": "button"
+    },
+    {
+      "id": "action-182",
+      "status": "unreviewed",
+      "value": "click:removeCreateRoutingRule(rule)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 2203,
+      "tag": "button"
+    },
+    {
+      "id": "action-183",
+      "status": "unreviewed",
+      "value": "click:addCreateRoutingRule",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 2216,
+      "tag": "button"
+    },
+    {
+      "id": "action-184",
+      "status": "unreviewed",
+      "value": "click:toggleLive('edit')",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3466,
+      "tag": "button"
+    },
+    {
+      "id": "action-185",
+      "status": "unreviewed",
+      "value": "click: editForm.allow_messages_dispatch = !editForm.allow_messages_dispatch",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3501,
+      "tag": "button"
+    },
+    {
+      "id": "action-186",
+      "status": "unreviewed",
+      "value": "click:addEditMessagesDispatchMapping",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3632,
+      "tag": "button"
+    },
+    {
+      "id": "action-187",
+      "status": "unreviewed",
+      "value": "click:removeEditMessagesDispatchMapping(row)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3692,
+      "tag": "button"
+    },
+    {
+      "id": "action-188",
+      "status": "unreviewed",
+      "value": "click:addEditMessagesDispatchMapping",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3705,
+      "tag": "button"
+    },
+    {
+      "id": "action-189",
+      "status": "unreviewed",
+      "value": "click: editForm.model_routing_enabled = !editForm.model_routing_enabled",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3860,
+      "tag": "button"
+    },
+    {
+      "id": "action-190",
+      "status": "unreviewed",
+      "value": "click:removeSelectedAccount(rule, account.id, true)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3935,
+      "tag": "button"
+    },
+    {
+      "id": "action-191",
+      "status": "unreviewed",
+      "value": "input:searchAccountsByRule(rule, true)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3955,
+      "tag": "input"
+    },
+    {
+      "id": "action-192",
+      "status": "unreviewed",
+      "value": "focus:onAccountSearchFocus(rule, true)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3956,
+      "tag": "input"
+    },
+    {
+      "id": "action-193",
+      "status": "unreviewed",
+      "value": "click:selectAccount(rule, account, true)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3973,
+      "tag": "button"
+    },
+    {
+      "id": "action-194",
+      "status": "unreviewed",
+      "value": "click:removeEditRoutingRule(rule)",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 3998,
+      "tag": "button"
+    },
+    {
+      "id": "action-195",
+      "status": "unreviewed",
+      "value": "click:addEditRoutingRule",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 4011,
+      "tag": "button"
+    },
+    {
+      "id": "action-196",
+      "status": "unreviewed",
+      "value": "close:closeSortModal",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 4090,
+      "tag": "BaseDialog"
+    },
+    {
+      "id": "action-197",
+      "status": "unreviewed",
+      "value": "click:closeSortModal",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 4148,
+      "tag": "button"
+    },
+    {
+      "id": "action-198",
+      "status": "unreviewed",
+      "value": "click:closeCompositeRoutesModal",
+      "file": "frontend/src/views/admin/GroupsView.vue",
+      "line": 4536,
+      "tag": "button"
+    },
+    {
+      "id": "action-199",
+      "status": "unreviewed",
+      "value": "click:handleBatchQualityCheck",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 59,
+      "tag": "button"
+    },
+    {
+      "id": "action-200",
+      "status": "unreviewed",
+      "value": "click:openBatchDelete",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 68,
+      "tag": "button"
+    },
+    {
+      "id": "action-201",
+      "status": "unreviewed",
+      "value": "click:showImportData = true",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 76,
+      "tag": "button"
+    },
+    {
+      "id": "action-202",
+      "status": "unreviewed",
+      "value": "click:showExportDataDialog = true",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 79,
+      "tag": "button"
+    },
+    {
+      "id": "action-203",
+      "status": "unreviewed",
+      "value": "click:handleTestConnection(row)",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 265,
+      "tag": "button"
+    },
+    {
+      "id": "action-204",
+      "status": "unreviewed",
+      "value": "click:handleQualityCheck(row)",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 293,
+      "tag": "button"
+    },
+    {
+      "id": "action-205",
+      "status": "unreviewed",
+      "value": "submit:handleCreateProxy",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 419,
+      "tag": "form"
+    },
+    {
+      "id": "action-206",
+      "status": "unreviewed",
+      "value": "click:createPasswordVisible = !createPasswordVisible",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 481,
+      "tag": "button"
+    },
+    {
+      "id": "action-207",
+      "status": "unreviewed",
+      "value": "click:createExpiresDays = d",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 496,
+      "tag": "button"
+    },
+    {
+      "id": "action-208",
+      "status": "unreviewed",
+      "value": "submit:handleUpdateProxy",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 665,
+      "tag": "form"
+    },
+    {
+      "id": "action-209",
+      "status": "unreviewed",
+      "value": "input:editPasswordDirty = true",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 705,
+      "tag": "input"
+    },
+    {
+      "id": "action-210",
+      "status": "unreviewed",
+      "value": "click:editPasswordVisible = !editPasswordVisible",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 710,
+      "tag": "button"
+    },
+    {
+      "id": "action-211",
+      "status": "unreviewed",
+      "value": "click:editExpiresDays = d",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 729,
+      "tag": "button"
+    },
+    {
+      "id": "action-212",
+      "status": "unreviewed",
+      "value": "click:closeQualityReportDialog",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 904,
+      "tag": "button"
+    },
+    {
+      "id": "action-213",
+      "status": "unreviewed",
+      "value": "click:closeAccountsModal",
+      "file": "frontend/src/views/admin/ProxiesView.vue",
+      "line": 949,
+      "tag": "button"
+    },
+    {
+      "id": "action-214",
+      "status": "unreviewed",
+      "value": "click:showGenerateDialog = false",
+      "file": "frontend/src/views/admin/RedeemView.vue",
+      "line": 278,
+      "tag": "div"
+    },
+    {
+      "id": "action-215",
+      "status": "unreviewed",
+      "value": "click:generateForm.expiry_option = option.value",
+      "file": "frontend/src/views/admin/RedeemView.vue",
+      "line": 366,
+      "tag": "button"
+    },
+    {
+      "id": "action-216",
+      "status": "unreviewed",
+      "value": "click:showGenerateDialog = false",
+      "file": "frontend/src/views/admin/RedeemView.vue",
+      "line": 400,
+      "tag": "button"
+    },
+    {
+      "id": "action-217",
+      "status": "unreviewed",
+      "value": "click:closeBatchUpdateDialog",
+      "file": "frontend/src/views/admin/RedeemView.vue",
+      "line": 418,
+      "tag": "div"
+    },
+    {
+      "id": "action-218",
+      "status": "unreviewed",
+      "value": "click:closeBatchUpdateDialog",
+      "file": "frontend/src/views/admin/RedeemView.vue",
+      "line": 509,
+      "tag": "button"
+    },
+    {
+      "id": "action-219",
+      "status": "unreviewed",
+      "value": "click:closeResultDialog",
+      "file": "frontend/src/views/admin/RedeemView.vue",
+      "line": 529,
+      "tag": "div"
+    },
+    {
+      "id": "action-220",
+      "status": "unreviewed",
+      "value": "click:closeResultDialog",
+      "file": "frontend/src/views/admin/RedeemView.vue",
+      "line": 563,
+      "tag": "button"
+    },
+    {
+      "id": "action-221",
+      "status": "unreviewed",
+      "value": "click:loadLogs",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 240,
+      "tag": "button"
+    },
+    {
+      "id": "action-222",
+      "status": "unreviewed",
+      "value": "change:reloadLogsFromFirstPage",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 267,
+      "tag": "Select"
+    },
+    {
+      "id": "action-223",
+      "status": "unreviewed",
+      "value": "change:reloadLogsFromFirstPage",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 268,
+      "tag": "Select"
+    },
+    {
+      "id": "action-224",
+      "status": "unreviewed",
+      "value": "change:reloadLogsFromFirstPage",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 269,
+      "tag": "Select"
+    },
+    {
+      "id": "action-225",
+      "status": "unreviewed",
+      "value": "keyup:reloadLogsFromFirstPage",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 270,
+      "tag": "input"
+    },
+    {
+      "id": "action-226",
+      "status": "unreviewed",
+      "value": "change:reloadLogsFromFirstPage",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 271,
+      "tag": "input"
+    },
+    {
+      "id": "action-227",
+      "status": "unreviewed",
+      "value": "change:reloadLogsFromFirstPage",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 272,
+      "tag": "input"
+    },
+    {
+      "id": "action-228",
+      "status": "unreviewed",
+      "value": "click:unbanUser(row)",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 335,
+      "tag": "button"
+    },
+    {
+      "id": "action-229",
+      "status": "unreviewed",
+      "value": "click:openInputDetail(row)",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 352,
+      "tag": "button"
+    },
+    {
+      "id": "action-230",
+      "status": "unreviewed",
+      "value": "click:clearFlaggedHashes",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 841,
+      "tag": "button"
+    },
+    {
+      "id": "action-231",
+      "status": "unreviewed",
+      "value": "click:deleteFlaggedHash",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 858,
+      "tag": "button"
+    },
+    {
+      "id": "action-232",
+      "status": "unreviewed",
+      "value": "click:closeInputDetail",
+      "file": "frontend/src/views/admin/RiskControlView.vue",
+      "line": 1113,
+      "tag": "button"
+    },
+    {
+      "id": "action-233",
+      "status": "unreviewed",
+      "value": "click:sendTestEmail",
+      "file": "frontend/src/views/admin/SettingsView.vue",
+      "line": 8886,
+      "tag": "button"
+    },
+    {
+      "id": "action-234",
+      "status": "unreviewed",
+      "value": "click:handleResetQuota(row)",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 397,
+      "tag": "button"
+    },
+    {
+      "id": "action-235",
+      "status": "unreviewed",
+      "value": "click:handleRevoke(row)",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 406,
+      "tag": "button"
+    },
+    {
+      "id": "action-236",
+      "status": "unreviewed",
+      "value": "close:closeAssignModal",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 452,
+      "tag": "BaseDialog"
+    },
+    {
+      "id": "action-237",
+      "status": "unreviewed",
+      "value": "click:closeAssignModal",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 546,
+      "tag": "button"
+    },
+    {
+      "id": "action-238",
+      "status": "unreviewed",
+      "value": "click:closeExtendModal",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 634,
+      "tag": "button"
+    },
+    {
+      "id": "action-239",
+      "status": "unreviewed",
+      "value": "mousedown:showGuideModal = false",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 685,
+      "tag": "div"
+    },
+    {
+      "id": "action-240",
+      "status": "unreviewed",
+      "value": "click:showGuideModal = false",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 686,
+      "tag": "div"
+    },
+    {
+      "id": "action-241",
+      "status": "unreviewed",
+      "value": "click:showGuideModal = false",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 688,
+      "tag": "button"
+    },
+    {
+      "id": "action-242",
+      "status": "unreviewed",
+      "value": "click:showGuideModal = false",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 709,
+      "tag": "router-link"
+    },
+    {
+      "id": "action-243",
+      "status": "unreviewed",
+      "value": "click:showGuideModal = false",
+      "file": "frontend/src/views/admin/SubscriptionsView.vue",
+      "line": 755,
+      "tag": "button"
+    },
+    {
+      "id": "action-244",
+      "status": "unreviewed",
+      "value": "focusin:showTemplateMenu = true",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 31,
+      "tag": "div"
+    },
+    {
+      "id": "action-245",
+      "status": "unreviewed",
+      "value": "focusout:handleTemplateFocusOut",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 32,
+      "tag": "div"
+    },
+    {
+      "id": "action-246",
+      "status": "unreviewed",
+      "value": "mouseenter:showTemplateMenu = true",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 33,
+      "tag": "div"
+    },
+    {
+      "id": "action-247",
+      "status": "unreviewed",
+      "value": "mouseleave:handleTemplateMouseLeave",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 34,
+      "tag": "div"
+    },
+    {
+      "id": "action-248",
+      "status": "unreviewed",
+      "value": "click:toggleTemplateMenu",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 42,
+      "tag": "button"
+    },
+    {
+      "id": "action-249",
+      "status": "unreviewed",
+      "value": "keydown:openTemplateMenuAndFocusFirst",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 43,
+      "tag": "button"
+    },
+    {
+      "id": "action-250",
+      "status": "unreviewed",
+      "value": "keydown:openTemplateMenuAndFocusFirst",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 44,
+      "tag": "button"
+    },
+    {
+      "id": "action-251",
+      "status": "unreviewed",
+      "value": "keydown:openTemplateMenuAndFocusFirst",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 45,
+      "tag": "button"
+    },
+    {
+      "id": "action-252",
+      "status": "unreviewed",
+      "value": "keydown:closeTemplateMenuAndRestoreFocus",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 56,
+      "tag": "div"
+    },
+    {
+      "id": "action-253",
+      "status": "unreviewed",
+      "value": "click:updateStatus(status)",
+      "file": "frontend/src/views/admin/TicketDetailView.vue",
+      "line": 98,
+      "tag": "button"
+    },
+    {
+      "id": "action-254",
+      "status": "unreviewed",
+      "value": "click:showFilterDropdown = !showFilterDropdown",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 142,
+      "tag": "button"
+    },
+    {
+      "id": "action-255",
+      "status": "unreviewed",
+      "value": "click:showAttributesModal = true",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 236,
+      "tag": "button"
+    },
+    {
+      "id": "action-256",
+      "status": "unreviewed",
+      "value": "click:openActionMenu(row, $event)",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 661,
+      "tag": "button"
+    },
+    {
+      "id": "action-257",
+      "status": "unreviewed",
+      "value": "click:handleViewApiKeys(user); closeActionMenu()",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 707,
+      "tag": "button"
+    },
+    {
+      "id": "action-258",
+      "status": "unreviewed",
+      "value": "click:handleAllowedGroups(user); closeActionMenu()",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 716,
+      "tag": "button"
+    },
+    {
+      "id": "action-259",
+      "status": "unreviewed",
+      "value": "click:handleDeposit(user); closeActionMenu()",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 727,
+      "tag": "button"
+    },
+    {
+      "id": "action-260",
+      "status": "unreviewed",
+      "value": "click:handleWithdraw(user); closeActionMenu()",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 736,
+      "tag": "button"
+    },
+    {
+      "id": "action-261",
+      "status": "unreviewed",
+      "value": "click:handlePlatformQuota(user); closeActionMenu()",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 747,
+      "tag": "button"
+    },
+    {
+      "id": "action-262",
+      "status": "unreviewed",
+      "value": "click:handleBalanceHistory(user); closeActionMenu()",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 756,
+      "tag": "button"
+    },
+    {
+      "id": "action-263",
+      "status": "unreviewed",
+      "value": "click:handleDelete(user); closeActionMenu()",
+      "file": "frontend/src/views/admin/UsersView.vue",
+      "line": 768,
+      "tag": "button"
+    },
+    {
+      "id": "action-264",
+      "status": "unreviewed",
+      "value": "click:days = d",
+      "file": "frontend/src/views/admin/orders/AdminPaymentDashboardView.vue",
+      "line": 16,
+      "tag": "button"
+    },
+    {
+      "id": "action-265",
+      "status": "unreviewed",
+      "value": "click:toggleForSale(row)",
+      "file": "frontend/src/views/admin/orders/AdminPaymentPlansView.vue",
+      "line": 47,
+      "tag": "button"
+    },
+    {
+      "id": "action-266",
+      "status": "unreviewed",
+      "value": "click:planForm.for_sale = !planForm.for_sale",
+      "file": "frontend/src/views/admin/orders/PlanEditDialog.vue",
+      "line": 75,
+      "tag": "button"
+    },
+    {
+      "id": "action-267",
+      "status": "unreviewed",
+      "value": "click:copyCode",
+      "file": "frontend/src/views/user/AffiliateView.vue",
+      "line": 56,
+      "tag": "button"
+    },
+    {
+      "id": "action-268",
+      "status": "unreviewed",
+      "value": "click:copyInviteLink",
+      "file": "frontend/src/views/user/AffiliateView.vue",
+      "line": 67,
+      "tag": "button"
+    },
+    {
+      "id": "action-269",
+      "status": "unreviewed",
+      "value": "click:refreshPage",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 24,
+      "tag": "button"
+    },
+    {
+      "id": "action-270",
+      "status": "unreviewed",
+      "value": "click:downloadSelectedJobs",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 58,
+      "tag": "button"
+    },
+    {
+      "id": "action-271",
+      "status": "unreviewed",
+      "value": "click:deleteSelectedJobs",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 67,
+      "tag": "button"
+    },
+    {
+      "id": "action-272",
+      "status": "unreviewed",
+      "value": "change:toggleJobSelection(row.id, ($event.target as HTMLInputElement).checked)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 100,
+      "tag": "input"
+    },
+    {
+      "id": "action-273",
+      "status": "unreviewed",
+      "value": "click:toggleChildRows(row.id)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 112,
+      "tag": "button"
+    },
+    {
+      "id": "action-274",
+      "status": "unreviewed",
+      "value": "click:selectJob(row.id)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 117,
+      "tag": "button"
+    },
+    {
+      "id": "action-275",
+      "status": "unreviewed",
+      "value": "click:selectJob(row.id)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 184,
+      "tag": "button"
+    },
+    {
+      "id": "action-276",
+      "status": "unreviewed",
+      "value": "click:downloadJob(row)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 195,
+      "tag": "button"
+    },
+    {
+      "id": "action-277",
+      "status": "unreviewed",
+      "value": "click:toggleMoreMenu(row, $event)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 210,
+      "tag": "button"
+    },
+    {
+      "id": "action-278",
+      "status": "unreviewed",
+      "value": "change:handlePageSizeChange",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 253,
+      "tag": "Select"
+    },
+    {
+      "id": "action-279",
+      "status": "unreviewed",
+      "value": "click:handlePageChange(pagination.page - 1)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 262,
+      "tag": "button"
+    },
+    {
+      "id": "action-280",
+      "status": "unreviewed",
+      "value": "click:handlePageChange(pagination.page + 1)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 271,
+      "tag": "button"
+    },
+    {
+      "id": "action-281",
+      "status": "unreviewed",
+      "value": "click:retryFailedJob(job)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 295,
+      "tag": "button"
+    },
+    {
+      "id": "action-282",
+      "status": "unreviewed",
+      "value": "click:deleteJob(job)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 305,
+      "tag": "button"
+    },
+    {
+      "id": "action-283",
+      "status": "unreviewed",
+      "value": "mouseenter:cancelPromptPopoverClose",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 320,
+      "tag": "div"
+    },
+    {
+      "id": "action-284",
+      "status": "unreviewed",
+      "value": "mouseleave:schedulePromptPopoverClose",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 321,
+      "tag": "div"
+    },
+    {
+      "id": "action-285",
+      "status": "unreviewed",
+      "value": "click:copyPromptPopover",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 328,
+      "tag": "button"
+    },
+    {
+      "id": "action-286",
+      "status": "unreviewed",
+      "value": "click:refreshDetail",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 374,
+      "tag": "button"
+    },
+    {
+      "id": "action-287",
+      "status": "unreviewed",
+      "value": "pointerenter:schedulePromptPopoverOpen($event, item.prompt_preview || '-')",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 418,
+      "tag": "div"
+    },
+    {
+      "id": "action-288",
+      "status": "unreviewed",
+      "value": "pointerleave:schedulePromptPopoverClose",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 419,
+      "tag": "div"
+    },
+    {
+      "id": "action-289",
+      "status": "unreviewed",
+      "value": "mouseenter:schedulePromptPopoverOpen($event, item.prompt_preview || '-')",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 420,
+      "tag": "div"
+    },
+    {
+      "id": "action-290",
+      "status": "unreviewed",
+      "value": "mouseleave:schedulePromptPopoverClose",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 421,
+      "tag": "div"
+    },
+    {
+      "id": "action-291",
+      "status": "unreviewed",
+      "value": "click:showPromptPopover($event, item.prompt_preview || '-')",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 422,
+      "tag": "div"
+    },
+    {
+      "id": "action-292",
+      "status": "unreviewed",
+      "value": "focus:showPromptPopover($event, item.prompt_preview || '-')",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 423,
+      "tag": "div"
+    },
+    {
+      "id": "action-293",
+      "status": "unreviewed",
+      "value": "focusin:showPromptPopover($event, item.prompt_preview || '-')",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 424,
+      "tag": "div"
+    },
+    {
+      "id": "action-294",
+      "status": "unreviewed",
+      "value": "blur:schedulePromptPopoverClose",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 425,
+      "tag": "div"
+    },
+    {
+      "id": "action-295",
+      "status": "unreviewed",
+      "value": "click:openImagePreview(item)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 442,
+      "tag": "button"
+    },
+    {
+      "id": "action-296",
+      "status": "unreviewed",
+      "value": "error:handlePreviewError(itemPreviewKey(item))",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 448,
+      "tag": "img"
+    },
+    {
+      "id": "action-297",
+      "status": "unreviewed",
+      "value": "click:loadItemPreview(item)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 457,
+      "tag": "button"
+    },
+    {
+      "id": "action-298",
+      "status": "unreviewed",
+      "value": "click:cancelSelected",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 492,
+      "tag": "button"
+    },
+    {
+      "id": "action-299",
+      "status": "unreviewed",
+      "value": "click:retrySelected",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 501,
+      "tag": "button"
+    },
+    {
+      "id": "action-300",
+      "status": "unreviewed",
+      "value": "click:downloadSelected",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 510,
+      "tag": "button"
+    },
+    {
+      "id": "action-301",
+      "status": "unreviewed",
+      "value": "change:handleReferenceImageFiles",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 651,
+      "tag": "input"
+    },
+    {
+      "id": "action-302",
+      "status": "unreviewed",
+      "value": "click:addPromptRow",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 654,
+      "tag": "button"
+    },
+    {
+      "id": "action-303",
+      "status": "unreviewed",
+      "value": "click:removeReferenceImageDraft(refIndex)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 666,
+      "tag": "button"
+    },
+    {
+      "id": "action-304",
+      "status": "unreviewed",
+      "value": "click:removePromptRow(index)",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 689,
+      "tag": "button"
+    },
+    {
+      "id": "action-305",
+      "status": "unreviewed",
+      "value": "click:submitJob",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 710,
+      "tag": "button"
+    },
+    {
+      "id": "action-306",
+      "status": "unreviewed",
+      "value": "click:showGuideModal = false",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 743,
+      "tag": "button"
+    },
+    {
+      "id": "action-307",
+      "status": "unreviewed",
+      "value": "click:copyInstruction",
+      "file": "frontend/src/views/user/BatchImageGuideView.vue",
+      "line": 744,
+      "tag": "button"
+    },
+    {
+      "id": "action-308",
+      "status": "unreviewed",
+      "value": "click:setRange(option.value)",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 105,
+      "tag": "button"
+    },
+    {
+      "id": "action-309",
+      "status": "unreviewed",
+      "value": "click:clearDimensions",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 139,
+      "tag": "button"
+    },
+    {
+      "id": "action-310",
+      "status": "unreviewed",
+      "value": "click:trendView = 'pulse'",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 162,
+      "tag": "button"
+    },
+    {
+      "id": "action-311",
+      "status": "unreviewed",
+      "value": "click:trendView = 'line'",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 170,
+      "tag": "button"
+    },
+    {
+      "id": "action-312",
+      "status": "unreviewed",
+      "value": "click:healthMode = option.value",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 188,
+      "tag": "button"
+    },
+    {
+      "id": "action-313",
+      "status": "unreviewed",
+      "value": "click:activeTab = item.value",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 283,
+      "tag": "button"
+    },
+    {
+      "id": "action-314",
+      "status": "unreviewed",
+      "value": "click:drillModel(row)",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 307,
+      "tag": "tr"
+    },
+    {
+      "id": "action-315",
+      "status": "unreviewed",
+      "value": "click:toggleError(row.category)",
+      "file": "frontend/src/views/user/ChannelStatusV2View.vue",
+      "line": 346,
+      "tag": "button"
+    },
+    {
+      "id": "action-316",
+      "status": "unreviewed",
+      "value": "balance-history:showBalanceHistory = true",
+      "file": "frontend/src/views/user/DashboardView.vue",
+      "line": 14,
+      "tag": "UserDashboardStats"
+    },
+    {
+      "id": "action-317",
+      "status": "unreviewed",
+      "value": "dateRangeChange:loadCharts",
+      "file": "frontend/src/views/user/DashboardView.vue",
+      "line": 16,
+      "tag": "UserDashboardCharts"
+    },
+    {
+      "id": "action-318",
+      "status": "unreviewed",
+      "value": "refresh:refreshAll",
+      "file": "frontend/src/views/user/DashboardView.vue",
+      "line": 16,
+      "tag": "UserDashboardCharts"
+    },
+    {
+      "id": "action-319",
+      "status": "unreviewed",
+      "value": "click:copyToClipboard(value, row.id)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 103,
+      "tag": "button"
+    },
+    {
+      "id": "action-320",
+      "status": "unreviewed",
+      "value": "click:openGroupSelector(row)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 140,
+      "tag": "button"
+    },
+    {
+      "id": "action-321",
+      "status": "unreviewed",
+      "value": "click:confirmResetRateLimitFromTable(row)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 321,
+      "tag": "button"
+    },
+    {
+      "id": "action-322",
+      "status": "unreviewed",
+      "value": "click:openUseKeyModal(row)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 376,
+      "tag": "button"
+    },
+    {
+      "id": "action-323",
+      "status": "unreviewed",
+      "value": "click:importToCcswitch(row)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 385,
+      "tag": "button"
+    },
+    {
+      "id": "action-324",
+      "status": "unreviewed",
+      "value": "click:toggleKeyStatus(row)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 393,
+      "tag": "button"
+    },
+    {
+      "id": "action-325",
+      "status": "unreviewed",
+      "value": "click:editKey(row)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 407,
+      "tag": "button"
+    },
+    {
+      "id": "action-326",
+      "status": "unreviewed",
+      "value": "click:confirmDelete(row)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 415,
+      "tag": "button"
+    },
+    {
+      "id": "action-327",
+      "status": "unreviewed",
+      "value": "click:formData.use_custom_key = !formData.use_custom_key",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 516,
+      "tag": "button"
+    },
+    {
+      "id": "action-328",
+      "status": "unreviewed",
+      "value": "click:formData.enable_ip_restriction = !formData.enable_ip_restriction",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 558,
+      "tag": "button"
+    },
+    {
+      "id": "action-329",
+      "status": "unreviewed",
+      "value": "click:formData.enable_rate_limit = !formData.enable_rate_limit",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 670,
+      "tag": "button"
+    },
+    {
+      "id": "action-330",
+      "status": "unreviewed",
+      "value": "click:formData.enable_expiration = !formData.enable_expiration",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 844,
+      "tag": "button"
+    },
+    {
+      "id": "action-331",
+      "status": "unreviewed",
+      "value": "click:closeModals",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 913,
+      "tag": "button"
+    },
+    {
+      "id": "action-332",
+      "status": "unreviewed",
+      "value": "confirm:resetQuotaUsed",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 975,
+      "tag": "ConfirmDialog"
+    },
+    {
+      "id": "action-333",
+      "status": "unreviewed",
+      "value": "cancel:showResetQuotaDialog = false",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 976,
+      "tag": "ConfirmDialog"
+    },
+    {
+      "id": "action-334",
+      "status": "unreviewed",
+      "value": "confirm:resetRateLimitUsage",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 987,
+      "tag": "ConfirmDialog"
+    },
+    {
+      "id": "action-335",
+      "status": "unreviewed",
+      "value": "cancel:showResetRateLimitDialog = false",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 988,
+      "tag": "ConfirmDialog"
+    },
+    {
+      "id": "action-336",
+      "status": "unreviewed",
+      "value": "close:closeCcsClientSelect",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 1006,
+      "tag": "BaseDialog"
+    },
+    {
+      "id": "action-337",
+      "status": "unreviewed",
+      "value": "click:handleCcsClientSelect('claude')",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 1014,
+      "tag": "button"
+    },
+    {
+      "id": "action-338",
+      "status": "unreviewed",
+      "value": "click:handleCcsClientSelect('gemini')",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 1026,
+      "tag": "button"
+    },
+    {
+      "id": "action-339",
+      "status": "unreviewed",
+      "value": "click:closeCcsClientSelect",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 1041,
+      "tag": "button"
+    },
+    {
+      "id": "action-340",
+      "status": "unreviewed",
+      "value": "click:changeGroup(selectedKeyForGroup!, option.value)",
+      "file": "frontend/src/views/user/KeysView.vue",
+      "line": 1081,
+      "tag": "button"
+    },
+    {
+      "id": "action-341",
+      "status": "unreviewed",
+      "value": "click:activeTab = tab.key",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 13,
+      "tag": "button"
+    },
+    {
+      "id": "action-342",
+      "status": "unreviewed",
+      "value": "select:selectedMethod = $event",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 61,
+      "tag": "PaymentMethodSelector"
+    },
+    {
+      "id": "action-343",
+      "status": "unreviewed",
+      "value": "click:handleSubmitRecharge",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 87,
+      "tag": "button"
+    },
+    {
+      "id": "action-344",
+      "status": "unreviewed",
+      "value": "select:selectedMethod = $event",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 156,
+      "tag": "PaymentMethodSelector"
+    },
+    {
+      "id": "action-345",
+      "status": "unreviewed",
+      "value": "click:confirmSubscribe",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 175,
+      "tag": "button"
+    },
+    {
+      "id": "action-346",
+      "status": "unreviewed",
+      "value": "click:selectedPlan = null",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 182,
+      "tag": "button"
+    },
+    {
+      "id": "action-347",
+      "status": "unreviewed",
+      "value": "click:previewImage = checkout.help_image_url",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 224,
+      "tag": "img"
+    },
+    {
+      "id": "action-348",
+      "status": "unreviewed",
+      "value": "click:closeRenewalModal",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 233,
+      "tag": "div"
+    },
+    {
+      "id": "action-349",
+      "status": "unreviewed",
+      "value": "click:closeRenewalModal",
+      "file": "frontend/src/views/user/PaymentView.vue",
+      "line": 236,
+      "tag": "button"
+    },
+    {
+      "id": "action-350",
+      "status": "unreviewed",
+      "value": "click:closeTicketItem(row.id)",
+      "file": "frontend/src/views/user/TicketsView.vue",
+      "line": 93,
+      "tag": "button"
+    },
+    {
+      "id": "action-351",
+      "status": "unreviewed",
+      "value": "close:closeCreateDialog",
+      "file": "frontend/src/views/user/TicketsView.vue",
+      "line": 129,
+      "tag": "TicketCreateDialog"
+    },
+    {
+      "id": "action-352",
+      "status": "unreviewed",
+      "value": "submit:createTicket",
+      "file": "frontend/src/views/user/TicketsView.vue",
+      "line": 130,
+      "tag": "TicketCreateDialog"
+    },
+    {
+      "id": "action-353",
+      "status": "unreviewed",
+      "value": "click:activeTab = 'usage'",
+      "file": "frontend/src/views/user/UsageView.vue",
+      "line": 171,
+      "tag": "button"
+    },
+    {
+      "id": "action-354",
+      "status": "unreviewed",
+      "value": "click:switchToErrors",
+      "file": "frontend/src/views/user/UsageView.vue",
+      "line": 174,
+      "tag": "button"
+    },
+    {
+      "id": "action-355",
+      "status": "unreviewed",
+      "value": "click:cancelInvoice",
+      "file": "frontend/src/views/user/UserInvoiceDetailView.vue",
+      "line": 7,
+      "tag": "button"
+    },
+    {
+      "id": "action-356",
+      "status": "unreviewed",
+      "value": "change:fetchOrders",
+      "file": "frontend/src/views/user/UserOrdersView.vue",
+      "line": 7,
+      "tag": "Select"
+    }
+  ]
+}
