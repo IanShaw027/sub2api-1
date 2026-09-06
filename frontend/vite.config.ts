@@ -156,6 +156,11 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: devPort,
       proxy: {
+        '/api/v1/creation/audio/realtime': {
+          target: backendUrl,
+          changeOrigin: false,
+          ws: true
+        },
         '/api': {
           target: backendUrl,
           changeOrigin: true

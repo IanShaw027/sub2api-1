@@ -8,6 +8,9 @@ import {
   type CreationImageJob,
   type CreationImageListResponse,
   type CreationMessage,
+  type CreationExchange,
+  type CreationExchangeRequest,
+  type CreationTokenUsage,
   type CreationSession,
   type CreationSessionListResponse,
   type CreationSessionMode,
@@ -69,6 +72,11 @@ export async function createSessionMessage(
   payload: { role: string; content: unknown; model?: string },
 ): Promise<CreationMessage> {
   const { data } = await apiClient.post<CreationMessage>(`${basePath}/sessions/${sessionId}/messages`, payload)
+  return data
+}
+
+export async function createSessionExchange(sessionId: number, payload: CreationExchangeRequest): Promise<CreationExchange> {
+  const { data } = await apiClient.post<CreationExchange>(`${basePath}/sessions/${sessionId}/exchanges`, payload)
   return data
 }
 
@@ -236,6 +244,7 @@ export async function streamChatCompletions(options: {
   userText: string
   signal?: AbortSignal
   onDelta: (text: string) => void
+  onUsage?: (usage: CreationTokenUsage) => void
 }): Promise<string> {
   const history = buildChatHistory(options.messages)
   history.push({ role: 'user', content: options.userText })
@@ -248,6 +257,7 @@ export async function streamChatCompletions(options: {
       body: JSON.stringify({
         model: options.model,
         stream: true,
+        stream_options: { include_usage: true },
         messages: history,
       }),
       signal: options.signal,
@@ -259,7 +269,7 @@ export async function streamChatCompletions(options: {
     throw new Error(errText || `Chat request failed (${response.status})`)
   }
 
-  return readSSEText(response, options.onDelta)
+  return readSSEText(response, options.onDelta, options.onUsage)
 }
 
 export async function streamMessages(options: {
@@ -271,6 +281,7 @@ export async function streamMessages(options: {
   userText: string
   signal?: AbortSignal
   onDelta: (text: string) => void
+  onUsage?: (usage: CreationTokenUsage) => void
 }): Promise<string> {
   const history = buildChatHistory(options.messages)
   history.push({ role: 'user', content: options.userText })
@@ -295,7 +306,7 @@ export async function streamMessages(options: {
     throw new Error(errText || `Messages request failed (${response.status})`)
   }
 
-  return readSSEText(response, options.onDelta)
+  return readSSEText(response, options.onDelta, options.onUsage)
 }
 
 export async function streamCreationChat(options: {
@@ -307,6 +318,7 @@ export async function streamCreationChat(options: {
   userText: string
   signal?: AbortSignal
   onDelta: (text: string) => void
+  onUsage?: (usage: CreationTokenUsage) => void
 }): Promise<string> {
   if (usesMessagesEndpoint(options.platform)) {
     return streamMessages(options)
@@ -317,6 +329,7 @@ export async function streamCreationChat(options: {
 async function readSSEText(
   response: Response,
   onDelta: (text: string) => void,
+  onUsage?: (usage: CreationTokenUsage) => void,
 ): Promise<string> {
   const reader = response.body?.getReader()
   if (!reader) throw new Error('No response body')
@@ -327,9 +340,10 @@ async function readSSEText(
   let completed = false
 
   function consumeBuffer() {
-    const { deltas, remainder, done } = parseSSEBuffer(buffer)
+    const { deltas, remainder, done, usage } = parseSSEBuffer(buffer)
     buffer = remainder
     completed = done
+    if (Object.keys(usage).length > 0) onUsage?.(usage)
     for (const delta of deltas) {
       fullText += delta
       onDelta(delta)
@@ -421,6 +435,7 @@ export const creationAPI = {
   deleteSession,
   listSessionMessages,
   createSessionMessage,
+  createSessionExchange,
   listImages,
   getModels,
   submitImageGenerationAsync,

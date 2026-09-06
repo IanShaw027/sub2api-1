@@ -10,7 +10,9 @@ import creationAPI, {
 import { classifyModels, pickDefaultModel } from '../mediaModels'
 import type {
   CreationImageJob,
+  CreationExchangeRequest,
   CreationMessage,
+  CreationTokenUsage,
   CreationSession,
   CreationSessionMode,
   PendingSendRequest,
@@ -33,6 +35,12 @@ type ImagePoller = {
   inFlight: boolean
 }
 
+type PendingExchange = {
+  request: CreationExchangeRequest
+  user: CreationMessage
+  assistant: CreationMessage
+}
+
 function studioError(key: string): string {
   return String(i18n.global.t(key))
 }
@@ -42,6 +50,13 @@ function isAbortError(err: unknown): boolean {
     (err instanceof DOMException && err.name === 'AbortError') ||
     (err instanceof Error && err.name === 'AbortError')
   )
+}
+
+class InterruptedCreationSend extends Error {
+  constructor() {
+    super('Aborted')
+    this.name = 'AbortError'
+  }
 }
 
 export const useCreationStore = defineStore('creation', () => {
@@ -70,8 +85,13 @@ export const useCreationStore = defineStore('creation', () => {
   const pendingQueue = ref<PendingSendRequest[]>([])
   const lastFailedSend = ref<{ sessionId: number; text: string } | null>(null)
   const initialized = ref(false)
+  const generationAvailable = ref(true)
+  const pendingExchanges = ref(new Map<number, PendingExchange>())
+  const savingSessions = ref(new Set<number>())
 
   let streamAbort: AbortController | null = null
+  let stateEpoch = 0
+  let queueRunId = 0
   let initialization: Promise<void> | null = null
   let modelRequestId = 0
   let messagesRequestId = 0
@@ -104,6 +124,29 @@ export const useCreationStore = defineStore('creation', () => {
 
   const hasImageModels = computed(() => imageModels.value.length > 0)
   const modelUpdating = computed(() => selectedSessionId.value != null && modelUpdates.value.has(selectedSessionId.value))
+  const hasUnsavedExchange = computed(() => selectedSessionId.value != null && pendingExchanges.value.has(selectedSessionId.value))
+  const saving = computed(() => selectedSessionId.value != null && savingSessions.value.has(selectedSessionId.value))
+
+  function assertCurrentEpoch(epoch: number) {
+    if (epoch !== stateEpoch) throw new DOMException('Aborted', 'AbortError')
+  }
+
+  function withPendingExchange(items: CreationMessage[], sessionId: number): CreationMessage[] {
+    const pending = pendingExchanges.value.get(sessionId)
+    if (!pending) return items
+    const persisted = items.filter((item) => item.exchange_request_id === pending.request.request_id)
+    if (persisted.some((item) => item.role === 'user') && persisted.some((item) => item.role === 'assistant')) {
+      pendingExchanges.value.delete(sessionId)
+      clearMatchingFailure(sessionId, pending.request.user_content)
+      return items
+    }
+    const ids = new Set([pending.user.id, pending.assistant.id])
+    return [...items.filter((item) => !ids.has(item.id)), pending.user, pending.assistant]
+  }
+
+  function clearMatchingFailure(sessionId: number, text: string) {
+    if (lastFailedSend.value?.sessionId === sessionId && lastFailedSend.value.text === text) lastFailedSend.value = null
+  }
 
   function clearImagePollers() {
     for (const poller of imagePollers.values()) {
@@ -130,7 +173,10 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function loadGroups() {
-    groups.value = await userGroupsAPI.getAvailable()
+    const epoch = stateEpoch
+    const items = await userGroupsAPI.getAvailable()
+    assertCurrentEpoch(epoch)
+    groups.value = items
     if (!groupId.value && groups.value.length > 0) {
       groupId.value = groups.value[0].id
     }
@@ -161,7 +207,7 @@ export const useCreationStore = defineStore('creation', () => {
       const items = await loadAllPages((page) => creationAPI.listSessions({ page, page_size: 100 }))
       if (requestId === sessionsRequestId) sessions.value = [...new Map(items.map((item) => [item.id, item])).values()]
     } catch (err) {
-      error.value = err instanceof Error ? err.message : studioError('studio.errors.loadSessions')
+      if (requestId === sessionsRequestId) error.value = err instanceof Error ? err.message : studioError('studio.errors.loadSessions')
       throw err
     } finally {
       if (requestId === sessionsRequestId) sessionsLoading.value = false
@@ -175,7 +221,7 @@ export const useCreationStore = defineStore('creation', () => {
     try {
       const items = await creationAPI.listSessionMessages(sessionId)
       if (requestId === messagesRequestId && selectedSessionId.value === sessionId) {
-        messages.value = items
+        messages.value = withPendingExchange(items, sessionId)
       }
     } catch (err) {
       if (requestId === messagesRequestId) {
@@ -260,14 +306,28 @@ export const useCreationStore = defineStore('creation', () => {
     try {
       groupId.value = session.group_id
       model.value = session.model || ''
-      await loadModelsForGroup(session.group_id)
+      let modelError: unknown
+      try {
+        await loadModelsForGroup(session.group_id)
+      } catch (err) {
+        modelError = err
+      }
       if (requestId !== selectionRequestId || selectedSessionId.value !== sessionId) return
+      generationAvailable.value = !modelError
+      if (modelError) {
+        chatModels.value = []
+        imageModels.value = []
+      }
 
       if (session.mode === 'image') {
         await loadImageTasks(sessionId)
       } else {
         await loadMessages(sessionId)
       }
+      if (requestId !== selectionRequestId) return
+      if (modelError) error.value = modelError instanceof Error ? modelError.message : studioError('studio.errors.noModel')
+      const pending = pendingExchanges.value.get(sessionId)
+      if (pending) lastFailedSend.value = { sessionId, text: pending.request.user_content }
     } catch (err) {
       if (requestId === selectionRequestId) {
         selectedSessionId.value = null
@@ -281,32 +341,64 @@ export const useCreationStore = defineStore('creation', () => {
 
   async function createSession(mode: CreationSessionMode) {
     if (!groupId.value) throw new Error(studioError('studio.errors.noGroup'))
-    await loadModelsForGroup(groupId.value)
-    const defaultModel = pickDefaultModel(
-      mode === 'image' ? imageModels.value : chatModels.value,
-      model.value,
-    )
-    const session = await creationAPI.createSession({
-      group_id: groupId.value,
-      mode,
-      model: defaultModel,
-      title: mode === 'image' ? 'Image session' : 'New chat',
-    })
-    sessions.value = [session, ...sessions.value]
-    sessionModeFilter.value = mode
-    model.value = session.model || defaultModel
-    await selectSession(session.id)
-    return session
+    const epoch = stateEpoch
+    const requestId = ++selectionRequestId
+    const targetGroupId = groupId.value
+    sessionLoading.value = true
+    try {
+      await loadModelsForGroup(targetGroupId)
+      assertCurrentEpoch(epoch)
+      if (requestId !== selectionRequestId || groupId.value !== targetGroupId) throw new DOMException('Aborted', 'AbortError')
+      const defaultModel = pickDefaultModel(
+        mode === 'image' ? imageModels.value : chatModels.value,
+        model.value,
+      )
+      const session = await creationAPI.createSession({
+        group_id: targetGroupId,
+        mode,
+        model: defaultModel,
+        title: mode === 'image' ? 'Image session' : 'New chat',
+      })
+      assertCurrentEpoch(epoch)
+      sessions.value = [session, ...sessions.value]
+      if (requestId !== selectionRequestId) return session
+      sessionModeFilter.value = mode
+      model.value = session.model || defaultModel
+      await selectSession(session.id)
+      return session
+    } catch (err) {
+      if (epoch === stateEpoch && requestId === selectionRequestId && !isAbortError(err)) {
+        error.value = err instanceof Error ? err.message : studioError('studio.errors.loadSessions')
+      }
+      throw err
+    } finally {
+      if (epoch === stateEpoch && requestId === selectionRequestId) sessionLoading.value = false
+    }
   }
 
   async function deleteSession(sessionId: number) {
+    const epoch = stateEpoch
     if (selectedSessionId.value === sessionId) {
       stopStreaming()
       pendingQueue.value = []
       lastFailedSend.value = null
     }
     clearImagePollersForSession(sessionId)
-    await creationAPI.deleteSession(sessionId)
+    try {
+      await creationAPI.deleteSession(sessionId)
+    } catch (err) {
+      if (epoch === stateEpoch) {
+        error.value = err instanceof Error ? err.message : studioError('studio.errors.loadSessions')
+        const pending = pendingExchanges.value.get(sessionId)
+        if (pending && selectedSessionId.value === sessionId) {
+          lastFailedSend.value = { sessionId, text: pending.request.user_content }
+        }
+      }
+      throw err
+    }
+    assertCurrentEpoch(epoch)
+    pendingExchanges.value.delete(sessionId)
+    if (lastFailedSend.value?.sessionId === sessionId) lastFailedSend.value = null
     sessions.value = sessions.value.filter((session) => session.id !== sessionId)
     if (selectedSessionId.value === sessionId) {
       selectedSessionId.value = null
@@ -317,6 +409,8 @@ export const useCreationStore = defineStore('creation', () => {
 
   async function setGroupId(nextGroupId: number | null) {
     if (nextGroupId === groupId.value) return
+    const epoch = stateEpoch
+    const requestId = ++selectionRequestId
     stopStreaming()
     clearImagePollers()
     pendingQueue.value = []
@@ -325,21 +419,38 @@ export const useCreationStore = defineStore('creation', () => {
     messages.value = []
     imageTasks.value = []
     groupId.value = nextGroupId
-    if (!nextGroupId) return
+    if (!nextGroupId) {
+      sessionLoading.value = false
+      return
+    }
     model.value = ''
-    await loadModelsForGroup(nextGroupId)
-    model.value = pickDefaultModel(
-      sessionModeFilter.value === 'image' ? imageModels.value : chatModels.value,
-      model.value,
-    )
-    const mode = sessionModeFilter.value === 'image' && imageModels.value.length === 0
-      ? 'chat'
-      : sessionModeFilter.value
-    sessionModeFilter.value = mode
-    await createSession(mode)
+    sessionLoading.value = true
+    generationAvailable.value = false
+    try {
+      await loadModelsForGroup(nextGroupId)
+      assertCurrentEpoch(epoch)
+      if (requestId !== selectionRequestId || groupId.value !== nextGroupId) return
+      model.value = pickDefaultModel(
+        sessionModeFilter.value === 'image' ? imageModels.value : chatModels.value,
+        model.value,
+      )
+      const mode = sessionModeFilter.value === 'image' && imageModels.value.length === 0
+        ? 'chat'
+        : sessionModeFilter.value
+      sessionModeFilter.value = mode
+      await createSession(mode)
+    } catch (err) {
+      if (epoch === stateEpoch && requestId === selectionRequestId && !isAbortError(err)) {
+        error.value = err instanceof Error ? err.message : studioError('studio.errors.noModel')
+      }
+      throw err
+    } finally {
+      if (epoch === stateEpoch && requestId === selectionRequestId) sessionLoading.value = false
+    }
   }
 
   async function setModel(nextModel: string) {
+    const epoch = stateEpoch
     const session = selectedSession.value
     if (session && modelUpdates.value.has(session.id)) return
     model.value = nextModel
@@ -347,16 +458,17 @@ export const useCreationStore = defineStore('creation', () => {
     modelUpdates.value.add(session.id)
     try {
       await creationAPI.updateSession(session.id, { model: nextModel })
+      assertCurrentEpoch(epoch)
       session.model = nextModel
       if (selectedSessionId.value === session.id) model.value = nextModel
     } catch (err) {
-      if (selectedSessionId.value === session.id) {
+      if (epoch === stateEpoch && selectedSessionId.value === session.id) {
         model.value = session.model
         error.value = err instanceof Error ? err.message : studioError('studio.errors.send')
       }
       throw err
     } finally {
-      modelUpdates.value.delete(session.id)
+      if (epoch === stateEpoch) modelUpdates.value.delete(session.id)
     }
   }
 
@@ -367,7 +479,7 @@ export const useCreationStore = defineStore('creation', () => {
 
   async function submitText(text: string) {
     const trimmed = text.trim()
-    if (!trimmed || !selectedSessionId.value || sessionLoading.value || messagesLoading.value || modelUpdating.value) return
+    if (!trimmed || !selectedSessionId.value || sessionLoading.value || messagesLoading.value || modelUpdating.value || !generationAvailable.value || hasUnsavedExchange.value) return
     enqueueSend(selectedSessionId.value, trimmed)
     if (!queueRunning && !streaming.value) {
       await processQueue()
@@ -377,17 +489,27 @@ export const useCreationStore = defineStore('creation', () => {
   async function processQueue() {
     if (queueRunning || pendingQueue.value.length === 0) return
     queueRunning = true
+    const epoch = stateEpoch
+    const runId = ++queueRunId
     try {
       while (pendingQueue.value.length > 0) {
         const job = pendingQueue.value[0]
         try {
           await sendMessage(job.text, job.sessionId)
+          if (epoch !== stateEpoch) return
           if (pendingQueue.value[0] === job) {
             pendingQueue.value.shift()
           }
-          lastFailedSend.value = null
+          clearMatchingFailure(job.sessionId, job.text)
         } catch (err) {
-          lastFailedSend.value = { sessionId: job.sessionId, text: job.text }
+          if (epoch !== stateEpoch) return
+          if (isAbortError(err) && !(err instanceof InterruptedCreationSend)) {
+            if (pendingQueue.value[0] === job) pendingQueue.value.shift()
+            continue
+          }
+          if (selectedSessionId.value === job.sessionId || !lastFailedSend.value) {
+            lastFailedSend.value = { sessionId: job.sessionId, text: job.text }
+          }
           if (pendingQueue.value[0] === job) {
             pendingQueue.value.shift()
           }
@@ -395,18 +517,48 @@ export const useCreationStore = defineStore('creation', () => {
         }
       }
     } finally {
-      queueRunning = false
+      if (runId === queueRunId) queueRunning = false
+    }
+  }
+
+  async function savePendingExchange(sessionId: number) {
+    const pending = pendingExchanges.value.get(sessionId)
+    if (!pending || savingSessions.value.has(sessionId)) return
+    const epoch = stateEpoch
+    savingSessions.value.add(sessionId)
+    try {
+      const result = await creationAPI.createSessionExchange(sessionId, pending.request)
+      assertCurrentEpoch(epoch)
+      pendingExchanges.value.delete(sessionId)
+      if (selectedSessionId.value === sessionId) {
+        messages.value = [
+          ...messages.value.filter((message) => ![pending.user.id, pending.assistant.id, result.user.id, result.assistant.id].includes(message.id)),
+          result.user,
+          result.assistant,
+        ]
+      }
+    } catch (err) {
+      if (epoch === stateEpoch && selectedSessionId.value === sessionId && !isAbortError(err)) {
+        error.value = err instanceof Error ? err.message : studioError('studio.errors.send')
+      }
+      throw err
+    } finally {
+      if (epoch === stateEpoch) savingSessions.value.delete(sessionId)
     }
   }
 
   async function sendMessage(text: string, sessionId = selectedSessionId.value) {
+    const epoch = stateEpoch
     const trimmed = text.trim()
     if (!trimmed || !sessionId) return
     if (sessionId !== selectedSessionId.value) await selectSession(sessionId)
+    assertCurrentEpoch(epoch)
     if (sessionId !== selectedSessionId.value) throw new DOMException('Aborted', 'AbortError')
     if (sessionLoading.value || messagesLoading.value || modelUpdating.value) {
       throw new Error(studioError('common.loading'))
     }
+    if (pendingExchanges.value.has(sessionId)) throw new Error(studioError('studio.errors.unsavedExchange'))
+    if (!generationAvailable.value) throw new Error(studioError('studio.errors.noModel'))
 
     const session = sessions.value.find((item) => item.id === sessionId)
     if (!session) return
@@ -422,6 +574,7 @@ export const useCreationStore = defineStore('creation', () => {
       return
     }
 
+    const exchangeRequestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
     const optimisticUser: CreationMessage = {
       id: Date.now(),
       session_id: sessionId,
@@ -439,6 +592,7 @@ export const useCreationStore = defineStore('creation', () => {
     error.value = null
 
     try {
+      const usage: CreationTokenUsage = {}
       const assistantText = await creationAPI.streamCreationChat({
         groupId: requestGroupId,
         sessionId,
@@ -452,7 +606,9 @@ export const useCreationStore = defineStore('creation', () => {
             streamingContent.value += delta
           }
         },
+        onUsage: (value) => { Object.assign(usage, value) },
       })
+      assertCurrentEpoch(epoch)
       if (controller.signal.aborted) {
         throw new DOMException('Aborted', 'AbortError')
       }
@@ -460,16 +616,26 @@ export const useCreationStore = defineStore('creation', () => {
       const finalAssistant = assistantText || streamingContent.value
       if (!finalAssistant.trim()) throw new Error(studioError('studio.errors.stream'))
 
-      await creationAPI.createSessionMessage(sessionId, {
-        role: 'user',
-        content: trimmed,
-      })
-      await creationAPI.createSessionMessage(sessionId, {
+      const assistant: CreationMessage = {
+        id: -optimisticUser.id,
+        session_id: sessionId,
         role: 'assistant',
         content: finalAssistant,
         model: requestModel,
+        created_at: new Date().toISOString(),
+        ...usage,
+      }
+      pendingExchanges.value.set(sessionId, {
+        request: { request_id: exchangeRequestId, user_content: trimmed, assistant_content: finalAssistant, model: requestModel, ...usage },
+        user: optimisticUser,
+        assistant,
       })
       if (selectedSessionId.value === sessionId) {
+        messages.value = withPendingExchange(messages.value, sessionId)
+        streamingContent.value = ''
+      }
+      await savePendingExchange(sessionId)
+      if (epoch === stateEpoch && selectedSessionId.value === sessionId && !pendingExchanges.value.has(sessionId)) {
         try {
           await loadMessages(sessionId)
         } catch {
@@ -477,11 +643,14 @@ export const useCreationStore = defineStore('creation', () => {
         }
       }
     } catch (err) {
-      if (selectedSessionId.value === sessionId) {
+      if (epoch === stateEpoch && selectedSessionId.value === sessionId && !pendingExchanges.value.has(sessionId)) {
         messages.value = messages.value.filter((msg) => msg.id !== optimisticUser.id)
       }
-      if (!isAbortError(err)) {
+      if (epoch === stateEpoch && selectedSessionId.value === sessionId && !isAbortError(err)) {
         error.value = err instanceof Error ? err.message : studioError('studio.errors.send')
+      }
+      if (epoch === stateEpoch && isAbortError(err) && sessions.value.some((session) => session.id === sessionId)) {
+        throw new InterruptedCreationSend()
       }
       throw err
     } finally {
@@ -494,6 +663,8 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function sendImagePrompt(prompt: string, session: CreationSession) {
+    const epoch = stateEpoch
+    const selectionId = selectionRequestId
     const capturedGroupId = session.group_id
     const capturedModel = session.model || model.value
     if (!capturedGroupId || !capturedModel) {
@@ -521,6 +692,7 @@ export const useCreationStore = defineStore('creation', () => {
         model: capturedModel,
         prompt,
       })
+      assertCurrentEpoch(epoch)
 
       const mapped = mapAsyncTaskToImageJob(task, session.id, capturedGroupId, capturedModel, prompt)
       imageTasks.value = imageTasks.value.map((item) =>
@@ -536,6 +708,7 @@ export const useCreationStore = defineStore('creation', () => {
 
       pollImageTask(task.task_id, session.id, placeholder.id, capturedGroupId)
     } catch (err) {
+      if (epoch !== stateEpoch) throw err
       imageTasks.value = imageTasks.value.map((item) =>
         item.id === placeholder.id
           ? {
@@ -546,10 +719,10 @@ export const useCreationStore = defineStore('creation', () => {
             }
           : item,
       )
-      error.value = err instanceof Error ? err.message : studioError('studio.errors.generate')
+      if (selectedSessionId.value === session.id) error.value = err instanceof Error ? err.message : studioError('studio.errors.generate')
       throw err
     } finally {
-      streaming.value = false
+      if (epoch === stateEpoch && selectionId === selectionRequestId) streaming.value = false
     }
   }
 
@@ -560,6 +733,7 @@ export const useCreationStore = defineStore('creation', () => {
     pollGroupId: number,
   ) {
     if (imagePollers.has(taskId)) return
+    const epoch = stateEpoch
 
     const poller: ImagePoller = {
       timer: setInterval(() => undefined, IMAGE_POLL_INTERVAL_MS),
@@ -573,10 +747,11 @@ export const useCreationStore = defineStore('creation', () => {
       poller.inFlight = true
       try {
         const task = await creationAPI.getImageTask(pollGroupId, taskId)
+        if (epoch !== stateEpoch || imagePollers.get(taskId) !== poller) return
         const status = task.status
         const mediaUrl = extractImageUrlFromTask(task)
 
-        if (selectedSessionId.value === sessionId) {
+        if (epoch === stateEpoch && selectedSessionId.value === sessionId) {
           imageTasks.value = imageTasks.value.map((item) => {
             if (item.id !== placeholderId) return item
             return {
@@ -603,7 +778,7 @@ export const useCreationStore = defineStore('creation', () => {
           }
         }
       } catch (err) {
-        if (selectedSessionId.value === sessionId) {
+        if (epoch === stateEpoch && selectedSessionId.value === sessionId && imagePollers.get(taskId) === poller) {
           error.value = err instanceof Error ? err.message : studioError('studio.errors.poll')
         }
       } finally {
@@ -618,47 +793,72 @@ export const useCreationStore = defineStore('creation', () => {
   }
 
   async function retryLastFailed() {
-    if (streaming.value || sessionLoading.value || modelUpdating.value) return
+    if (streaming.value || sessionLoading.value || modelUpdating.value || saving.value) return
+    const epoch = stateEpoch
     const failed = lastFailedSend.value
     if (!failed) return
     lastFailedSend.value = null
     error.value = null
     try {
-      await sendMessage(failed.text, failed.sessionId)
-    } catch {
-      lastFailedSend.value = failed
+      if (pendingExchanges.value.has(failed.sessionId)) {
+        if (selectedSessionId.value !== failed.sessionId) await selectSession(failed.sessionId)
+        assertCurrentEpoch(epoch)
+        await savePendingExchange(failed.sessionId)
+        if (epoch === stateEpoch) clearMatchingFailure(failed.sessionId, failed.text)
+      } else {
+        await sendMessage(failed.text, failed.sessionId)
+      }
+    } catch (err) {
+      if (epoch === stateEpoch && (!isAbortError(err) || err instanceof InterruptedCreationSend) && (selectedSessionId.value === failed.sessionId || !lastFailedSend.value)) {
+        lastFailedSend.value = failed
+      }
     }
   }
 
   async function initialize() {
     if (initialized.value) return
     if (initialization) return initialization
-    initialization = (async () => {
+    const epoch = stateEpoch
+    const initialSelectionId = selectionRequestId
+    const request = (async () => {
       await loadGroups()
+      assertCurrentEpoch(epoch)
       await loadSessions()
+      assertCurrentEpoch(epoch)
 
       const modeSessions = sessions.value.filter((session) => session.mode === sessionModeFilter.value)
+      if (initialSelectionId !== selectionRequestId) {
+        initialized.value = true
+        return
+      }
       if (modeSessions.length > 0) {
         await selectSession(modeSessions[0].id)
       } else if (groupId.value) {
         await createSession(sessionModeFilter.value)
       }
+      assertCurrentEpoch(epoch)
       initialized.value = true
     })()
+    initialization = request
     try {
-      await initialization
+      await request
     } finally {
-      initialization = null
+      if (initialization === request) initialization = null
     }
   }
 
   function reset() {
+    stateEpoch += 1
+    queueRunId += 1
     stopStreaming()
     clearImagePollers()
     sessions.value = []
     sessionsLoading.value = false
     sessionLoading.value = false
     modelUpdates.value.clear()
+    pendingExchanges.value.clear()
+    savingSessions.value.clear()
+    generationAvailable.value = true
     selectedSessionId.value = null
     sessionModeFilter.value = 'chat'
     messages.value = []
@@ -690,6 +890,9 @@ export const useCreationStore = defineStore('creation', () => {
     sessionsLoading,
     sessionLoading,
     modelUpdating,
+    generationAvailable,
+    hasUnsavedExchange,
+    saving,
     selectedSessionId,
     sessionModeFilter,
     messages,

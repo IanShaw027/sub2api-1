@@ -4,7 +4,7 @@
 
  <AppSidebar />
 
- <div class="app-shell-main" :class="{ 'is-collapsed': !isDesktop || sidebarCollapsed }">
+ <div class="app-shell-main" :class="{ 'is-collapsed': !isDesktop || sidebarCollapsed, 'is-workspace': fillHeight }">
  <AppHeader />
 
  <main class="app-shell-content">
@@ -24,6 +24,8 @@ import { useOnboardingStore } from '@/stores/onboarding'
 import { useIsMobile } from '@/composables/useIsMobile'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
+
+withDefaults(defineProps<{ fillHeight?: boolean }>(), { fillHeight: false })
 
 const appStore = useAppStore()
 const authStore = useAuthStore()
@@ -86,6 +88,25 @@ defineExpose({ replayTour })
 
 .app-shell-content {
  padding: 1rem;
+}
+
+.app-shell-main.is-workspace {
+ height: 100vh;
+ height: 100dvh;
+ min-height: 0;
+ display: flex;
+ flex-direction: column;
+}
+
+.is-workspace > .app-shell-content {
+ flex: 1;
+ min-height: 0;
+ display: flex;
+ flex-direction: column;
+}
+
+.is-workspace > :deep(.app-header) {
+ flex-shrink: 0;
 }
 
 @media (min-width: 768px) {

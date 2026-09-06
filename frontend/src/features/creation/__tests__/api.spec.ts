@@ -104,4 +104,52 @@ describe('streamMessages', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)))
     await expect(streamCreationChat(options)).resolves.toBe('answer')
   })
+
+  it('requests and reads the final OpenAI empty-choices usage frame after finish_reason', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response([
+      'data: {"choices":[{"delta":{"content":"answer"},"finish_reason":null}],"usage":null}',
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":null}',
+      'data: {"choices":[],"usage":{"prompt_tokens":17,"completion_tokens":9,"total_tokens":26}}',
+      'data: [DONE]',
+      '',
+    ].join('\n\n')))
+    vi.stubGlobal('fetch', fetchMock)
+    const onUsage = vi.fn()
+    await expect(streamCreationChat({ ...options, platform: 'openai', onUsage })).resolves.toBe('answer')
+    expect(onUsage).toHaveBeenCalledOnce()
+    expect(onUsage).toHaveBeenCalledWith({ input_tokens: 17, output_tokens: 9 })
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1].body))).toMatchObject({ stream_options: { include_usage: true } })
+  })
+
+  it('reports Anthropic input and cumulative output usage across network chunks', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of [
+          'data: {"type":"message_start","message":{"usage":{"input_tokens":14,"output_tokens":1}}}\n\n',
+          'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"answer"}}\n\n',
+          'data: {"type":"message_delta","usage":{"output_tokens":8}}\n\n',
+          'data: {"type":"message_stop"}\n\n',
+        ]) controller.enqueue(new TextEncoder().encode(chunk))
+        controller.close()
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(body)))
+    const onUsage = vi.fn()
+    await expect(streamCreationChat({ ...options, onUsage })).resolves.toBe('answer')
+    expect(onUsage.mock.calls).toEqual([[{ input_tokens: 14, output_tokens: 1 }], [{ output_tokens: 8 }]])
+  })
+
+  it('leaves usage absent when the provider does not send it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('data: {"choices":[{"delta":{"content":"answer"}}],"usage":null}\n\ndata: [DONE]\n\n')))
+    const onUsage = vi.fn()
+    await streamCreationChat({ ...options, onUsage })
+    expect(onUsage).not.toHaveBeenCalled()
+  })
+
+  it('ignores invalid negative and fractional token counts', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('data: {"choices":[],"usage":{"prompt_tokens":-1,"completion_tokens":2.5}}\n\ndata: [DONE]\n\n')))
+    const onUsage = vi.fn()
+    await streamCreationChat({ ...options, onUsage })
+    expect(onUsage).not.toHaveBeenCalled()
+  })
 })

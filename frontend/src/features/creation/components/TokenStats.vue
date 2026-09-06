@@ -23,9 +23,11 @@ const hasOutput = computed(() => typeof props.outputTokens === 'number')
 const hasCount = computed(() => typeof props.taskCount === 'number')
 const hasData = computed(() => hasInput.value || hasOutput.value || hasCount.value)
 
-const inputValue = computed(() => props.inputTokens ?? 0)
-const outputValue = computed(() => props.outputTokens ?? 0)
-const totalTokens = computed(() => inputValue.value + outputValue.value)
+const inputValue = computed(() => props.inputTokens ?? t('common.unknown'))
+const outputValue = computed(() => props.outputTokens ?? t('common.unknown'))
+const totalTokens = computed(() => hasInput.value && hasOutput.value
+  ? (props.inputTokens as number) + (props.outputTokens as number)
+  : t('common.unknown'))
 
 const cardSubText = computed(() =>
   hasCount.value
@@ -61,7 +63,7 @@ function onBlur() {
 
 <template>
   <StatCard
-    v-if="variant === 'card' && hasData"
+    v-if="variant === 'card'"
     class="studio-token-stats-card"
     :label="t('studio.tokens.cardLabel')"
     :value="totalTokens"

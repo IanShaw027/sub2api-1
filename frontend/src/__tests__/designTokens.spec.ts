@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process'
-import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -259,5 +260,22 @@ describe('design tokens', () => {
     })
     expect(r.stdout + r.stderr).toMatch(/total: 0/)
     expect(r.status).toBe(0)
+  })
+
+  it('distinguishes dark utility classes from theme configuration keys', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'sub2api-ui-lint-'))
+    const fixture = join(directory, 'theme.vue')
+    try {
+      for (const [source, expected] of [
+        ["const themes = { light: 'github-light', dark: 'github-dark' }", 0],
+        ['<div class="dark:bg-surface"></div>', 1],
+      ] as const) {
+        writeFileSync(fixture, source)
+        const result = spawnSync(process.execPath, [resolve(srcDir, '../scripts/ui-lint.mjs'), fixture], { encoding: 'utf8' })
+        expect(result.status, result.stdout + result.stderr).toBe(expected)
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

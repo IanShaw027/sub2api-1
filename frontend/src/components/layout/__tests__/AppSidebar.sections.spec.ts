@@ -14,6 +14,7 @@ import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useOnboardingStore } from '@/stores/onboarding'
 import type { User } from '@/types'
 import type { NavItem } from '../sidebar/navSections'
+import { creationModes, creationPath } from '@/features/creation/navigation'
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
@@ -187,7 +188,7 @@ describe('AppSidebar section grouping', () => {
     ])
   })
 
-  it('maps user items into workspace / billing / support', () => {
+  it('separates API services, billing, account and support without dropping user items', () => {
     const items = [
       nav('/dashboard'),
       nav('/keys'),
@@ -198,10 +199,36 @@ describe('AppSidebar section grouping', () => {
       nav('/profile')
     ]
     const sections = groupUserNav(items)
-    expect(sections.map((section) => section.key)).toEqual(['workspace', 'billing', 'support'])
+    expect(sections.map((section) => section.key)).toEqual(['workspace', 'billing', 'account', 'support'])
     expect(sections[0].items.map((item) => item.path)).toEqual(['/dashboard', '/keys', '/usage'])
     expect(sections[1].items.map((item) => item.path)).toEqual(['/subscriptions', '/redeem'])
-    expect(sections[2].items.map((item) => item.path)).toEqual(['/tickets', '/profile'])
+    expect(sections[2].items.map((item) => item.path)).toEqual(['/profile'])
+    expect(sections[3].items.map((item) => item.path)).toEqual(['/tickets'])
+  })
+
+  it('groups all five creation routes outside the admin personal menu', () => {
+    const creation = creationModes.map(mode => nav(creationPath(mode)))
+    const sections = groupAdminNav([nav('/admin/dashboard')], [nav('/keys'), ...creation, nav('/profile')])
+    expect(sections.map(section => section.key)).toEqual(['overview', 'creation', 'myAccount'])
+    expect(sections[1].items).toEqual(creation)
+    expect(sections[2].items.map(item => item.path)).toEqual(['/keys', '/profile'])
+    expect(groupUserNav([nav('/keys'), ...creation, nav('/profile')]).map(section => section.key)).toEqual(['workspace', 'creation', 'account'])
+  })
+
+  it.each(['admin', 'user'] as const)('shows the creation category and active child for %s, respecting the feature switch', async role => {
+    const { wrapper, router, appStore } = await mountSidebar('/studio/image', role, false, ({ appStore }) => {
+      appStore.cachedPublicSettings = { creation_center_enabled: true } as typeof appStore.cachedPublicSettings
+    })
+    const category = wrapper.get('[data-section="creation"]')
+    for (const mode of creationModes) expect(category.find(`a[href="${creationPath(mode)}"]`).exists()).toBe(true)
+    expect(wrapper.find('a[href="/studio"]').exists()).toBe(false)
+    await router.push('/studio/video')
+    await flushPromises()
+    expect(category.get('a[href="/studio/video"]').classes().some(name => name.includes('active'))).toBe(true)
+    appStore.cachedPublicSettings = { creation_center_enabled: false } as typeof appStore.cachedPublicSettings
+    await flushPromises()
+    expect(wrapper.find('[data-section="creation"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })
 

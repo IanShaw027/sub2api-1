@@ -35,6 +35,7 @@ export default {
       loadModels: 'Failed to load models.',
       loadGroups: 'Failed to load groups.',
       send: 'Failed to send message.',
+      unsavedExchange: 'Save the previous reply before sending another message.',
       generate: 'Failed to generate image.',
       noGroup: 'Select a group before continuing.',
       noModel: 'Select a model before continuing.',

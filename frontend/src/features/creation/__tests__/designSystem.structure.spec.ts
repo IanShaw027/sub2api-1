@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -6,15 +6,7 @@ const root = resolve(__dirname, '..')
 
 const vueFiles = [
   'StudioPage.vue',
-  'components/SessionList.vue',
-  'components/MessageStream.vue',
-  'components/MessageContent.vue',
-  'components/TokenStats.vue',
-  'components/ComposerBar.vue',
-  'components/ModelMenu.vue',
-  'components/TaskGrid.vue',
-  'components/TaskCard.vue',
-  'components/PreviewDialog.vue',
+  ...readdirSync(resolve(root, 'components')).filter(file => file.endsWith('.vue')).map(file => `components/${file}`),
 ]
 
 function read(rel: string) {
@@ -28,7 +20,15 @@ describe('creation feature design system structure', () => {
       expect(src).not.toMatch(/\bbg-gray-/)
       expect(src).not.toMatch(/\btext-gray-/)
       expect(src).not.toMatch(/\bborder-gray-/)
-      expect(src).not.toMatch(/\bdark:/)
+      expect(src).not.toMatch(/\bdark:[^\s'"`]/)
+      expect(src).not.toMatch(/var\(--(?:shadow-card|surface-[23]|on-accent)\b/)
     })
   }
+  it('uses the shared application shell and does not define an independent navigation bar', () => {
+    const page = read('StudioPage.vue')
+    expect(page).toContain('<AppLayout fill-height>')
+    expect(page).toContain('<PageHeader')
+    expect(page).not.toContain('creation-header')
+    expect(page).not.toContain('creation-modes')
+  })
 })

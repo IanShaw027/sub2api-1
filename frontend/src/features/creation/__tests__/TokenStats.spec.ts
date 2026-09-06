@@ -38,9 +38,15 @@ describe('TokenStats', () => {
     expect(el.attributes('aria-expanded')).toBe('false')
   })
 
-  it('computes the total from input and output tokens even when one is missing', () => {
+  it('does not present a partial count as a complete total', () => {
     const wrapper = mount(TokenStats, { props: { inputTokens: 100, outputTokens: null } })
-    expect(wrapper.get('.studio-token-stats').text()).toContain('studio.tokens.total(total=100)')
+    expect(wrapper.get('.studio-token-stats').text()).toContain('studio.tokens.total(total=common.unknown)')
+  })
+
+  it('shows unknown rather than zero in the summary card without usage', () => {
+    const wrapper = mount(TokenStats, { props: { variant: 'card', inputTokens: null, outputTokens: null, taskCount: 3 } })
+    expect(wrapper.text()).toContain('common.unknown')
+    expect(wrapper.text()).toContain('count=3')
   })
 
   it('expands to show the input/output breakdown on click', async () => {

@@ -1,0 +1,720 @@
+{
+  "source": "https://github.com/jamez-bondos/awesome-gpt4o-images",
+  "revision": "3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596",
+  "totalCaseDirectories": 100,
+  "includedCount": 100,
+  "cases": [
+    {
+      "id": "gpt4o-1",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/1",
+      "image": "example_proposal_scene_q_realistic.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-2",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/2",
+      "image": "example_polaroid_breakout.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-3",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/3",
+      "image": "example_vintage_poster.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-4",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/4",
+      "image": "example_q_chinese_wedding.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-5",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/5",
+      "image": "ghibli-style-mona-lisa.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-6",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/6",
+      "image": "example_portal_crossing_handhold.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-7",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/7",
+      "image": "example_personalized_room.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-8",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/8",
+      "image": "example_lego_collectible.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-9",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/9",
+      "image": "minimalist_futurist_poster.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-10",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/10",
+      "image": "example_maga_hat_cartoon.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-11",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/11",
+      "image": "example_ps2_gta_shrek.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-12",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/12",
+      "image": "example_3d_collectible_couple_box.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-13",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/13",
+      "image": "example_photo_to_3d_q.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-14",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/14",
+      "image": "example_one_piece_figure_creation.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-15",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/15",
+      "image": "example_gpt_involution_poster.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-16",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/16",
+      "image": "anime_style_badge.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-17",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/17",
+      "image": "retro_crt_computer_boot_screen.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-18",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/18",
+      "image": "pixar-style-godfather-scene.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-19",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/19",
+      "image": "country_diorama_in_toy_box.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-20",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/20",
+      "image": "action_figure_and_real_person_in_frame.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-21",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/21",
+      "image": "chibi_character_sticker_pack.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-22",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/22",
+      "image": "example_notebook_promo.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-23",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/23",
+      "image": "example_titanic_q_realistic.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-24",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/24",
+      "image": "funko-pop-james-bond-figure-and-box.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-25",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/25",
+      "image": "example_minimalist_3d_toilet.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-26",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/26",
+      "image": "example_master_oats_ad.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-27",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/27",
+      "image": "example_chibi_emoji_pack.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-28",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/28",
+      "image": "example_flat_sticker_pearl_earring.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-29",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/29",
+      "image": "example_pearl_earring_ootd.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-30",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/30",
+      "image": "example_35mm_moscow_flying_island.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-31",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/31",
+      "image": "example_naruto_stickers.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-32",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/32",
+      "image": "3d_papercraft_popup_book.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-33",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/33",
+      "image": "example_family_wedding_photo_q.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-34",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/34",
+      "image": "example_hand_drawn_infographic_cognition.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-35",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/35",
+      "image": "example_fluffy_pumpkin.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-36",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/36",
+      "image": "example_minimalist_3d_toilet_txt.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-37",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/37",
+      "image": "pastel_power_3d_ads.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-38",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/38",
+      "image": "example_hand_drawn_infographic.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-39",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/39",
+      "image": "example_fantasy_computer_head_portal.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-40",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/40",
+      "image": "example_two_panel_manga_president.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-41",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/41",
+      "image": "example_miniature_journey_west.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-42",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/42",
+      "image": "example_3d_q_snowglobe_couple.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-43",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/43",
+      "image": "example_matryoshka_pearl_earring.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-44",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/44",
+      "image": "example_rpg_card_designer.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-45",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/45",
+      "image": "example_university_mascot_npu.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-46",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/46",
+      "image": "example_happy_capsule.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-47",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/47",
+      "image": "example_esc_keycap_diorama.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-48",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/48",
+      "image": "example_voxel_icon.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-49",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/49",
+      "image": "example_fashion_design_cover.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-50",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/50",
+      "image": "example_lara_croft_card_break.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-51",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/51",
+      "image": "example_passport_stamp_rome.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-52",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/52",
+      "image": "example_paper_craft_emoji_fire.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-53",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/53",
+      "image": "example_emoji_cushion_pleading.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-54",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/54",
+      "image": "example_ordinary_selfie_eason_nicholas.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-55",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/55",
+      "image": "cute_plant_planter.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-56",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/56",
+      "image": "example_miniature_starbucks_cup_building.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-57",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/57",
+      "image": "example_8bit_pixel_beer.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-58",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/58",
+      "image": "example_cloud_art_dragon_great_wall.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-59",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/59",
+      "image": "example_vector_poster_london.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-60",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/60",
+      "image": "example_tufted_rug_star_emoji.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-61",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/61",
+      "image": "example_fake_tweet_einstein.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-62",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/62",
+      "image": "example_enamel_pins_einstein.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-63",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/63",
+      "image": "example_ice_cream_emoji_strawberry.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-64",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/64",
+      "image": "example_steampunk_fish.jpg",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-65",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/65",
+      "image": "surreal-underwater-scene-popsicle.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-66",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/66",
+      "image": "example_silk_creation_universe.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-67",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/67",
+      "image": "example_Ultra_realistic_3D_game.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-68",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/68",
+      "image": "example_trading_card_logo_tesla.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-69",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/69",
+      "image": "example_silhouette_art.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-70",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/70",
+      "image": "example_pokemon_strawbit.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-71",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/71",
+      "image": "example_cyberpunk_tilt_shift_miniature.jpg",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-72",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/72",
+      "image": "gold_pendant_necklace.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-73",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/73",
+      "image": "example_keychain_chibi.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-74",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/74",
+      "image": "example_logo_bookshelves.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-75",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/75",
+      "image": "example_instagram_frame_pearl_earring.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-76",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/76",
+      "image": "example_anime_nostalgic_poster.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-77",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/77",
+      "image": "example_crystal_ball_chang_e.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-78",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/78",
+      "image": "example_retexture_glass_phone.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-79",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/79",
+      "image": "example_lego_shanghai_bund.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-80",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/80",
+      "image": "example_business_card_code_style.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-81",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/81",
+      "image": "example.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-82",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/82",
+      "image": "example.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-83",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/83",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-84",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/84",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-85",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/85",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-86",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/86",
+      "image": "double_exposure.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-87",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/87",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-88",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/88",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-89",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/89",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-90",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/90",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-91",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/91",
+      "image": "case.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-92",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/92",
+      "image": "perspective-3d-pop-out-effect.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-93",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/93",
+      "image": "glass_retexturing.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-94",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/94",
+      "image": "three_animals_selfie_at_landmark.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-95",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/95",
+      "image": "selfie-to-bobblehead-generator.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-96",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/96",
+      "image": "custom-anime-figure-from-photo.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-97",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/97",
+      "image": "cute_cozy_knitted_doll.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-98",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/98",
+      "image": "blurred-silhouette-frosted-glass.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-99",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/99",
+      "image": "harry-potter-black-white-portrait-art.png",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "gpt4o-100",
+      "status": "included",
+      "repositoryUrl": "https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/100",
+      "image": "creative-ad-real-object-hand-drawn-doodle.png",
+      "license": "CC-BY-4.0"
+    }
+  ],
+  "excludedCollections": [
+    {
+      "path": "gpt-image-1/examples",
+      "reason": "Explicitly excluded from CC-BY-4.0 by upstream gpt-image-1/NOTICE-openai.md; no redistribution permission verified."
+    },
+    {
+      "source": "mageia",
+      "reportedReferenceCount": 532,
+      "includedCount": 0,
+      "reason": "Reference-only count from integration request; no case-level redistribution license verified. Not imported or claimed as migrated."
+    }
+  ]
+}

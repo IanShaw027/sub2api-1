@@ -13,6 +13,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { creationMode, creationModes, creationPath, creationTitleKey } from '@/features/creation/navigation'
 
 /**
  * Route definitions with lazy loading
@@ -218,15 +219,25 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/studio',
     name: 'Studio',
+    redirect: to => {
+      const { mode, ...query } = to.query
+      return { path: creationPath(creationMode(mode)), query, hash: to.hash }
+    },
+  },
+  ...creationModes.map(mode => ({
+    path: creationPath(mode),
+    name: `Studio-${mode}`,
     component: () => import('@/features/creation/StudioPage.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
       title: 'Studio',
-      titleKey: 'nav.studio',
+      titleKey: creationTitleKey(mode),
+      parentTitleKey: 'nav.studio',
+      creationMode: mode,
       requiresCreationCenter: true,
     }
-  },
+  })),
   {
     path: '/batch-image',
     name: 'BatchImageGuide',

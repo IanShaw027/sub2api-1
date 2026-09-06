@@ -26,7 +26,25 @@ export interface CreationMessage {
   model?: string | null
   input_tokens?: number | null
   output_tokens?: number | null
+  exchange_request_id?: string
   created_at: string
+}
+
+export interface CreationTokenUsage {
+  input_tokens?: number
+  output_tokens?: number
+}
+
+export interface CreationExchangeRequest extends CreationTokenUsage {
+  request_id: string
+  user_content: string
+  assistant_content: string
+  model: string
+}
+
+export interface CreationExchange {
+  user: CreationMessage
+  assistant: CreationMessage
 }
 
 export interface CreationImageJob {

@@ -1,0 +1,28 @@
+export const voiceMessages = {
+  zh: {
+    call: '通话', startCall: '开始通话', hangUp: '挂断', mute: '静音', unmute: '取消静音',
+    idle: '准备就绪', requesting: '等待麦克风权限', connecting: '正在连接', connected: '通话中', ended: '通话已结束',
+    you: '你', assistant: 'Grok', muted: '麦克风已静音',
+    title: 'Grok Voice', speech: '语音合成', transcription: '音频转录', group: '分组', voice: '音色',
+    language: '语言', auto: '自动检测', chinese: '中文', english: '英语', speed: '语速',
+    prompt: '输入合成文本', generate: '生成语音', transcribe: '开始转录', upload: '选择音频',
+    fileLimit: '最大 25 MiB', remove: '移除音频', cancel: '取消', retry: '重新加载',
+    loading: '正在加载分组', noGroups: '没有可用的 Grok 分组', groupError: '无法加载语音分组',
+    working: '处理中', download: '下载', copy: '复制转录', copied: '已复制', result: '转录结果',
+    failed: '语音请求失败', invalidFile: '请选择非空且不超过 25 MiB 的音频文件',
+    copyFailed: '无法复制转录', audio: '合成音频',
+  },
+  en: {
+    call: 'Call', startCall: 'Start call', hangUp: 'Hang up', mute: 'Mute', unmute: 'Unmute',
+    idle: 'Ready', requesting: 'Waiting for microphone', connecting: 'Connecting', connected: 'Connected', ended: 'Call ended',
+    you: 'You', assistant: 'Grok', muted: 'Microphone muted',
+    title: 'Grok Voice', speech: 'Speech', transcription: 'Transcription', group: 'Group', voice: 'Voice',
+    language: 'Language', auto: 'Auto detect', chinese: 'Chinese', english: 'English', speed: 'Speed',
+    prompt: 'Speech text', generate: 'Generate speech', transcribe: 'Transcribe', upload: 'Choose audio',
+    fileLimit: 'Up to 25 MiB', remove: 'Remove audio', cancel: 'Cancel', retry: 'Reload',
+    loading: 'Loading groups', noGroups: 'No Grok groups available', groupError: 'Could not load voice groups',
+    working: 'Processing', download: 'Download', copy: 'Copy transcript', copied: 'Copied', result: 'Transcript',
+    failed: 'Voice request failed', invalidFile: 'Choose a non-empty audio file no larger than 25 MiB',
+    copyFailed: 'Could not copy transcript', audio: 'Generated audio',
+  },
+}

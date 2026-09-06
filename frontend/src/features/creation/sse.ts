@@ -1,3 +1,5 @@
+import type { CreationTokenUsage } from './types'
+
 export interface ParsedSSEChunk {
   data: string
   done: boolean
@@ -67,11 +69,12 @@ export function extractTextDeltaFromSSEData(data: string): string | null {
 /**
  * Consume an SSE buffer incrementally and return extracted text deltas.
  */
-export function parseSSEBuffer(buffer: string): { deltas: string[]; remainder: string; done: boolean } {
+export function parseSSEBuffer(buffer: string): { deltas: string[]; remainder: string; done: boolean; usage: CreationTokenUsage } {
   const { lines, remainder } = splitSSEBuffer(buffer)
   const chunks = parseSSELines(lines)
   const deltas: string[] = []
   let done = false
+  const usage: CreationTokenUsage = {}
   for (const chunk of chunks) {
     if (chunk.done) {
       done = true
@@ -82,6 +85,14 @@ export function parseSSEBuffer(buffer: string): { deltas: string[]; remainder: s
       const error = payload.error as { message?: string } | string | undefined
       throw new Error(typeof error === 'string' ? error : error?.message || 'Chat stream failed')
     }
+    const message = payload.message as Record<string, unknown> | undefined
+    const rawUsage = (payload.type === 'message_start' ? message?.usage : payload.usage) as Record<string, unknown> | undefined
+    if (rawUsage && typeof rawUsage === 'object') {
+      const input = rawUsage.input_tokens ?? rawUsage.prompt_tokens
+      const output = rawUsage.output_tokens ?? rawUsage.completion_tokens
+      if (typeof input === 'number' && Number.isSafeInteger(input) && input >= 0) usage.input_tokens = input
+      if (typeof output === 'number' && Number.isSafeInteger(output) && output >= 0) usage.output_tokens = output
+    }
     const delta = extractTextDeltaFromSSEData(chunk.data)
     if (delta) deltas.push(delta)
     if (payload.type === 'message_stop') {
@@ -89,5 +100,5 @@ export function parseSSEBuffer(buffer: string): { deltas: string[]; remainder: s
       break
     }
   }
-  return { deltas, remainder, done }
+  return { deltas, remainder, done, usage }
 }

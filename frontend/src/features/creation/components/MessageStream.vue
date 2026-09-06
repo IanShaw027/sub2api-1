@@ -1,12 +1,36 @@
 <script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Icon from '@/components/icons/Icon.vue'
+import { CornerDownLeft } from '@lucide/vue'
+import { useClipboard } from '@/composables/useClipboard'
 import MessageContent from './MessageContent.vue'
 import { useCreationStore } from '../stores/creation'
 import { formatDateTimeToMinute } from '@/utils/format'
 import type { CreationMessage } from '../types'
+import creationAPI from '../api'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const store = useCreationStore()
+const props = withDefaults(defineProps<{ interactive?: boolean; fullHeight?: boolean }>(), { interactive: false, fullHeight: false })
+const emit = defineEmits<{ reuse: [text: string] }>()
+const { copyToClipboard } = useClipboard()
+const streamRef = ref<HTMLElement | null>(null)
+const followingBottom = ref(true)
+const reuseLabel = computed(() => locale?.value?.startsWith('zh') ? '复用提示词' : 'Reuse prompt')
+const reuseDisabled = computed(() => store.streaming || store.sessionLoading || store.messagesLoading || store.modelUpdating || store.hasUnsavedExchange || !store.generationAvailable)
+
+function onScroll() {
+  const el = streamRef.value
+  if (el) followingBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+}
+
+watch(() => [store.selectedSessionId, store.messages.length, store.streamingContent], async (value, previous) => {
+  if (!props.fullHeight) return
+  const follow = followingBottom.value || value[0] !== previous?.[0]
+  await nextTick()
+  if (follow && streamRef.value) streamRef.value.scrollTop = streamRef.value.scrollHeight
+}, { immediate: true })
 
 function messageLabel(message: CreationMessage): string {
   const timestamp = formatDateTimeToMinute(message.created_at)
@@ -19,12 +43,15 @@ function messageLabel(message: CreationMessage): string {
 
 <template>
   <div
+    ref="streamRef"
     class="studio-message-stream"
+    :class="{ 'studio-message-stream-full': fullHeight }"
     role="log"
     aria-live="polite"
     aria-relevant="additions text"
     :aria-label="t('studio.a11y.messageLog')"
     :aria-busy="store.messagesLoading || store.streaming"
+    @scroll="onScroll"
   >
     <div v-if="store.messagesLoading" class="text-sm text-muted" role="status" aria-live="polite">
       {{ t('common.loading') }}
@@ -53,6 +80,14 @@ function messageLabel(message: CreationMessage): string {
             :input-tokens="message.input_tokens"
             :output-tokens="message.output_tokens"
           />
+          <div v-if="interactive && creationAPI.extractMessageText(message.content)" class="studio-message-actions">
+            <button type="button" class="icon-btn" :title="t('common.copy')" :aria-label="t('common.copy')" @click="copyToClipboard(creationAPI.extractMessageText(message.content))">
+              <Icon name="copy" size="sm" />
+            </button>
+            <button v-if="message.role === 'user'" type="button" class="icon-btn" :title="reuseLabel" :aria-label="reuseLabel" :disabled="reuseDisabled" @click="emit('reuse', creationAPI.extractMessageText(message.content))">
+              <CornerDownLeft :size="16" aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </article>
 
@@ -94,6 +129,42 @@ function messageLabel(message: CreationMessage): string {
 .studio-message {
   display: flex;
   max-width: 82%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.studio-message-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.studio-message-actions .icon-btn {
+  width: 32px;
+  height: 32px;
+  color: var(--muted);
+}
+
+.studio-message-stream.studio-message-stream-full {
+  flex: 1;
+  width: 100%;
+  max-height: none;
+  padding: 20px max(20px, calc((100% - 800px) / 2));
+}
+
+.studio-message-stream-full .studio-message-list {
+  gap: 24px;
+}
+
+.studio-message-stream-full .studio-message-assistant {
+  width: 100%;
+  max-width: 100%;
+}
+
+.studio-message-stream-full .studio-message-assistant .studio-message-bubble {
+  width: 100%;
+  padding: 0;
+  background: transparent;
 }
 
 .studio-message-user {

@@ -12,7 +12,7 @@ const creationApi = vi.hoisted(() => ({
   updateSession: vi.fn(),
   deleteSession: vi.fn(),
   listSessionMessages: vi.fn(),
-  createSessionMessage: vi.fn(),
+  createSessionExchange: vi.fn(),
   listImages: vi.fn(),
   getModels: vi.fn(),
   submitImageGenerationAsync: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock('@/api/groups', () => ({
 }))
 
 import { useCreationStore } from '../stores/creation'
-import type { CreationImageJob, CreationSession } from '../types'
+import type { CreationExchangeRequest, CreationImageJob, CreationSession } from '../types'
 
 const IMAGE_POLL_INTERVAL_MS = 3000
 
@@ -87,6 +87,10 @@ describe('creation store', () => {
     i18n.global.mergeLocaleMessage('en', enStudio)
     setActivePinia(createPinia())
     Object.values(creationApi).forEach((mock) => mock.mockReset())
+    creationApi.createSessionExchange.mockImplementation(async (sessionId: number, request: CreationExchangeRequest) => ({
+      user: { id: 98, session_id: sessionId, role: 'user', content: request.user_content, created_at: '' },
+      assistant: { id: 99, session_id: sessionId, role: 'assistant', content: request.assistant_content, model: request.model, created_at: '' },
+    }))
     groupsApi.getAvailable.mockReset()
   })
 
@@ -183,13 +187,6 @@ describe('creation store', () => {
     expect(store.lastFailedSend).toEqual({ sessionId: 1, text: 'hello again' })
 
     creationApi.streamCreationChat.mockResolvedValue('world')
-    creationApi.createSessionMessage.mockResolvedValue({
-      id: 99,
-      session_id: 1,
-      role: 'assistant',
-      content: 'world',
-      created_at: '2026-01-01T00:00:00Z',
-    })
 
     await store.retryLastFailed()
 
@@ -526,7 +523,7 @@ describe('creation store', () => {
     await send
 
     expect(store.lastFailedSend).toEqual({ sessionId: 1, text: 'keep me' })
-    expect(creationApi.createSessionMessage).not.toHaveBeenCalled()
+    expect(creationApi.createSessionExchange).not.toHaveBeenCalled()
   })
 
   it('reset clears state', () => {
@@ -573,7 +570,6 @@ describe('creation store', () => {
       id: id * 10, session_id: id, role: 'assistant', content: `secret-${id}`, created_at: '',
     }])
     creationApi.streamCreationChat.mockRejectedValueOnce(new Error('failed')).mockResolvedValueOnce('answer')
-    creationApi.createSessionMessage.mockResolvedValue({})
     await store.submitText('retry this')
     await store.selectSession(2)
     await store.retryLastFailed()
@@ -593,7 +589,7 @@ describe('creation store', () => {
     creationApi.streamCreationChat.mockResolvedValue('')
     await store.submitText('please answer')
     expect(store.lastFailedSend).toEqual({ sessionId: 1, text: 'please answer' })
-    expect(creationApi.createSessionMessage).not.toHaveBeenCalled()
+    expect(creationApi.createSessionExchange).not.toHaveBeenCalled()
   })
 
   it('keeps the composer and sending locked until both models and session history load', async () => {
@@ -620,7 +616,6 @@ describe('creation store', () => {
     history.resolve([{ id: 20, session_id: 2, role: 'assistant', content: 'secret-2', created_at: '' }])
     await selection
     creationApi.streamCreationChat.mockResolvedValue('answer')
-    creationApi.createSessionMessage.mockResolvedValue({})
     await store.submitText('question-2')
     expect(creationApi.streamCreationChat.mock.lastCall?.[0].messages).toEqual([
       expect.objectContaining({ session_id: 2, content: 'secret-2' }),
@@ -672,7 +667,6 @@ describe('creation store', () => {
     expect(store.modelUpdating).toBe(false)
     await store.setModel('gpt-5')
     creationApi.streamCreationChat.mockResolvedValue('answer')
-    creationApi.createSessionMessage.mockResolvedValue({})
     creationApi.listSessionMessages.mockResolvedValue([])
     await store.submitText('hello')
     expect(creationApi.streamCreationChat.mock.lastCall?.[0].model).toBe('gpt-5')
@@ -685,7 +679,6 @@ describe('creation store', () => {
     const response = deferred<string>()
     creationApi.streamCreationChat.mockReturnValue(response.promise)
     creationApi.deleteSession.mockResolvedValue(undefined)
-    creationApi.createSessionMessage.mockResolvedValue({})
     creationApi.listSessionMessages.mockResolvedValue([])
     const send = store.submitText('keep generating')
     const signal = creationApi.streamCreationChat.mock.lastCall?.[0].signal as AbortSignal
@@ -697,7 +690,7 @@ describe('creation store', () => {
     expect(signal.aborted).toBe(false)
     response.resolve('complete answer')
     await send
-    expect(creationApi.createSessionMessage).toHaveBeenCalledWith(2, expect.objectContaining({ content: 'complete answer' }))
+    expect(creationApi.createSessionExchange).toHaveBeenCalledWith(2, expect.objectContaining({ assistant_content: 'complete answer' }))
     wrapper.unmount()
   })
 

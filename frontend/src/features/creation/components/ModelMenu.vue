@@ -39,7 +39,7 @@ async function onModelChange(value: string | number | boolean | null) {
       :options="modelOptions"
       :placeholder="t('studio.selectModel')"
       :aria-label="props.compact ? t('studio.models') : undefined"
-      :disabled="store.sessionLoading || store.modelUpdating || (store.isImageSession && !store.hasImageModels)"
+      :disabled="store.sessionLoading || store.modelUpdating || !store.generationAvailable || (store.isImageSession && !store.hasImageModels)"
       searchable="auto"
       @update:model-value="onModelChange"
     />

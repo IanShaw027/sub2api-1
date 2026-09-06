@@ -34,6 +34,7 @@ export default {
       loadModels: '加载模型失败。',
       loadGroups: '加载分组失败。',
       send: '发送消息失败。',
+      unsavedExchange: '请先保存上一条回复，再发送新消息。',
       generate: '生成图像失败。',
       noGroup: '请先选择分组。',
       noModel: '请先选择模型。',

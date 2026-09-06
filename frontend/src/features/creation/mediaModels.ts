@@ -1,5 +1,11 @@
 import type { GatewayModelItem } from './types'
 
+export const GEMINI_IMAGE_ASPECT_RATIOS = ['1:1', '3:2', '16:9', '9:16', '4:3', '3:4']
+
+export function isGeminiImageModel(modelId: string): boolean {
+  return /^gemini-3[\w.-]*image/i.test(modelId.trim())
+}
+
 const IMAGE_MODEL_PATTERNS = [
   /^gpt-image/i,
   /^dall-e/i,

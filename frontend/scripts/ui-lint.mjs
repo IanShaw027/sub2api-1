@@ -17,7 +17,7 @@ const asJson = args.includes('--json')
 const targets = args.filter((a) => !a.startsWith('--'))
 
 const LEGACY = [
-  /\bdark:/, /\bbg-white\b/, /\bborder-gray-/, /\btext-gray-/, /\bbg-gray-/,
+  /\bdark:[^\s'"`]/, /\bbg-white\b/, /\bborder-gray-/, /\btext-gray-/, /\bbg-gray-/,
   /\brounded-2xl\b/, /\brounded-3xl\b/, /\bshadow-lg\b/, /\bshadow-md\b/, /\bshadow-xl\b/, /\bshadow-2xl\b/,
   /\btext-lg font-semibold\b/, /fonts\.googleapis\.com/, /fonts\.gstatic\.com/
 ]
@@ -31,6 +31,8 @@ const COLOR = /(?<![\w/])#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})\b|(
 const COLOR_WHITELIST = [
   /^style\.css$/, /^styles\/tokens\.css$/, /^utils\/platformTile\.ts$/, /^utils\/chartTheme\.ts$/, /^components\/icons\//,
   /^components\/common\/PlatformIcon\.vue$/, /^components\/common\/ModelIcon\.vue$/, /^i18n\/locales\//,
+  // Reference prompts contain literal output colors; they do not style the application.
+  /^features\/creation\/components\/referenceCases\.ts$/,
   /^components\/payment\/.*Brand/, /^components\/auth\/.*(Brand|OAuth|LinuxDo|WeChat|GoogleMark)/i,
   // QR codes must stay pure black on white for scanners to decode them.
   /^components\/user\/profile\/TotpSetupModal\.vue$/
