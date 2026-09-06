@@ -294,7 +294,7 @@
 
       <div
         v-if="inputMode === 'oauth' && continuation"
-        class="rounded-lg border border-amber-300 bg-[color-mix(in_oklch,var(--warning)_18%,transparent)]/80 p-4"
+        class="rounded-lg border border-amber-300 bg-[color-mix(in_oklch,var(--warning)_14.4%,transparent)] p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white">
@@ -405,7 +405,7 @@
 
       <div
         v-if="inputMode === 'oauth' && externalIDPAuthorization"
-        class="rounded-lg border border-blue-300 bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/80 p-4"
+        class="rounded-lg border border-blue-300 bg-[color-mix(in_oklch,var(--accent)_9.6%,transparent)] p-4"
       >
         <div class="flex items-start gap-3">
           <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">

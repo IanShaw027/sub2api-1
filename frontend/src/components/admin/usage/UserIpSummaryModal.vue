@@ -44,7 +44,7 @@
               v-for="item in summary.items"
               :key="item.ip_address"
               class="border-t border-line"
-              :class="item.is_top ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/40' : ''"
+              :class="item.is_top ? 'bg-[color-mix(in_oklch,var(--accent)_4.8%,transparent)]' : ''"
             >
               <td class="px-3 py-2 font-mono text-xs">
                 {{ item.ip_address }}

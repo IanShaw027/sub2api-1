@@ -51,7 +51,7 @@
  class="data-table-mobile-card glass-card-solid"
  :class="{
  'cursor-pointer': clickableRows,
- 'border-[color-mix(in_oklch,var(--accent)_24%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/40': selectable && isRowSelected(row, index)
+ 'border-[color-mix(in_oklch,var(--accent)_24%,transparent)] bg-[color-mix(in_oklch,var(--accent)_4.8%,transparent)]': selectable && isRowSelected(row, index)
  }"
  @click="clickableRows && emit('rowClick', row)"
  >
@@ -216,7 +216,7 @@
  class="data-table-row"
  :class="{
  'cursor-pointer': clickableRows,
- 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/40': selectable && isRowSelected(item.row, item.index)
+ 'bg-[color-mix(in_oklch,var(--accent)_4.8%,transparent)]': selectable && isRowSelected(item.row, item.index)
  }"
  @click="clickableRows && emit('rowClick', item.row)"
  >

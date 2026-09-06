@@ -15,13 +15,13 @@
       type="button"
       class="ui-filter-bar-toggle"
       :aria-label="filterLabel"
-      @click="$emit('open-filters')"
+      :aria-expanded="filtersExpanded"
+      :aria-controls="filtersId"
+      @click="toggleFilters"
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M22 3H2l8 9.5V19l4 2v-8.5z" />
-      </svg>
+      <Icon name="filter" size="sm" />
     </button>
-    <div v-if="$slots.filters" class="ui-filter-bar-filters" :class="{ 'is-mobile-hidden': isMobile }">
+    <div v-if="$slots.filters" :id="filtersId" class="ui-filter-bar-filters" :class="{ 'is-mobile-hidden': isMobile && !filtersExpanded }">
       <slot name="filters" />
     </div>
     <div v-if="$slots.trailing || $slots.actions" class="ui-filter-bar-trailing">
@@ -32,7 +32,9 @@
 </template>
 
 <script setup lang="ts">
+import { ref, useId } from 'vue'
 import { useIsMobile } from '@/composables/useIsMobile'
+import Icon from '@/components/icons/Icon.vue'
 import TextInput from './TextInput.vue'
 
 withDefaults(
@@ -48,12 +50,19 @@ withDefaults(
   }
 )
 
-defineEmits<{
+const emit = defineEmits<{
   'update:search': [value: string]
   'open-filters': []
 }>()
 
 const { isMobile } = useIsMobile()
+const filtersExpanded = ref(false)
+const filtersId = `filter-bar-${useId()}`
+
+function toggleFilters() {
+  filtersExpanded.value = !filtersExpanded.value
+  if (filtersExpanded.value) emit('open-filters')
+}
 </script>
 
 <style scoped>
@@ -98,6 +107,15 @@ const { isMobile } = useIsMobile()
 }
 
 @media (max-width: 767px) {
+  .ui-filter-bar-filters {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .ui-filter-bar-filters > :deep(*) {
+    max-width: 100%;
+  }
+
   .ui-filter-bar-search {
     flex: 1 1 auto;
     min-width: 0;

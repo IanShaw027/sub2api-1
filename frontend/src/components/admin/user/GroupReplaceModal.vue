@@ -26,7 +26,7 @@
           :key="group.id"
           class="flex cursor-pointer items-center gap-3 rounded-lg border-2 p-3 transition-all"
           :class="selectedGroupId === group.id
- ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/50'
+ ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_6%,transparent)]'
  : 'border-line hover:border-line'"
         >
           <input

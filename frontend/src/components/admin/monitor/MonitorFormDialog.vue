@@ -78,7 +78,7 @@
         </p>
       </div>
 
-      <div v-if="form.provider === PROVIDER_OPENAI && usesProbePart" class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_12%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/50 p-3">
+      <div v-if="form.provider === PROVIDER_OPENAI && usesProbePart" class="rounded-lg border border-[color-mix(in_oklch,var(--accent)_12%,transparent)] bg-[color-mix(in_oklch,var(--accent)_6%,transparent)] p-3">
         <label class="input-label">{{ t('admin.channelMonitor.form.apiMode') }}</label>
         <div class="grid gap-3 sm:grid-cols-2">
           <button

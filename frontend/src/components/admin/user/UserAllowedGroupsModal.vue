@@ -34,7 +34,7 @@
               :key="config.groupId"
               class="group relative overflow-hidden rounded-xl border-2 p-4 transition-all duration-200"
               :class="config.isSelected
- ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/50 shadow-sm'
+ ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_6%,transparent)] shadow-sm'
  : 'border-line bg-surface hover:border-line'"
             >
               <div class="flex items-center gap-4">

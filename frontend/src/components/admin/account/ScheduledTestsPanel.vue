@@ -23,7 +23,7 @@
       <!-- Add Plan Form -->
       <div
         v-if="showAddForm"
-        class="rounded-xl border border-[color-mix(in_oklch,var(--accent)_28%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/50 p-4"
+        class="rounded-xl border border-[color-mix(in_oklch,var(--accent)_28%,transparent)] bg-[color-mix(in_oklch,var(--accent)_6%,transparent)] p-4"
       >
         <div class="mb-3 text-sm font-medium text-foreground">
           {{ t('admin.scheduledTests.addPlan') }}
@@ -232,7 +232,7 @@
           <!-- Edit Form -->
           <div
             v-if="editingPlanId === plan.id"
-            class="border-t border-[color-mix(in_oklch,var(--accent)_12%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/50 px-4 py-3"
+            class="border-t border-[color-mix(in_oklch,var(--accent)_12%,transparent)] bg-[color-mix(in_oklch,var(--accent)_6%,transparent)] px-4 py-3"
             @click.stop
           >
             <div class="mb-2 text-xs font-medium text-muted">

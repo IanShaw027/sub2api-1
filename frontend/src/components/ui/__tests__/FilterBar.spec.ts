@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { afterEach, describe, expect, it } from 'vitest'
 import FilterBar from '../FilterBar.vue'
 import { readUi } from './source'
@@ -6,16 +7,28 @@ import { readUi } from './source'
 const originalMatchMedia = window.matchMedia
 
 function mockTabletUp(matches: boolean) {
-  window.matchMedia = ((query: string) => ({
-    matches: query.includes('min-width: 768px') ? matches : false,
-    media: query,
-    onchange: null,
-    addListener: () => undefined,
-    removeListener: () => undefined,
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-    dispatchEvent: () => true
-  })) as unknown as typeof window.matchMedia
+  const subscriptions: Array<{ media: { matches: boolean }; notify: () => void }> = []
+  window.matchMedia = ((query: string) => {
+    const media = {
+      matches: query.includes('min-width: 768px') ? matches : false,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: (_event: string, notify: () => void) => {
+        if (query.includes('min-width: 768px')) subscriptions.push({ media, notify })
+      },
+      removeEventListener: () => undefined,
+      dispatchEvent: () => true
+    }
+    return media
+  }) as unknown as typeof window.matchMedia
+  return (tabletUp: boolean) => {
+    for (const subscription of subscriptions) {
+      subscription.media.matches = tabletUp
+      subscription.notify()
+    }
+  }
 }
 
 afterEach(() => {
@@ -45,5 +58,39 @@ describe('FilterBar', () => {
     expect(wrapper.find('.ui-filter-bar-toggle').exists()).toBe(true)
     expect(wrapper.find('.ui-filter-bar-filters').classes()).toContain('is-mobile-hidden')
     expect(readUi('FilterBar.vue')).toContain('height: 44px')
+  })
+
+  it('opens usable filters without a parent handler and preserves values when collapsed', async () => {
+    mockTabletUp(false)
+    const wrapper = mount(FilterBar, {
+      slots: { filters: '<select aria-label="Status"><option>All</option><option>Active</option></select>' }
+    })
+    const toggle = wrapper.get('.ui-filter-bar-toggle')
+    const filters = wrapper.get('.ui-filter-bar-filters')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.attributes('aria-controls')).toBe(filters.attributes('id'))
+
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(filters.classes()).not.toContain('is-mobile-hidden')
+    expect(wrapper.emitted('open-filters')).toHaveLength(1)
+    await wrapper.get('select').setValue('Active')
+
+    await toggle.trigger('click')
+    expect(filters.classes()).toContain('is-mobile-hidden')
+    await toggle.trigger('click')
+    expect((wrapper.get('select').element as HTMLSelectElement).value).toBe('Active')
+    wrapper.unmount()
+  })
+
+  it('always exposes filters on desktop after a mobile collapse', async () => {
+    const resize = mockTabletUp(false)
+    const wrapper = mount(FilterBar, { slots: { filters: '<button>Status</button>' } })
+    expect(wrapper.get('.ui-filter-bar-filters').classes()).toContain('is-mobile-hidden')
+    resize(true)
+    await nextTick()
+    expect(wrapper.get('.ui-filter-bar-filters').classes()).not.toContain('is-mobile-hidden')
+    expect(wrapper.find('.ui-filter-bar-toggle').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

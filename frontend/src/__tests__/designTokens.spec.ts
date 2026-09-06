@@ -3,6 +3,9 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
+import postcss from 'postcss'
+import tailwindcss from 'tailwindcss'
+import tailwindConfig from '../../tailwind.config.js'
 
 const srcDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const tokensPath = resolve(srcDir, 'styles/tokens.css')
@@ -140,12 +143,45 @@ describe('design tokens', () => {
     }
   })
 
-  it('does not apply opacity modifiers to CSS-variable color utilities', () => {
+  it('generates real CSS for semantic opacity utilities and table selection', async () => {
+    const classes = [
+      'bg-surface/95', 'bg-surface-2/80', 'text-background/70', 'border-line/50',
+      'ring-background/10', 'bg-accent/60', 'shadow-accent/25', 'bg-danger/20',
+      'hover:bg-surface/10', 'bg-[color-mix(in_oklch,var(--accent)_4.8%,transparent)]'
+    ]
+    const result = await postcss([tailwindcss({
+      ...tailwindConfig,
+      content: [{ raw: classes.join(' ') }]
+    })]).process('@tailwind utilities;', { from: undefined })
+    const rules = new Map<string, string>()
+    result.root.walkRules((rule) => { rules.set(rule.selector, rule.toString()) })
+    for (const className of classes) {
+      if (className.startsWith('bg-[')) continue
+      const escaped = className.replace(/([^a-zA-Z0-9_-])/g, '\\$1')
+      const selector = `.${escaped}${className.startsWith('hover:') ? ':hover' : ''}`
+      expect(rules.has(selector), className).toBe(true)
+    }
+    expect(rules.get('.bg-surface\\/95')).toContain('var(--surface) calc(0.95 * 100%)')
+    expect(rules.get('.border-line\\/50')).toContain('var(--border) calc(0.5 * 100%)')
+    const backgrounds: string[] = []
+    result.root.walkDecls('background-color', (declaration) => { backgrounds.push(declaration.value) })
+    expect(backgrounds).toContain('color-mix(in oklch,var(--accent) 4.8%,transparent)')
+  })
+
+  it('does not append unsupported opacity to arbitrary CSS-variable colors', () => {
     for (const file of collectSourceFiles(srcDir)) {
       const source = readFileSync(file, 'utf8')
       expect(source, file).not.toMatch(
-        /@apply[^;\n]*\b(?:bg|text|border|ring|shadow)-(?:surface(?:-2|-3)?|muted|foreground|background|line|accent)\//,
+        /\b(?:bg|text|border|ring|shadow)-\[(?:var\(|color-mix\()[^\]\n]+\]\/[\d[.]/,
       )
     }
+  })
+
+  it('authorizes the prepaint theme script with the backend CSP nonce placeholder', () => {
+    const html = new DOMParser().parseFromString(readFileSync(indexHtmlPath, 'utf8'), 'text/html')
+    const themeScript = Array.from(html.querySelectorAll('script')).find((script) =>
+      script.textContent?.includes('root.dataset.theme')
+    )
+    expect(themeScript?.getAttribute('nonce')).toBe('__CSP_NONCE_VALUE__')
   })
 })

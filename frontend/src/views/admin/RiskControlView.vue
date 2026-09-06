@@ -1341,7 +1341,7 @@ type KeywordNoticeView = {
 const keywordNoticeTones = {
   info: {
     icon: 'infoCircle' as const,
-    toneClass: 'border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/60  ',
+    toneClass: 'border-[color-mix(in_oklch,var(--accent)_18%,transparent)] bg-[color-mix(in_oklch,var(--accent)_7.2%,transparent)]  ',
     iconClass: 'mt-0.5 flex-shrink-0 text-accent ',
     titleClass: 'text-accent ',
   },

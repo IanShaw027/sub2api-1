@@ -1,3 +1,8 @@
+const tokenColor = (name) => ({ opacityValue }) =>
+  opacityValue === undefined
+    ? `var(--${name})`
+    : `color-mix(in oklch, var(--${name}) calc(${opacityValue} * 100%), transparent)`
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
@@ -5,30 +10,28 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Glass semantic tokens. Values are OKLCH strings in CSS variables, so
-        // Tailwind opacity modifiers (bg-accent/10) will NOT work — use
-        // color-mix(in oklch, var(--accent) 10%, transparent) in component CSS.
-        canvas: 'var(--canvas)',
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
+        // Complete OKLCH variables need color-mix to support opacity modifiers.
+        canvas: tokenColor('canvas'),
+        background: tokenColor('background'),
+        foreground: tokenColor('foreground'),
         surface: {
-          DEFAULT: 'var(--surface)',
-          2: 'var(--surface-secondary)',
-          3: 'var(--surface-tertiary)'
+          DEFAULT: tokenColor('surface'),
+          2: tokenColor('surface-secondary'),
+          3: tokenColor('surface-tertiary')
         },
-        muted: 'var(--muted)',
-        line: 'var(--border)',
+        muted: tokenColor('muted'),
+        line: tokenColor('border'),
         success: {
-          DEFAULT: 'var(--success)',
-          text: 'var(--success-text)'
+          DEFAULT: tokenColor('success'),
+          text: tokenColor('success-text')
         },
         warning: {
-          DEFAULT: 'var(--warning)',
-          text: 'var(--warning-text)'
+          DEFAULT: tokenColor('warning'),
+          text: tokenColor('warning-text')
         },
         danger: {
-          DEFAULT: 'var(--danger)',
-          text: 'var(--danger-text)'
+          DEFAULT: tokenColor('danger'),
+          text: tokenColor('danger-text')
         },
         // 主色调 - Teal/Cyan 青色系
         primary: {
@@ -46,7 +49,7 @@ export default {
         },
         // 辅助色 - 深蓝灰. DEFAULT is the Glass accent token; numbered scale is legacy.
         accent: {
-          DEFAULT: 'var(--accent)',
+          DEFAULT: tokenColor('accent'),
           50: '#f8fafc',
           100: '#f1f5f9',
           200: '#e2e8f0',

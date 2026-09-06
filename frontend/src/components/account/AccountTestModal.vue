@@ -124,7 +124,7 @@
         <button
           v-if="outputLines.length > 0"
           @click="copyOutput"
-          class="absolute right-2 top-2 rounded-lg bg-[var(--code-bg)]/80 p-1.5 text-muted opacity-0 transition-all hover:bg-[var(--code-bg)] hover:text-white group-hover:opacity-100"
+          class="absolute right-2 top-2 rounded-lg bg-[color-mix(in_oklch,var(--code-bg)_80%,transparent)] p-1.5 text-muted opacity-0 transition-all hover:bg-[var(--code-bg)] hover:text-white group-hover:opacity-100"
           :title="t('admin.accounts.copyOutput')"
         >
           <Icon name="link" size="sm" :stroke-width="2" />

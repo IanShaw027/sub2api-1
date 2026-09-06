@@ -21,7 +21,7 @@
         <div
           class="flex items-center justify-between gap-3 rounded-lg border border-dashed px-4 py-3 transition-colors"
           :class="dragActive
- ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)]/70'
+ ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_8.4%,transparent)]'
  : 'border-line bg-surface-2'"
           @dragenter.prevent="handleDragEnter"
           @dragover.prevent
