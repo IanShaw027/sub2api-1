@@ -1,0 +1,119 @@
+- generic [ref=f10e1]:
+  - generic [ref=f10e3]:
+    - link "跳到工作区" [ref=f10e4] [cursor=pointer]:
+      - /url: "#creation-workspace"
+    - banner [ref=f10e5]:
+      - link "Sub2API" [ref=f10e6] [cursor=pointer]:
+        - /url: /admin/dashboard
+      - navigation "创作方式" [ref=f10e8]:
+        - link "对话" [ref=f10e9] [cursor=pointer]:
+          - /url: /studio?mode=chat
+        - link "图片" [ref=f10e13] [cursor=pointer]:
+          - /url: /studio?mode=image
+        - link "视频" [ref=f10e19] [cursor=pointer]:
+          - /url: /studio?mode=video
+        - link "语音" [ref=f10e24] [cursor=pointer]:
+          - /url: /studio?mode=voice
+        - link "灵感墙" [ref=f10e29] [cursor=pointer]:
+          - /url: /studio?mode=gallery
+      - generic [ref=f10e33]:
+        - link [ref=f10e112] [cursor=pointer]:
+          - /url: /profile
+          - strong [ref=f10e36]: US$142.60
+        - button "浅色模式" [ref=f10e113] [cursor=pointer]
+        - link "控制台" [ref=f10e46] [cursor=pointer]:
+          - /url: /admin/dashboard
+    - main [ref=f10e52]:
+      - generic [ref=f10e123]:
+        - heading "灵感墙" [level=2] [ref=f10e126]
+        - radiogroup [ref=f10e127]:
+          - radio "精选灵感" [checked] [ref=f10e128] [cursor=pointer]
+          - radio "社区作品" [ref=f10e129] [cursor=pointer]
+        - generic [ref=f10e130]:
+          - generic [ref=f10e131]:
+            - searchbox "搜索灵感、提示词或作者" [ref=f10e136]: 键帽
+            - generic [ref=f10e137]: 2 / 100
+          - group "案例分类" [ref=f10e138]:
+            - button "全部" [pressed] [ref=f10e139] [cursor=pointer]
+            - button "产品设计" [ref=f10e140] [cursor=pointer]
+            - button "海报设计" [ref=f10e141] [cursor=pointer]
+            - button "插画" [ref=f10e142] [cursor=pointer]
+            - button "建筑空间" [ref=f10e143] [cursor=pointer]
+            - button "摄影创意" [ref=f10e144] [cursor=pointer]
+          - generic [ref=f10e145]:
+            - article [ref=f10e543]:
+              - 'button "查看案例: 品牌化键盘键帽" [ref=f10e544] [cursor=pointer]':
+                - img "品牌化键盘键帽" [ref=f10e545]
+              - generic [ref=f10e546]:
+                - heading "品牌化键盘键帽" [level=3] [ref=f10e547]
+                - paragraph [ref=f10e548]:
+                  - text: "提示词:"
+                  - link "@egeberkina" [ref=f10e549] [cursor=pointer]:
+                    - /url: https://x.com/egeberkina
+                - paragraph [ref=f10e550]:
+                  - text: "图片:"
+                  - link "@jamez-bondos" [ref=f10e551] [cursor=pointer]:
+                    - /url: https://github.com/jamez-bondos
+                - generic [ref=f10e552]:
+                  - link "CC-BY-4.0" [ref=f10e553] [cursor=pointer]:
+                    - /url: https://creativecommons.org/licenses/by/4.0/
+                  - link "案例档案" [ref=f10e554] [cursor=pointer]:
+                    - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/90
+                  - 'button "一键创作: 品牌化键盘键帽" [ref=f10e555] [cursor=pointer]'
+            - article [ref=f10e559]:
+              - 'button "查看案例: 键盘ESC 键帽微型立体模型" [ref=f10e560] [cursor=pointer]':
+                - img "键盘ESC 键帽微型立体模型" [ref=f10e561]
+              - generic [ref=f10e562]:
+                - heading "键盘ESC 键帽微型立体模型" [level=3] [ref=f10e563]
+                - paragraph [ref=f10e564]:
+                  - text: "提示词:"
+                  - link "@egeberkina" [ref=f10e565] [cursor=pointer]:
+                    - /url: https://x.com/egeberkina
+                - paragraph [ref=f10e566]:
+                  - text: "图片:"
+                  - link "@jamez-bondos" [ref=f10e567] [cursor=pointer]:
+                    - /url: https://github.com/jamez-bondos
+                - generic [ref=f10e568]:
+                  - link "CC-BY-4.0" [ref=f10e569] [cursor=pointer]:
+                    - /url: https://creativecommons.org/licenses/by/4.0/
+                  - link "案例档案" [ref=f10e570] [cursor=pointer]:
+                    - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/47
+                  - 'button "一键创作: 键盘ESC 键帽微型立体模型" [ref=f10e571] [cursor=pointer]'
+          - generic [ref=f10e538]:
+            - generic [ref=f10e539]:
+              - text: "精选来源:"
+              - link "awesome-gpt4o-images" [ref=f10e540] [cursor=pointer]:
+                - /url: https://github.com/jamez-bondos/awesome-gpt4o-images
+            - link "CC-BY-4.0" [ref=f10e541] [cursor=pointer]:
+              - /url: /creation/inspiration/LICENSE.txt
+            - generic [ref=f10e542]: 预览图仅缩小并转为 JPEG；提示词保留原文。
+  - dialog [ref=f10e575]:
+    - banner [ref=f10e576]:
+      - heading "品牌化键盘键帽" [level=2] [ref=f10e578]
+      - button "关闭" [active] [ref=f10e579] [cursor=pointer]
+    - generic [ref=f10e583]:
+      - img "品牌化键盘键帽" [ref=f10e585]
+      - generic [ref=f10e586]:
+        - generic [ref=f10e587]:
+          - paragraph [ref=f10e588]:
+            - text: "提示词:"
+            - link "@egeberkina" [ref=f10e589] [cursor=pointer]:
+              - /url: https://x.com/egeberkina
+          - paragraph [ref=f10e590]:
+            - text: "图片:"
+            - link "@jamez-bondos" [ref=f10e591] [cursor=pointer]:
+              - /url: https://github.com/jamez-bondos
+          - generic [ref=f10e592]:
+            - link "原始来源" [ref=f10e593] [cursor=pointer]:
+              - /url: https://x.com/egeberkina/status/1918291652210311278
+            - link "案例档案" [ref=f10e598] [cursor=pointer]:
+              - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/90
+            - link "署名记录" [ref=f10e603] [cursor=pointer]:
+              - /url: /creation/inspiration/attribution/case-90.yml
+            - link "CC-BY-4.0" [ref=f10e608] [cursor=pointer]:
+              - /url: https://creativecommons.org/licenses/by/4.0/
+        - heading "完整提示词" [level=3] [ref=f10e609]
+        - generic [ref=f10e610]: "一个超逼真的3D渲染图，展示了四个机械键盘键帽，排列成紧密的2x2网格，所有键帽相互接触。从等轴测角度观察。一个键帽是透明的，上面用红色印刷着“{just}”字样。另外三个键帽采用颜色：{黑色、紫色和白色}。一个键帽上带有Github的Logo。另外两个键帽上分别写着“{fork}”和“{it}”。逼真的塑料纹理，圆润的雕刻键帽，柔和的阴影，干净的浅灰色背景。"
+    - contentinfo [ref=f10e611]:
+      - button "复制提示词" [ref=f10e612] [cursor=pointer]
+      - button "一键创作" [ref=f10e616] [cursor=pointer]

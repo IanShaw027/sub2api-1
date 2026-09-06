@@ -1,0 +1,597 @@
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - link [ref=f1e6] [cursor=pointer]:
+        - /url: /dashboard
+        - img "Logo" [ref=f1e7]
+      - generic [ref=f1e8]:
+        - link "Sub2API" [ref=f1e9] [cursor=pointer]:
+          - /url: /dashboard
+        - generic [ref=f1e10]: v1.8.2
+    - navigation [ref=f1e12]:
+      - generic [ref=f1e13]:
+        - button "API 服务" [expanded] [ref=f1e14] [cursor=pointer]
+        - generic [ref=f1e19]:
+          - link "仪表盘" [ref=f1e21] [cursor=pointer]:
+            - /url: /dashboard
+          - link "API 密钥" [ref=f1e27] [cursor=pointer]:
+            - /url: /keys
+          - link "批量生图" [ref=f1e33] [cursor=pointer]:
+            - /url: /batch-image
+          - link "使用记录" [ref=f1e40] [cursor=pointer]:
+            - /url: /usage
+          - link "可用渠道" [ref=f1e46] [cursor=pointer]:
+            - /url: /available-channels
+          - link "渠道状态" [ref=f1e52] [cursor=pointer]:
+            - /url: /monitor
+      - generic [ref=f1e57]:
+        - button "创作中心" [expanded] [ref=f1e58] [cursor=pointer]
+        - generic [ref=f1e63]:
+          - link "对话" [ref=f1e65] [cursor=pointer]:
+            - /url: /studio/chat
+          - link "图片" [ref=f1e71] [cursor=pointer]:
+            - /url: /studio/image
+          - link "视频" [ref=f1e79] [cursor=pointer]:
+            - /url: /studio/video
+          - link "语音" [ref=f1e86] [cursor=pointer]:
+            - /url: /studio/voice
+          - link "灵感墙" [ref=f1e93] [cursor=pointer]:
+            - /url: /studio/gallery
+      - generic [ref=f1e98]:
+        - button "订阅与账单" [expanded] [ref=f1e99] [cursor=pointer]
+        - generic [ref=f1e104]:
+          - link "我的订阅" [ref=f1e106] [cursor=pointer]:
+            - /url: /subscriptions
+          - link "充值/订阅" [ref=f1e112] [cursor=pointer]:
+            - /url: /purchase
+          - link "我的订单" [ref=f1e122] [cursor=pointer]:
+            - /url: /orders
+          - link "我的发票" [ref=f1e128] [cursor=pointer]:
+            - /url: /invoices
+          - link "兑换" [ref=f1e134] [cursor=pointer]:
+            - /url: /redeem
+      - generic [ref=f1e139]:
+        - button "账户" [expanded] [ref=f1e140] [cursor=pointer]
+        - generic [ref=f1e145]:
+          - link "邀请返利" [ref=f1e147] [cursor=pointer]:
+            - /url: /affiliate
+          - link "个人资料" [ref=f1e153] [cursor=pointer]:
+            - /url: /profile
+      - generic [ref=f1e158]:
+        - button "支持" [expanded] [ref=f1e159] [cursor=pointer]
+        - generic [ref=f1e164]:
+          - link "我的工单 3" [ref=f1e166] [cursor=pointer]:
+            - /url: /tickets
+            - generic [ref=f1e170]: 我的工单
+            - generic [ref=f1e171]: "3"
+          - link "接入指南" [ref=f1e173] [cursor=pointer]:
+            - /url: /custom/docs-guide
+          - link "外部状态页" [ref=f1e181] [cursor=pointer]:
+            - /url: /custom/status-embed
+    - generic [ref=f1e188]:
+      - generic [ref=f1e189]:
+        - button "浅色模式" [ref=f1e685] [cursor=pointer]
+        - button "收起" [ref=f1e194] [cursor=pointer]
+      - generic [ref=f1e197]:
+        - generic [ref=f1e198]: 林
+        - generic [ref=f1e200]:
+          - generic [ref=f1e201]: xiaoyu.lin@example.com
+          - generic [ref=f1e202]: 用户 · $38.25
+  - generic [ref=f1e203]:
+    - banner [ref=f1e204]:
+      - generic [ref=f1e205]:
+        - navigation "breadcrumb" [ref=f1e206]:
+          - generic [ref=f1e207]: 控制台
+          - generic [ref=f1e208]: /
+          - generic [ref=f1e209]: 创作中心
+          - generic [ref=f1e210]: /
+          - generic [ref=f1e211]: 灵感墙
+        - generic [ref=f1e212]:
+          - button "搜索" [ref=f1e213]:
+            - generic [ref=f1e216]: 搜索账号、密钥、用户…
+            - generic [ref=f1e217]: ⌘K
+          - generic [ref=f1e218]:
+            - generic [ref=f1e219]: 余额
+            - generic [ref=f1e220]: $38.25
+          - button "2" [ref=f1e222] [cursor=pointer]
+          - link "文档" [ref=f1e229] [cursor=pointer]:
+            - /url: https://docs.example.com/
+          - link "模型广场" [ref=f1e232] [cursor=pointer]:
+            - /url: /model-plaza?embedded=1
+          - button "联系客服" [ref=f1e236] [cursor=pointer]
+          - button "公告" [ref=f1e242] [cursor=pointer]
+          - button "🇨🇳 ZH" [ref=f1e246] [cursor=pointer]:
+            - generic [ref=f1e247]: 🇨🇳
+            - generic [ref=f1e248]: ZH
+          - button "浅色模式" [ref=f1e688] [cursor=pointer]
+          - button "用户菜单" [ref=f1e256] [cursor=pointer]:
+            - generic [ref=f1e257]: 林
+            - generic [ref=f1e259]: 林小雨
+    - main [ref=f1e262]:
+      - generic [ref=f1e263]:
+        - heading "灵感墙" [level=1] [ref=f1e266]
+        - region "灵感墙" [ref=f1e267]:
+          - generic [ref=f1e268]:
+            - radiogroup [ref=f1e269]:
+              - radio "精选灵感" [checked] [active] [ref=f1e270] [cursor=pointer]
+              - radio "社区作品" [ref=f1e271] [cursor=pointer]
+            - generic [ref=f1e710]:
+              - generic [ref=f1e711]:
+                - searchbox "搜索灵感、提示词或作者" [ref=f1e716]
+                - generic [ref=f1e717]: 100 / 100
+              - group "案例分类" [ref=f1e718]:
+                - button "全部" [pressed] [ref=f1e719] [cursor=pointer]
+                - button "产品设计" [ref=f1e720] [cursor=pointer]
+                - button "海报设计" [ref=f1e721] [cursor=pointer]
+                - button "插画" [ref=f1e722] [cursor=pointer]
+                - button "建筑空间" [ref=f1e723] [cursor=pointer]
+                - button "摄影创意" [ref=f1e724] [cursor=pointer]
+              - generic [ref=f1e725]:
+                - article [ref=f1e726]:
+                  - 'button "查看案例: 品牌化键盘键帽" [ref=f1e727] [cursor=pointer]':
+                    - img "品牌化键盘键帽" [ref=f1e728]
+                  - generic [ref=f1e729]:
+                    - heading "品牌化键盘键帽" [level=3] [ref=f1e730]
+                    - paragraph [ref=f1e731]:
+                      - text: "提示词:"
+                      - link "@egeberkina" [ref=f1e732] [cursor=pointer]:
+                        - /url: https://x.com/egeberkina
+                    - paragraph [ref=f1e733]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e734] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e735]:
+                      - link "CC-BY-4.0" [ref=f1e736] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e737] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/90
+                      - 'button "一键创作: 品牌化键盘键帽" [ref=f1e738] [cursor=pointer]'
+                - article [ref=f1e742]:
+                  - 'button "查看案例: 彩色矢量艺术海报" [ref=f1e743] [cursor=pointer]':
+                    - img "彩色矢量艺术海报" [ref=f1e744]
+                  - generic [ref=f1e745]:
+                    - heading "彩色矢量艺术海报" [level=3] [ref=f1e746]
+                    - paragraph [ref=f1e747]:
+                      - text: "提示词:"
+                      - link "@michaelrabone" [ref=f1e748] [cursor=pointer]:
+                        - /url: https://x.com/michaelrabone
+                    - paragraph [ref=f1e749]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e750] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e751]:
+                      - link "CC-BY-4.0" [ref=f1e752] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e753] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/59
+                      - 'button "一键创作: 彩色矢量艺术海报" [ref=f1e754] [cursor=pointer]'
+                - article [ref=f1e758]:
+                  - 'button "查看案例: 乐高城市景观" [ref=f1e759] [cursor=pointer]':
+                    - img "乐高城市景观" [ref=f1e760]
+                  - generic [ref=f1e761]:
+                    - heading "乐高城市景观" [level=3] [ref=f1e762]
+                    - paragraph [ref=f1e763]:
+                      - text: "提示词:"
+                      - link "@dotey" [ref=f1e764] [cursor=pointer]:
+                        - /url: https://x.com/dotey
+                    - paragraph [ref=f1e765]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e766] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e767]:
+                      - link "CC-BY-4.0" [ref=f1e768] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e769] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/79
+                      - 'button "一键创作: 乐高城市景观" [ref=f1e770] [cursor=pointer]'
+                - article [ref=f1e774]:
+                  - 'button "查看案例: 奇幻卡通插画" [ref=f1e775] [cursor=pointer]':
+                    - img "奇幻卡通插画" [ref=f1e776]
+                  - generic [ref=f1e777]:
+                    - heading "奇幻卡通插画" [level=3] [ref=f1e778]
+                    - paragraph [ref=f1e779]:
+                      - text: "提示词:"
+                      - link "@dotey" [ref=f1e780] [cursor=pointer]:
+                        - /url: https://x.com/dotey
+                    - paragraph [ref=f1e781]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e782] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e783]:
+                      - link "CC-BY-4.0" [ref=f1e784] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e785] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/39
+                      - 'button "一键创作: 奇幻卡通插画" [ref=f1e786] [cursor=pointer]'
+                - article [ref=f1e790]:
+                  - 'button "查看案例: 金色吊坠项链" [ref=f1e791] [cursor=pointer]':
+                    - img "金色吊坠项链" [ref=f1e792]
+                  - generic [ref=f1e793]:
+                    - heading "金色吊坠项链" [level=3] [ref=f1e794]
+                    - paragraph [ref=f1e795]:
+                      - text: "提示词:"
+                      - link "@azed_ai" [ref=f1e796] [cursor=pointer]:
+                        - /url: https://x.com/azed_ai
+                    - paragraph [ref=f1e797]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e798] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e799]:
+                      - link "CC-BY-4.0" [ref=f1e800] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e801] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/72
+                      - 'button "一键创作: 金色吊坠项链" [ref=f1e802] [cursor=pointer]'
+                - article [ref=f1e806]:
+                  - 'button "查看案例: 实物与手绘涂鸦创意广告" [ref=f1e807] [cursor=pointer]':
+                    - img "实物与手绘涂鸦创意广告" [ref=f1e808]
+                  - generic [ref=f1e809]:
+                    - heading "实物与手绘涂鸦创意广告" [level=3] [ref=f1e810]
+                    - paragraph [ref=f1e811]:
+                      - text: "提示词:"
+                      - link "@azed_ai" [ref=f1e812] [cursor=pointer]:
+                        - /url: https://x.com/azed_ai
+                    - paragraph [ref=f1e813]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e814] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e815]:
+                      - link "CC-BY-4.0" [ref=f1e816] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e817] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/100
+                      - 'button "一键创作: 实物与手绘涂鸦创意广告" [ref=f1e818] [cursor=pointer]'
+                - article [ref=f1e822]:
+                  - 'button "查看案例: 个性化房间设计" [ref=f1e823] [cursor=pointer]':
+                    - img "个性化房间设计" [ref=f1e824]
+                  - generic [ref=f1e825]:
+                    - heading "个性化房间设计" [level=3] [ref=f1e826]
+                    - paragraph [ref=f1e827]:
+                      - text: "提示词:"
+                      - link "@ZHO_ZHO_ZHO" [ref=f1e828] [cursor=pointer]:
+                        - /url: https://x.com/ZHO_ZHO_ZHO
+                    - paragraph [ref=f1e829]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e830] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e831]:
+                      - link "CC-BY-4.0" [ref=f1e832] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e833] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/7
+                      - 'button "一键创作: 个性化房间设计" [ref=f1e834] [cursor=pointer]'
+                - article [ref=f1e838]:
+                  - 'button "查看案例: 折叠式纸雕立体绘本" [ref=f1e839] [cursor=pointer]':
+                    - img "折叠式纸雕立体绘本" [ref=f1e840]
+                  - generic [ref=f1e841]:
+                    - heading "折叠式纸雕立体绘本" [level=3] [ref=f1e842]
+                    - paragraph [ref=f1e843]:
+                      - text: "提示词:"
+                      - link "@dotey" [ref=f1e844] [cursor=pointer]:
+                        - /url: https://x.com/dotey
+                    - paragraph [ref=f1e845]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e846] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e847]:
+                      - link "CC-BY-4.0" [ref=f1e848] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e849] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/32
+                      - 'button "一键创作: 折叠式纸雕立体绘本" [ref=f1e850] [cursor=pointer]'
+                - article [ref=f1e854]:
+                  - 'button "查看案例: 极简未来主义海报" [ref=f1e855] [cursor=pointer]':
+                    - img "极简未来主义海报" [ref=f1e856]
+                  - generic [ref=f1e857]:
+                    - heading "极简未来主义海报" [level=3] [ref=f1e858]
+                    - paragraph [ref=f1e859]:
+                      - text: "提示词:"
+                      - link "@ZHO_ZHO_ZHO" [ref=f1e860] [cursor=pointer]:
+                        - /url: https://x.com/ZHO_ZHO_ZHO
+                    - paragraph [ref=f1e861]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e862] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e863]:
+                      - link "CC-BY-4.0" [ref=f1e864] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e865] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/9
+                      - 'button "一键创作: 极简未来主义海报" [ref=f1e866] [cursor=pointer]'
+                - article [ref=f1e870]:
+                  - 'button "查看案例: 双重曝光" [ref=f1e871] [cursor=pointer]':
+                    - img "双重曝光" [ref=f1e872]
+                  - generic [ref=f1e873]:
+                    - heading "双重曝光" [level=3] [ref=f1e874]
+                    - paragraph [ref=f1e875]:
+                      - text: "提示词:"
+                      - link "rezzycheck (Sora)" [ref=f1e876] [cursor=pointer]:
+                        - /url: https://sora.com/explore?user=rezzycheck
+                    - paragraph [ref=f1e877]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e878] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e879]:
+                      - link "CC-BY-4.0" [ref=f1e880] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e881] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/86
+                      - 'button "一键创作: 双重曝光" [ref=f1e882] [cursor=pointer]'
+                - article [ref=f1e886]:
+                  - 'button "查看案例: Emoji 奶油雪糕" [ref=f1e887] [cursor=pointer]':
+                    - img "Emoji 奶油雪糕" [ref=f1e888]
+                  - generic [ref=f1e889]:
+                    - heading "Emoji 奶油雪糕" [level=3] [ref=f1e890]
+                    - paragraph [ref=f1e891]:
+                      - text: "提示词:"
+                      - link "@ZHO_ZHO_ZHO" [ref=f1e892] [cursor=pointer]:
+                        - /url: https://x.com/ZHO_ZHO_ZHO
+                    - paragraph [ref=f1e893]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e894] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e895]:
+                      - link "CC-BY-4.0" [ref=f1e896] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e897] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/63
+                      - 'button "一键创作: Emoji 奶油雪糕" [ref=f1e898] [cursor=pointer]'
+                - article [ref=f1e902]:
+                  - 'button "查看案例: 迷你 Cyberpunk 傾斜移軸景觀" [ref=f1e903] [cursor=pointer]':
+                    - img "迷你 Cyberpunk 傾斜移軸景觀" [ref=f1e904]
+                  - generic [ref=f1e905]:
+                    - heading "迷你 Cyberpunk 傾斜移軸景觀" [level=3] [ref=f1e906]
+                    - paragraph [ref=f1e907]:
+                      - text: "提示词:"
+                      - link "terry623" [ref=f1e908] [cursor=pointer]:
+                        - /url: https://github.com/terry623
+                    - paragraph [ref=f1e909]:
+                      - text: "图片:"
+                      - link "terry623" [ref=f1e910] [cursor=pointer]:
+                        - /url: https://github.com/terry623
+                    - generic [ref=f1e911]:
+                      - link "CC-BY-4.0" [ref=f1e912] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e913] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/71
+                      - 'button "一键创作: 迷你 Cyberpunk 傾斜移軸景觀" [ref=f1e914] [cursor=pointer]'
+                - article [ref=f1e918]:
+                  - 'button "查看案例: 复古宣传海报" [ref=f1e919] [cursor=pointer]':
+                    - img "复古宣传海报" [ref=f1e920]
+                  - generic [ref=f1e921]:
+                    - heading "复古宣传海报" [level=3] [ref=f1e922]
+                    - paragraph [ref=f1e923]:
+                      - text: "提示词:"
+                      - link "@dotey" [ref=f1e924] [cursor=pointer]:
+                        - /url: https://x.com/dotey
+                    - paragraph [ref=f1e925]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e926] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e927]:
+                      - link "CC-BY-4.0" [ref=f1e928] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e929] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/3
+                      - 'button "一键创作: 复古宣传海报" [ref=f1e930] [cursor=pointer]'
+                - article [ref=f1e934]:
+                  - 'button "查看案例: 35mm 胶片风格飞岛" [ref=f1e935] [cursor=pointer]':
+                    - img "35mm 胶片风格飞岛" [ref=f1e936]
+                  - generic [ref=f1e937]:
+                    - heading "35mm 胶片风格飞岛" [level=3] [ref=f1e938]
+                    - paragraph [ref=f1e939]:
+                      - text: "提示词:"
+                      - link "@dotey" [ref=f1e940] [cursor=pointer]:
+                        - /url: https://x.com/dotey
+                    - paragraph [ref=f1e941]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e942] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e943]:
+                      - link "CC-BY-4.0" [ref=f1e944] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e945] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/30
+                      - 'button "一键创作: 35mm 胶片风格飞岛" [ref=f1e946] [cursor=pointer]'
+                - article [ref=f1e950]:
+                  - 'button "查看案例: 黑白肖像艺术" [ref=f1e951] [cursor=pointer]':
+                    - img "黑白肖像艺术" [ref=f1e952]
+                  - generic [ref=f1e953]:
+                    - heading "黑白肖像艺术" [level=3] [ref=f1e954]
+                    - paragraph [ref=f1e955]:
+                      - text: "提示词:"
+                      - link "@ZHO_ZHO_ZHO" [ref=f1e956] [cursor=pointer]:
+                        - /url: https://x.com/ZHO_ZHO_ZHO
+                    - paragraph [ref=f1e957]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e958] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e959]:
+                      - link "CC-BY-4.0" [ref=f1e960] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e961] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/99
+                      - 'button "一键创作: 黑白肖像艺术" [ref=f1e962] [cursor=pointer]'
+                - article [ref=f1e966]:
+                  - 'button "查看案例: 磨砂玻璃后的虚实对比剪影" [ref=f1e967] [cursor=pointer]':
+                    - img "磨砂玻璃后的虚实对比剪影" [ref=f1e968]
+                  - generic [ref=f1e969]:
+                    - heading "磨砂玻璃后的虚实对比剪影" [level=3] [ref=f1e970]
+                    - paragraph [ref=f1e971]:
+                      - text: "提示词:"
+                      - link "@umesh_ai" [ref=f1e972] [cursor=pointer]:
+                        - /url: https://x.com/umesh_ai
+                    - paragraph [ref=f1e973]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e974] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e975]:
+                      - link "CC-BY-4.0" [ref=f1e976] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e977] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/98
+                      - 'button "一键创作: 磨砂玻璃后的虚实对比剪影" [ref=f1e978] [cursor=pointer]'
+                - article [ref=f1e982]:
+                  - 'button "查看案例: 可爱温馨针织玩偶" [ref=f1e983] [cursor=pointer]':
+                    - img "可爱温馨针织玩偶" [ref=f1e984]
+                  - generic [ref=f1e985]:
+                    - heading "可爱温馨针织玩偶" [level=3] [ref=f1e986]
+                    - paragraph [ref=f1e987]:
+                      - text: "提示词:"
+                      - link "@ZHO_ZHO_ZHO" [ref=f1e988] [cursor=pointer]:
+                        - /url: https://x.com/ZHO_ZHO_ZHO
+                    - paragraph [ref=f1e989]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e990] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e991]:
+                      - link "CC-BY-4.0" [ref=f1e992] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e993] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/97
+                      - 'button "一键创作: 可爱温馨针织玩偶" [ref=f1e994] [cursor=pointer]'
+                - article [ref=f1e998]:
+                  - 'button "查看案例: 定制动漫手办" [ref=f1e999] [cursor=pointer]':
+                    - img "定制动漫手办" [ref=f1e1000]
+                  - generic [ref=f1e1001]:
+                    - heading "定制动漫手办" [level=3] [ref=f1e1002]
+                    - paragraph [ref=f1e1003]:
+                      - text: "提示词:"
+                      - link "@dotey" [ref=f1e1004] [cursor=pointer]:
+                        - /url: https://x.com/dotey
+                    - paragraph [ref=f1e1005]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e1006] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e1007]:
+                      - link "CC-BY-4.0" [ref=f1e1008] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e1009] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/96
+                      - 'button "一键创作: 定制动漫手办" [ref=f1e1010] [cursor=pointer]'
+                - article [ref=f1e1014]:
+                  - 'button "查看案例: 自拍生成摇头娃娃" [ref=f1e1015] [cursor=pointer]':
+                    - img "自拍生成摇头娃娃" [ref=f1e1016]
+                  - generic [ref=f1e1017]:
+                    - heading "自拍生成摇头娃娃" [level=3] [ref=f1e1018]
+                    - paragraph [ref=f1e1019]:
+                      - text: "提示词:"
+                      - link "@thisdudelikesAI" [ref=f1e1020] [cursor=pointer]:
+                        - /url: https://x.com/thisdudelikesAI
+                    - paragraph [ref=f1e1021]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e1022] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e1023]:
+                      - link "CC-BY-4.0" [ref=f1e1024] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e1025] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/95
+                      - 'button "一键创作: 自拍生成摇头娃娃" [ref=f1e1026] [cursor=pointer]'
+                - article [ref=f1e1030]:
+                  - 'button "查看案例: 三只动物与地标自拍" [ref=f1e1031] [cursor=pointer]':
+                    - img "三只动物与地标自拍" [ref=f1e1032]
+                  - generic [ref=f1e1033]:
+                    - heading "三只动物与地标自拍" [level=3] [ref=f1e1034]
+                    - paragraph [ref=f1e1035]:
+                      - text: "提示词:"
+                      - link "@berryxia_ai" [ref=f1e1036] [cursor=pointer]:
+                        - /url: https://x.com/berryxia_ai
+                    - paragraph [ref=f1e1037]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e1038] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e1039]:
+                      - link "CC-BY-4.0" [ref=f1e1040] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e1041] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/94
+                      - 'button "一键创作: 三只动物与地标自拍" [ref=f1e1042] [cursor=pointer]'
+                - article [ref=f1e1046]:
+                  - 'button "查看案例: 玻璃质感重塑" [ref=f1e1047] [cursor=pointer]':
+                    - img "玻璃质感重塑" [ref=f1e1048]
+                  - generic [ref=f1e1049]:
+                    - heading "玻璃质感重塑" [level=3] [ref=f1e1050]
+                    - paragraph [ref=f1e1051]:
+                      - text: "提示词:"
+                      - link "@egeberkina" [ref=f1e1052] [cursor=pointer]:
+                        - /url: https://x.com/egeberkina
+                    - paragraph [ref=f1e1053]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e1054] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e1055]:
+                      - link "CC-BY-4.0" [ref=f1e1056] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e1057] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/93
+                      - 'button "一键创作: 玻璃质感重塑" [ref=f1e1058] [cursor=pointer]'
+                - article [ref=f1e1062]:
+                  - 'button "查看案例: 透视3D出屏效果" [ref=f1e1063] [cursor=pointer]':
+                    - img "透视3D出屏效果" [ref=f1e1064]
+                  - generic [ref=f1e1065]:
+                    - heading "透视3D出屏效果" [level=3] [ref=f1e1066]
+                    - paragraph [ref=f1e1067]:
+                      - text: "提示词:"
+                      - link "@ZHO_ZHO_ZHO" [ref=f1e1068] [cursor=pointer]:
+                        - /url: https://x.com/ZHO_ZHO_ZHO
+                    - paragraph [ref=f1e1069]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e1070] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e1071]:
+                      - link "CC-BY-4.0" [ref=f1e1072] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e1073] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/92
+                      - 'button "一键创作: 透视3D出屏效果" [ref=f1e1074] [cursor=pointer]'
+                - article [ref=f1e1078]:
+                  - 'button "查看案例: 谷歌地图变身古代藏宝图" [ref=f1e1079] [cursor=pointer]':
+                    - img "谷歌地图变身古代藏宝图" [ref=f1e1080]
+                  - generic [ref=f1e1081]:
+                    - heading "谷歌地图变身古代藏宝图" [level=3] [ref=f1e1082]
+                    - paragraph [ref=f1e1083]:
+                      - text: "提示词:"
+                      - link "@umesh_ai" [ref=f1e1084] [cursor=pointer]:
+                        - /url: https://x.com/umesh_ai
+                    - paragraph [ref=f1e1085]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e1086] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e1087]:
+                      - link "CC-BY-4.0" [ref=f1e1088] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e1089] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/91
+                      - 'button "一键创作: 谷歌地图变身古代藏宝图" [ref=f1e1090] [cursor=pointer]'
+                - article [ref=f1e1094]:
+                  - 'button "查看案例: 镀铬emoji徽章" [ref=f1e1095] [cursor=pointer]':
+                    - img "镀铬emoji徽章" [ref=f1e1096]
+                  - generic [ref=f1e1097]:
+                    - heading "镀铬emoji徽章" [level=3] [ref=f1e1098]
+                    - paragraph [ref=f1e1099]:
+                      - text: "提示词:"
+                      - link "@egeberkina" [ref=f1e1100] [cursor=pointer]:
+                        - /url: https://x.com/egeberkina
+                    - paragraph [ref=f1e1101]:
+                      - text: "图片:"
+                      - link "@jamez-bondos" [ref=f1e1102] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos
+                    - generic [ref=f1e1103]:
+                      - link "CC-BY-4.0" [ref=f1e1104] [cursor=pointer]:
+                        - /url: https://creativecommons.org/licenses/by/4.0/
+                      - link "案例档案" [ref=f1e1105] [cursor=pointer]:
+                        - /url: https://github.com/jamez-bondos/awesome-gpt4o-images/tree/3ed4dbb0f1ae6f7385c81e1fcea48d9eefd2e596/cases/89
+                      - 'button "一键创作: 镀铬emoji徽章" [ref=f1e1106] [cursor=pointer]'
+              - navigation "案例分页" [ref=f1e1110]:
+                - button "上一页" [disabled] [ref=f1e1111]
+                - generic [ref=f1e1114]: 1 / 5
+                - button "下一页" [ref=f1e1115] [cursor=pointer]
+              - generic [ref=f1e1118]:
+                - generic [ref=f1e1119]:
+                  - text: "精选来源:"
+                  - link "awesome-gpt4o-images" [ref=f1e1120] [cursor=pointer]:
+                    - /url: https://github.com/jamez-bondos/awesome-gpt4o-images
+                - link "CC-BY-4.0" [ref=f1e1121] [cursor=pointer]:
+                  - /url: /creation/inspiration/LICENSE.txt
+                - generic [ref=f1e1122]: 预览图仅缩小并转为 JPEG；提示词保留原文。

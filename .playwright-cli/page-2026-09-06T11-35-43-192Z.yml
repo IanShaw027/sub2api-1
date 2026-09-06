@@ -1,0 +1,101 @@
+- generic [ref=f3e3]:
+  - link "跳到工作区" [ref=f3e4] [cursor=pointer]:
+    - /url: "#creation-workspace"
+  - banner [ref=f3e5]:
+    - link "Sub2API" [ref=f3e6] [cursor=pointer]:
+      - /url: /admin/dashboard
+    - navigation "创作方式" [ref=f3e8]:
+      - link "对话" [ref=f3e9] [cursor=pointer]:
+        - /url: /studio?mode=chat
+      - link "图片" [ref=f3e13] [cursor=pointer]:
+        - /url: /studio?mode=image
+      - link "视频" [ref=f3e19] [cursor=pointer]:
+        - /url: /studio?mode=video
+      - link "语音" [ref=f3e24] [cursor=pointer]:
+        - /url: /studio?mode=voice
+      - link "灵感墙" [ref=f3e29] [cursor=pointer]:
+        - /url: /studio?mode=gallery
+    - generic [ref=f3e33]:
+      - link "Admin US$142.60" [ref=f3e34] [cursor=pointer]:
+        - /url: /profile
+        - generic [ref=f3e35]: Admin
+        - strong [ref=f3e36]: US$142.60
+      - button "🇨🇳 ZH" [ref=f3e38] [cursor=pointer]:
+        - generic [ref=f3e39]: 🇨🇳
+        - generic [ref=f3e40]: ZH
+      - button "深色模式" [ref=f3e43] [cursor=pointer]
+      - link "控制台" [ref=f3e46] [cursor=pointer]:
+        - /url: /admin/dashboard
+  - main [ref=f3e52]:
+    - generic [ref=f3e53]:
+      - complementary "聊天记录" [ref=f3e54]:
+        - searchbox "搜索聊天记录" [ref=f3e59]
+        - generic [ref=f3e60]:
+          - button "新对话" [ref=f3e61] [cursor=pointer]
+          - list [ref=f3e65]:
+            - listitem [ref=f3e66]:
+              - button "Review chart and PDF fixture 9月6日 gpt-4.1" [ref=f3e166] [cursor=pointer]:
+                - generic [ref=f3e68]: Review chart and PDF fixture
+                - generic [ref=f3e69]:
+                  - text: 9月6日
+                  - generic [ref=f3e70]: gpt-4.1
+              - button "对话操作" [ref=f3e71] [cursor=pointer]
+          - button "以前的云端对话" [ref=f3e76] [cursor=pointer]
+      - region "AI 对话" [ref=f3e81]:
+        - generic [ref=f3e82]:
+          - heading "Review chart and PDF fixture" [level=2] [ref=f3e167]
+          - generic [ref=f3e84]: 保存在此设备
+          - button "模型参数" [ref=f3e88] [cursor=pointer]
+        - log [ref=f3e168]:
+          - generic [ref=f3e169]:
+            - article "你, 19:35" [ref=f3e170]:
+              - generic [ref=f3e171]:
+                - generic [ref=f3e172]:
+                  - strong [ref=f3e173]: 你
+                  - time [ref=f3e174]: 19:35
+                - generic [ref=f3e175]:
+                  - generic "sample_text.pdf" [ref=f3e176]:
+                    - 'button "预览附件: sample_text.pdf" [ref=f3e177] [cursor=pointer]':
+                      - generic [ref=f3e181]: sample_text.pdf
+                      - generic [ref=f3e182]: 1 KB
+                  - generic "routes.txt" [ref=f3e183]:
+                    - 'button "预览附件: routes.txt" [ref=f3e184] [cursor=pointer]':
+                      - generic [ref=f3e188]: routes.txt
+                      - generic [ref=f3e189]: 3 KB
+                - paragraph [ref=f3e191]: Review chart and PDF fixture
+                - generic [ref=f3e192]:
+                  - button "复制" [ref=f3e193] [cursor=pointer]
+                  - button "下载" [ref=f3e197] [cursor=pointer]
+                  - button "编辑消息" [ref=f3e201] [cursor=pointer]
+            - article "助手, 19:35" [ref=f3e205]:
+              - generic [ref=f3e206]:
+                - generic [ref=f3e207]:
+                  - strong [ref=f3e208]: gpt-4.1
+                  - time [ref=f3e209]: 19:35
+                - group [ref=f3e210]:
+                  - generic "思考过程" [ref=f3e211] [cursor=pointer]
+                - generic [ref=f3e220]:
+                  - paragraph [ref=f3e222]: Review completed response with a local chart.
+                  - button "本条消息共使用 36 tokens，其中输入 22，输出 14" [ref=f3e223] [cursor=pointer]:
+                    - generic [aria-hidden] [ref=f3e224]: 📊
+                    - generic [ref=f3e225]: 总计：36 tokens
+                - figure "Review fixture chart" [ref=f3e226]:
+                  - img "Review fixture chart" [ref=f3e229]
+                - generic [ref=f3e230]:
+                  - button "复制" [ref=f3e231] [cursor=pointer]
+                  - button "下载" [ref=f3e235] [cursor=pointer]
+                  - button "回答有帮助" [ref=f3e239] [cursor=pointer]
+                  - button "回答欠佳" [ref=f3e242] [cursor=pointer]
+                  - button "重新生成" [ref=f3e245] [cursor=pointer]
+        - generic [ref=f3e119]:
+          - generic [ref=f3e120]:
+            - textbox "消息" [ref=f3e144]:
+              - /placeholder: 输入消息…
+            - generic [ref=f3e145]:
+              - button "添加附件" [ref=f3e146] [cursor=pointer]
+              - button "分组" [ref=f3e151] [cursor=pointer]:
+                - generic [ref=f3e152]: Review OpenAI
+              - button "模型" [ref=f3e157] [cursor=pointer]:
+                - generic [ref=f3e158]: gpt-4.1
+              - button "发送消息" [disabled] [ref=f3e249]
+          - paragraph [ref=f3e165]: 对话保存在此设备

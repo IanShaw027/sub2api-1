@@ -428,8 +428,11 @@
   height: 36px;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 900px) {
   .settings-page .settings-page-layout-nav {
+    position: static;
+  }
+  .settings-save {
     position: static;
   }
   .settings-nav-mobile {

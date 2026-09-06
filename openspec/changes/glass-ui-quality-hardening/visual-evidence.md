@@ -34,7 +34,7 @@ Additional coverage:
 4. Off-screen Chart.js canvases could be captured before series finished drawing. Final user dashboard captures explicitly wait for canvas attachment, scroll it into view, wait for rendering, then return to the top. Final canvas checks show 11,637-56,222 colored pixels across the user matrix. Administrator mobile charts likewise have more than 9,300 colored pixels. The scrolled chart captures remain as supplementary evidence.
 5. Administrator mobile request-trend labels overlapped. The owning component now samples axis labels based on width while keeping all bars and their hover information; mobile screenshots were replaced after the fix.
 6. Keys and Accounts screenshots were replaced after restoration of direct actions. Keys mobile keeps endpoint copy/speed-test, description, group picker, rate windows/reset and direct row actions. Wide desktop tables use local scrolling, not deletion of selected columns.
-7. Settings at 768px still exposed a narrow-form layout: side navigation plus a two-column setting row left insufficient width for the logo upload control and homepage textarea. This is a real responsive defect and must not be marked passed until corrected and re-captured.
+7. Settings at 768px exposed a narrow-form layout: side navigation plus a two-column setting row left insufficient width for the logo upload control and homepage textarea. The layout is now stacked through 900px and the save bar is in document flow through that breakpoint. Both light and dark replacement screenshots were recaptured and reviewed; no overlap or horizontal overflow remains.
 
 ## Reproduction
 

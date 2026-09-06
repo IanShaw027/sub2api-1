@@ -1,0 +1,1030 @@
+- generic [ref=f15e1]:
+  - generic [ref=f15e3]:
+    - complementary [aria-hidden]:
+      - generic:
+        - link:
+          - /url: /admin/dashboard
+        - generic:
+          - button:
+            - generic: v1.8.2
+      - navigation:
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /admin/dashboard
+            - generic:
+              - link:
+                - /url: /admin/ops
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /studio/chat
+            - generic:
+              - link:
+                - /url: /studio/image
+            - generic:
+              - link:
+                - /url: /studio/video
+            - generic:
+              - link:
+                - /url: /studio/voice
+            - generic:
+              - link:
+                - /url: /studio/gallery
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /admin/users
+            - generic:
+              - link:
+                - /url: /admin/groups
+            - generic:
+              - link:
+                - /url: /admin/subscriptions
+            - generic:
+              - link:
+                - /url: /admin/accounts
+            - generic:
+              - link:
+                - /url: /admin/proxies
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - button
+            - generic:
+              - link:
+                - /url: /admin/plugins
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /admin/announcements
+            - generic:
+              - link:
+                - /url: /admin/redeem
+            - generic:
+              - link:
+                - /url: /admin/promo-codes
+            - generic:
+              - generic:
+                - button
+            - generic:
+              - generic:
+                - button
+            - generic:
+              - link:
+                - /url: /admin/tickets
+        - generic:
+          - generic:
+            - generic:
+              - generic:
+                - button
+            - generic:
+              - link:
+                - /url: /admin/usage
+            - generic:
+              - link:
+                - /url: /admin/audit-logs
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /admin/settings
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /keys
+            - generic:
+              - link:
+                - /url: /batch-image
+            - generic:
+              - link:
+                - /url: /usage
+            - generic:
+              - link:
+                - /url: /available-channels
+            - generic:
+              - link:
+                - /url: /monitor
+            - generic:
+              - link:
+                - /url: /subscriptions
+            - generic:
+              - link:
+                - /url: /purchase
+            - generic:
+              - link:
+                - /url: /orders
+            - generic:
+              - link:
+                - /url: /invoices
+            - generic:
+              - link:
+                - /url: /tickets
+            - generic:
+              - link:
+                - /url: /redeem
+            - generic:
+              - link:
+                - /url: /affiliate
+            - generic:
+              - link:
+                - /url: /profile
+            - generic:
+              - link:
+                - /url: /custom/docs-guide
+            - generic:
+              - link:
+                - /url: /custom/status-embed
+    - generic [ref=f15e4]:
+      - banner [ref=f15e5]:
+        - generic [ref=f15e6]:
+          - link "Sub2API" [ref=f15e7] [cursor=pointer]:
+            - /url: /admin/dashboard
+          - generic [ref=f15e8]:
+            - generic [ref=f15e9]: 账号管理
+            - generic [ref=f15e10]: 管理 AI 平台账号和 Cookie
+          - generic [ref=f15e11]:
+            - button "更多操作" [ref=f15e14] [cursor=pointer]
+            - button "公告" [ref=f15e19] [cursor=pointer]
+            - button "切换菜单" [expanded] [ref=f15e22] [cursor=pointer]
+      - main [ref=f15e25]:
+        - generic [ref=f15e26]:
+          - generic [ref=f15e27]:
+            - heading "账号管理" [level=1] [ref=f15e28]
+            - paragraph [ref=f15e29]: 管理 AI 平台账号和 Cookie
+          - generic [ref=f15e31]:
+            - button [ref=f15e32] [cursor=pointer]
+            - button "批量编辑" [ref=f15e35] [cursor=pointer]
+            - button "导入 / 导出" [ref=f15e37] [cursor=pointer]
+            - button "更多" [ref=f15e42] [cursor=pointer]
+            - button "添加账号" [ref=f15e46] [cursor=pointer]
+        - generic [ref=f15e47]:
+          - generic [ref=f15e48]:
+            - group "状态" [ref=f15e49]:
+              - button "全部 8" [ref=f15e50] [cursor=pointer]:
+                - generic [ref=f15e51]: 全部
+                - generic [ref=f15e53]: "8"
+              - button "正常 5" [ref=f15e54] [cursor=pointer]:
+                - generic [ref=f15e55]: 正常
+                - generic [ref=f15e57]: "5"
+              - button "限流 1" [ref=f15e58] [cursor=pointer]:
+                - generic [ref=f15e59]: 限流
+                - generic [ref=f15e61]: "1"
+              - button "异常 1" [ref=f15e62] [cursor=pointer]:
+                - generic [ref=f15e63]: 异常
+                - generic [ref=f15e65]: "1"
+              - button "已暂停 1" [ref=f15e66] [cursor=pointer]:
+                - generic [ref=f15e67]: 已暂停
+                - generic [ref=f15e69]: "1"
+            - generic [ref=f15e70]:
+              - generic [ref=f15e71]:
+                - textbox "搜索账号..." [ref=f15e73]
+                - button "Select option" [ref=f15e75] [cursor=pointer]:
+                  - generic [ref=f15e76]: 全部平台
+                - button "Select option" [ref=f15e81] [cursor=pointer]:
+                  - generic [ref=f15e82]: 全部分组
+                - button "Select option" [ref=f15e87] [cursor=pointer]:
+                  - generic [ref=f15e88]: 全部类型
+                - button "Select option" [ref=f15e93] [cursor=pointer]:
+                  - generic [ref=f15e94]: 全部状态
+                - button "Select option" [ref=f15e99] [cursor=pointer]:
+                  - generic [ref=f15e100]: 全部隐私状态
+              - button "自动刷新" [ref=f15e105] [cursor=pointer]
+              - generic [ref=f15e109]: 已选 0 / 8
+              - button "列显示" [ref=f15e111] [cursor=pointer]
+          - generic [ref=f15e115]:
+            - generic [ref=f15e117]:
+              - generic [ref=f15e119]:
+                - checkbox [ref=f15e122] [cursor=pointer]
+                - generic "#101 · 默认分组 +1 · ops-01@sub2api.dev" [ref=f15e126]:
+                  - generic [ref=f15e127]: claude-max-01
+                  - generic [ref=f15e128]: ops-01@sub2api.dev
+                  - generic [ref=f15e129]: "#101 · 默认分组 +1"
+                - generic [ref=f15e130]:
+                  - generic [ref=f15e131]: 账号ID
+                  - generic [ref=f15e132]: "#101"
+                - generic [ref=f15e133]:
+                  - generic [ref=f15e134]: 平台
+                  - generic [ref=f15e135]: Claude
+                - generic [ref=f15e141]:
+                  - generic [ref=f15e142]: 类型
+                  - generic [ref=f15e143]: OAuth
+                - generic [ref=f15e151]:
+                  - generic [ref=f15e152]: 容量
+                  - generic [ref=f15e154]:
+                    - generic [ref=f15e155]:
+                      - generic [ref=f15e158]: "3"
+                      - generic [ref=f15e159]: /
+                      - generic [ref=f15e160]: "8"
+                    - generic "5h窗口费用正常" [ref=f15e161]:
+                      - generic [ref=f15e164]: $11.42
+                      - generic [ref=f15e165]: /
+                      - generic [ref=f15e166]: $25.00
+                    - generic "活跃会话正常（空闲超时：5分钟）" [ref=f15e167]:
+                      - generic [ref=f15e170]: "3"
+                      - generic [ref=f15e171]: /
+                      - generic [ref=f15e172]: "6"
+                    - generic "RPM 限制 (三区模型) - 正常" [ref=f15e173]:
+                      - generic [ref=f15e176]: "14"
+                      - generic [ref=f15e177]: /
+                      - generic [ref=f15e178]: "60"
+                      - generic [ref=f15e179]: "[T]"
+                - generic [ref=f15e180]:
+                  - generic [ref=f15e181]: 状态
+                  - generic [ref=f15e182]: 正常
+                - generic [ref=f15e185]:
+                  - generic [ref=f15e186]: 调度
+                  - switch "调度已开启" [checked] [ref=f15e188] [cursor=pointer]
+                - generic [ref=f15e190]:
+                  - generic [ref=f15e191]: 分组
+                  - generic [ref=f15e194]:
+                    - generic [ref=f15e195]: 默认分组
+                    - generic [ref=f15e198]: Claude Max
+                - generic [ref=f15e201]:
+                  - generic [ref=f15e202]: 用量窗口
+                  - generic [ref=f15e204]:
+                    - generic [ref=f15e205]:
+                      - generic [ref=f15e206]:
+                        - generic [ref=f15e207]: 5h
+                        - generic [ref=f15e210]: 49%
+                      - generic [ref=f15e211]:
+                        - generic [ref=f15e212]: 7d
+                        - generic [ref=f15e215]: 63%
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic: 214 req
+                                - generic: 5.8M
+                                - generic "账号计费": A $11.42
+                                - generic "用户扣费": U $13.70
+                            - generic:
+                              - generic: 5h
+                              - generic: 49%
+                              - generic: 2h 47m
+                          - generic:
+                            - generic:
+                              - generic: 7d
+                              - generic: 63%
+                              - generic "预测 7d 总金额 (USD)": ~$267.14
+                              - generic: 2d 20h
+                          - generic:
+                            - generic:
+                              - generic: 7d S
+                              - generic: 27%
+                              - generic: 2d 20h
+                          - generic:
+                            - generic:
+                              - generic: 7d F
+                              - generic: 52%
+                              - generic: 2d 20h
+                          - generic:
+                            - generic: 被动采样
+                            - button "查询"
+                - generic [ref=f15e216]:
+                  - generic [ref=f15e217]: 优先级
+                  - generic [ref=f15e218]: "10"
+                - generic [ref=f15e219]:
+                  - generic [ref=f15e220]: 最近使用
+                  - generic [ref=f15e221]: 14分钟前
+                - generic [ref=f15e222]:
+                  - generic [ref=f15e223]: 上游声明倍率
+                  - generic [ref=f15e224]: "-"
+                - generic [ref=f15e225]:
+                  - generic [ref=f15e226]: 创建时间
+                  - generic [ref=f15e227]: 2026/07/09 01:36:07
+                - generic [ref=f15e228]:
+                  - generic [ref=f15e229]: 过期时间
+                  - generic [ref=f15e231]:
+                    - generic [ref=f15e232]: 2026-09-27 01:36
+                    - generic [ref=f15e233]: 过期自动暂停调度
+                - generic [ref=f15e236]:
+                  - button "编辑" [ref=f15e237] [cursor=pointer]
+                  - button "更多" [ref=f15e240] [cursor=pointer]
+              - generic [ref=f15e243]:
+                - checkbox [ref=f15e246] [cursor=pointer]
+                - generic "#102 · Claude Max · ops-02@sub2api.dev" [ref=f15e250]:
+                  - generic [ref=f15e251]: claude-max-02
+                  - generic [ref=f15e252]: ops-02@sub2api.dev
+                  - generic [ref=f15e253]: "#102 · Claude Max"
+                - generic [ref=f15e254]:
+                  - generic [ref=f15e255]: 账号ID
+                  - generic [ref=f15e256]: "#102"
+                - generic [ref=f15e257]:
+                  - generic [ref=f15e258]: 平台
+                  - generic [ref=f15e259]: Claude
+                - generic [ref=f15e265]:
+                  - generic [ref=f15e266]: 类型
+                  - generic [ref=f15e267]: OAuth
+                - generic [ref=f15e275]:
+                  - generic [ref=f15e276]: 容量
+                  - generic [ref=f15e278]:
+                    - generic [ref=f15e279]:
+                      - generic [ref=f15e282]: "1"
+                      - generic [ref=f15e283]: /
+                      - generic [ref=f15e284]: "8"
+                    - generic "5h窗口费用正常" [ref=f15e285]:
+                      - generic [ref=f15e288]: $24.80
+                      - generic [ref=f15e289]: /
+                      - generic [ref=f15e290]: $25.00
+                    - generic "活跃会话正常（空闲超时：5分钟）" [ref=f15e291]:
+                      - generic [ref=f15e294]: "5"
+                      - generic [ref=f15e295]: /
+                      - generic [ref=f15e296]: "6"
+                - generic [ref=f15e297]:
+                  - generic [ref=f15e298]: 状态
+                  - generic [ref=f15e300]:
+                    - generic [ref=f15e301]:
+                      - generic [ref=f15e302]: 限流中
+                      - generic [ref=f15e303]: 35m 自动恢复
+                    - generic [ref=f15e304]:
+                      - generic [ref=f15e305]: "429"
+                      - generic: 限流中，当前不参与调度，预计 2026/09/07 02:24:07 自动恢复
+                - generic [ref=f15e308]:
+                  - generic [ref=f15e309]: 调度
+                  - switch "调度已开启" [checked] [ref=f15e311] [cursor=pointer]
+                - generic [ref=f15e313]:
+                  - generic [ref=f15e314]: 分组
+                  - generic [ref=f15e315]: Claude Max
+                - generic [ref=f15e321]:
+                  - generic [ref=f15e322]: 用量窗口
+                  - generic [ref=f15e324]:
+                    - generic [ref=f15e325]:
+                      - generic [ref=f15e326]:
+                        - generic [ref=f15e327]: 5h
+                        - generic [ref=f15e330]: 98%
+                      - generic [ref=f15e331]:
+                        - generic [ref=f15e332]: 7d
+                        - generic [ref=f15e335]: 100%
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic: 214 req
+                                - generic: 5.8M
+                                - generic "账号计费": A $11.42
+                                - generic "用户扣费": U $13.70
+                            - generic:
+                              - generic: 5h
+                              - generic: 98%
+                              - generic: 2h 47m
+                          - generic:
+                            - generic:
+                              - generic: 7d
+                              - generic: 100%
+                              - generic "预测 7d 总金额 (USD)": ~$168.30
+                              - generic: 2d 20h
+                          - generic:
+                            - generic:
+                              - generic: 7d S
+                              - generic: 76%
+                              - generic: 2d 20h
+                          - generic:
+                            - generic:
+                              - generic: 7d F
+                              - generic: 100%
+                              - generic: 2d 20h
+                          - generic:
+                            - generic: 被动采样
+                            - button "查询"
+                - generic [ref=f15e336]:
+                  - generic [ref=f15e337]: 优先级
+                  - generic [ref=f15e338]: "10"
+                - generic [ref=f15e339]:
+                  - generic [ref=f15e340]: 最近使用
+                  - generic [ref=f15e341]: 19分钟前
+                - generic [ref=f15e342]:
+                  - generic [ref=f15e343]: 上游声明倍率
+                  - generic [ref=f15e344]: "-"
+                - generic [ref=f15e345]:
+                  - generic [ref=f15e346]: 创建时间
+                  - generic [ref=f15e347]: 2026/07/09 01:36:07
+                - generic [ref=f15e348]:
+                  - generic [ref=f15e349]: 过期时间
+                  - generic [ref=f15e351]:
+                    - generic [ref=f15e352]: 2026-09-27 01:36
+                    - generic [ref=f15e353]: 过期自动暂停调度
+                - generic [ref=f15e356]:
+                  - button "编辑" [ref=f15e357] [cursor=pointer]
+                  - button "更多" [ref=f15e360] [cursor=pointer]
+              - generic [ref=f15e363]:
+                - checkbox [ref=f15e366] [cursor=pointer]
+                - generic "#103 · 默认分组" [ref=f15e370]: claude-console-apikey
+                - generic [ref=f15e373]:
+                  - generic [ref=f15e374]: 账号ID
+                  - generic [ref=f15e375]: "#103"
+                - generic [ref=f15e376]:
+                  - generic [ref=f15e377]: 平台
+                  - generic [ref=f15e378]: Claude
+                - generic [ref=f15e384]:
+                  - generic [ref=f15e385]: 类型
+                  - generic [ref=f15e386]: Key
+                - generic [ref=f15e394]:
+                  - generic [ref=f15e395]: 容量
+                  - generic [ref=f15e397]:
+                    - generic [ref=f15e398]:
+                      - generic [ref=f15e401]: "4"
+                      - generic [ref=f15e402]: /
+                      - generic [ref=f15e403]: "20"
+                    - generic "配额正常" [ref=f15e404]:
+                      - generic [ref=f15e405]: D
+                      - generic [ref=f15e406]: $41.20
+                      - generic [ref=f15e407]: /
+                      - generic [ref=f15e408]: $60.00
+                    - generic "配额正常" [ref=f15e409]:
+                      - generic [ref=f15e410]: W
+                      - generic [ref=f15e411]: $188.90
+                      - generic [ref=f15e412]: /
+                      - generic [ref=f15e413]: $300.00
+                    - generic "配额正常" [ref=f15e414]:
+                      - generic [ref=f15e417]: $318.60
+                      - generic [ref=f15e418]: /
+                      - generic [ref=f15e419]: $500.00
+                - generic [ref=f15e420]:
+                  - generic [ref=f15e421]: 状态
+                  - generic [ref=f15e422]: 正常
+                - generic [ref=f15e425]:
+                  - generic [ref=f15e426]: 调度
+                  - switch "调度已开启" [checked] [ref=f15e428] [cursor=pointer]
+                - generic [ref=f15e430]:
+                  - generic [ref=f15e431]: 分组
+                  - generic [ref=f15e432]: 默认分组
+                - generic [ref=f15e438]:
+                  - generic [ref=f15e439]: 用量窗口
+                  - generic [ref=f15e441]:
+                    - generic [ref=f15e442]:
+                      - generic [ref=f15e443]:
+                        - generic [ref=f15e444]: 1d
+                        - generic [ref=f15e447]: 69%
+                      - generic [ref=f15e448]:
+                        - generic [ref=f15e449]: 7d
+                        - generic [ref=f15e452]: 63%
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: 1.5K req
+                              - generic: 34.9M
+                              - generic "账号计费": A $151.31
+                              - generic "用户扣费": U $178.55
+                          - generic:
+                            - generic:
+                              - generic: 1d
+                              - generic: 68.66%
+                          - generic:
+                            - generic:
+                              - generic: 7d
+                              - generic: 62.96%
+                          - generic:
+                            - generic:
+                              - generic: total
+                              - generic: 63.72%
+                - generic [ref=f15e453]:
+                  - generic [ref=f15e454]: 优先级
+                  - generic [ref=f15e455]: "30"
+                - generic [ref=f15e456]:
+                  - generic [ref=f15e457]: 最近使用
+                  - generic [ref=f15e458]: 15分钟前
+                - generic [ref=f15e459]:
+                  - generic [ref=f15e460]: 上游声明倍率
+                  - generic [ref=f15e462]:
+                    - generic [ref=f15e463]: 未探测
+                    - button "立即探测上游倍率" [ref=f15e465] [cursor=pointer]
+                - generic [ref=f15e468]:
+                  - generic [ref=f15e469]: 创建时间
+                  - generic [ref=f15e470]: 2026/07/09 01:36:07
+                - generic [ref=f15e471]:
+                  - generic [ref=f15e472]: 过期时间
+                  - generic [ref=f15e473]: "-"
+                - generic [ref=f15e477]:
+                  - button "编辑" [ref=f15e478] [cursor=pointer]
+                  - button "更多" [ref=f15e481] [cursor=pointer]
+              - generic [ref=f15e484]:
+                - checkbox [ref=f15e487] [cursor=pointer]
+                - generic "#104 · 默认分组" [ref=f15e491]: claude-setup-token-03
+                - generic [ref=f15e494]:
+                  - generic [ref=f15e495]: 账号ID
+                  - generic [ref=f15e496]: "#104"
+                - generic [ref=f15e497]:
+                  - generic [ref=f15e498]: 平台
+                  - generic [ref=f15e499]: Claude
+                - generic [ref=f15e505]:
+                  - generic [ref=f15e506]: 类型
+                  - generic [ref=f15e507]: Token
+                - generic [ref=f15e515]:
+                  - generic [ref=f15e516]: 容量
+                  - generic [ref=f15e519]:
+                    - generic [ref=f15e522]: "0"
+                    - generic [ref=f15e523]: /
+                    - generic [ref=f15e524]: "4"
+                - generic [ref=f15e525]:
+                  - generic [ref=f15e526]: 状态
+                  - generic [ref=f15e527]: 错误
+                - generic [ref=f15e533]:
+                  - generic [ref=f15e534]: 调度
+                  - switch "调度已关闭" [ref=f15e536] [cursor=pointer]
+                - generic [ref=f15e538]:
+                  - generic [ref=f15e539]: 分组
+                  - generic [ref=f15e540]: 默认分组
+                - generic [ref=f15e546]:
+                  - generic [ref=f15e547]: 用量窗口
+                  - generic [ref=f15e549]:
+                    - generic [ref=f15e550]:
+                      - generic [ref=f15e551]:
+                        - generic [ref=f15e552]: 5h
+                        - generic [ref=f15e554]: 0%
+                      - generic [ref=f15e555]:
+                        - generic [ref=f15e556]: 7d
+                        - generic [ref=f15e559]: 14%
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic "refresh token revoked"
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic: 214 req
+                                - generic: 5.8M
+                                - generic "账号计费": A $11.42
+                                - generic "用户扣费": U $13.70
+                            - generic:
+                              - generic: 5h
+                              - generic: 0%
+                              - generic: 2h 47m
+                          - generic:
+                            - generic:
+                              - generic: 7d
+                              - generic: 14%
+                              - generic "预测 7d 总金额 (USD)": ~$1202.14
+                              - generic: 2d 20h
+                          - generic:
+                            - generic:
+                              - generic: 7d S
+                              - generic: 0%
+                              - generic: 2d 20h
+                          - generic:
+                            - generic:
+                              - generic: 7d F
+                              - generic: 3%
+                              - generic: 2d 20h
+                          - generic:
+                            - generic: 被动采样
+                            - button "查询"
+                - generic [ref=f15e560]:
+                  - generic [ref=f15e561]: 优先级
+                  - generic [ref=f15e562]: "40"
+                - generic [ref=f15e563]:
+                  - generic [ref=f15e564]: 最近使用
+                  - generic [ref=f15e565]: 5小时前
+                - generic [ref=f15e566]:
+                  - generic [ref=f15e567]: 上游声明倍率
+                  - generic [ref=f15e568]: "-"
+                - generic [ref=f15e569]:
+                  - generic [ref=f15e570]: 创建时间
+                  - generic [ref=f15e571]: 2026/07/09 01:36:07
+                - generic [ref=f15e572]:
+                  - generic [ref=f15e573]: 过期时间
+                  - generic [ref=f15e575]:
+                    - generic [ref=f15e576]: 2026-09-07 00:36
+                    - generic [ref=f15e577]:
+                      - generic [ref=f15e578]: 已过期
+                      - generic [ref=f15e579]: 过期自动暂停调度
+                - generic [ref=f15e581]:
+                  - button "编辑" [ref=f15e582] [cursor=pointer]
+                  - button "更多" [ref=f15e585] [cursor=pointer]
+              - generic [ref=f15e588]:
+                - checkbox [ref=f15e591] [cursor=pointer]
+                - generic [ref=f15e594]:
+                  - generic "#105 · OpenAI Codex · codex-01@sub2api.dev" [ref=f15e595]:
+                    - generic [ref=f15e596]: codex-team-01
+                    - generic [ref=f15e597]: codex-01@sub2api.dev
+                    - generic [ref=f15e598]: "#105 · OpenAI Codex"
+                  - button "2" [ref=f15e599] [cursor=pointer]
+                - generic [ref=f15e603]:
+                  - generic [ref=f15e604]: 账号ID
+                  - generic [ref=f15e605]: "#105"
+                - generic [ref=f15e606]:
+                  - generic [ref=f15e607]: 平台
+                  - generic [ref=f15e608]: OpenAI
+                - generic [ref=f15e614]:
+                  - generic [ref=f15e615]: 类型
+                  - generic [ref=f15e617]:
+                    - generic [ref=f15e618]: OAuth
+                    - generic "Compact Auto" [ref=f15e624]
+                - generic [ref=f15e627]:
+                  - generic [ref=f15e628]: 容量
+                  - generic [ref=f15e631]:
+                    - generic [ref=f15e634]: "2"
+                    - generic [ref=f15e635]: /
+                    - generic [ref=f15e636]: "6"
+                - generic [ref=f15e637]:
+                  - generic [ref=f15e638]: 状态
+                  - generic [ref=f15e639]: 正常
+                - generic [ref=f15e642]:
+                  - generic [ref=f15e643]: 调度
+                  - switch "调度已开启" [checked] [ref=f15e645] [cursor=pointer]
+                - generic [ref=f15e647]:
+                  - generic [ref=f15e648]: 分组
+                  - generic [ref=f15e649]: OpenAI Codex
+                - generic [ref=f15e655]:
+                  - generic [ref=f15e656]: 用量窗口
+                  - generic [ref=f15e658]:
+                    - generic [ref=f15e659]:
+                      - generic [ref=f15e660]:
+                        - generic [ref=f15e661]: 5h
+                        - generic [ref=f15e664]: 46%
+                      - generic [ref=f15e665]:
+                        - generic [ref=f15e666]: 7d
+                        - generic [ref=f15e669]: 71%
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic: 96 req
+                                - generic: 3.1M
+                                - generic "账号计费": A $4.80
+                            - generic:
+                              - generic: 5h
+                              - generic: 46%
+                              - generic: 2h 42m
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic: 1.4K req
+                                - generic: 38.0M
+                                - generic "账号计费": A $61.20
+                            - generic:
+                              - generic: 7d
+                              - generic: 71%
+                              - generic "预测 7d 总金额 (USD)": ~$86.20
+                              - generic: 3d 11h
+                          - generic:
+                            - generic:
+                              - button "查询"
+                              - button "次数"
+                              - button "重置" [disabled]
+                - generic [ref=f15e670]:
+                  - generic [ref=f15e671]: 优先级
+                  - generic [ref=f15e672]: "20"
+                - generic [ref=f15e673]:
+                  - generic [ref=f15e674]: 最近使用
+                  - generic [ref=f15e675]: 14分钟前
+                - generic [ref=f15e676]:
+                  - generic [ref=f15e677]: 上游声明倍率
+                  - generic [ref=f15e678]: "-"
+                - generic [ref=f15e679]:
+                  - generic [ref=f15e680]: 创建时间
+                  - generic [ref=f15e681]: 2026/07/09 01:36:07
+                - generic [ref=f15e682]:
+                  - generic [ref=f15e683]: 过期时间
+                  - generic [ref=f15e685]:
+                    - generic [ref=f15e686]: 2026-09-27 01:36
+                    - generic [ref=f15e687]: 过期自动暂停调度
+                - generic [ref=f15e690]:
+                  - button "编辑" [ref=f15e691] [cursor=pointer]
+                  - button "更多" [ref=f15e694] [cursor=pointer]
+              - generic [ref=f15e697]:
+                - checkbox [ref=f15e700] [cursor=pointer]
+                - generic "#106 · Gemini" [ref=f15e704]: gemini-workspace-01
+                - generic [ref=f15e707]:
+                  - generic [ref=f15e708]: 账号ID
+                  - generic [ref=f15e709]: "#106"
+                - generic [ref=f15e710]:
+                  - generic [ref=f15e711]: 平台
+                  - generic [ref=f15e712]: Gemini
+                - generic [ref=f15e718]:
+                  - generic [ref=f15e719]: 类型
+                  - generic [ref=f15e720]: OAuth
+                - generic [ref=f15e728]:
+                  - generic [ref=f15e729]: 容量
+                  - generic [ref=f15e732]:
+                    - generic [ref=f15e735]: "1"
+                    - generic [ref=f15e736]: /
+                    - generic [ref=f15e737]: "10"
+                - generic [ref=f15e738]:
+                  - generic [ref=f15e739]: 状态
+                  - generic [ref=f15e740]: 正常
+                - generic [ref=f15e743]:
+                  - generic [ref=f15e744]: 调度
+                  - switch "调度已开启" [checked] [ref=f15e746] [cursor=pointer]
+                - generic [ref=f15e748]:
+                  - generic [ref=f15e749]: 分组
+                  - generic [ref=f15e750]: Gemini
+                - generic [ref=f15e756]:
+                  - generic [ref=f15e757]: 用量窗口
+                  - generic [ref=f15e759]:
+                    - generic [ref=f15e761]:
+                      - generic [ref=f15e762]: 1d
+                      - generic [ref=f15e765]: 24%
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic: ai studio
+                          - generic:
+                            - generic:
+                              - generic: Gemini 配额与限流政策（参考）
+                              - generic: 注意：Gemini 官方未提供用量查询接口。此处显示的“每日配额”是由系统根据账号等级模拟计算的估算值，仅供调度参考，请以 Google 官方实际报错为准。
+                              - generic:
+                                - generic:
+                                  - strong: "AI Studio API Key / OAuth:"
+                                - generic: • RPD 50；RPM 2（Pro）/ 15（Flash）
+                                - generic:
+                                  - link "官方文档 →":
+                                    - /url: https://ai.google.dev/pricing
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic: 1.0K req
+                                  - generic: 12.4M
+                                  - generic "账号计费": A $9.60
+                              - generic:
+                                - generic: 1d
+                                - generic: 24%
+                                - generic: 10h 9m
+                            - paragraph: "* 本地模拟配额，仅供参考"
+                - generic [ref=f15e766]:
+                  - generic [ref=f15e767]: 优先级
+                  - generic [ref=f15e768]: "25"
+                - generic [ref=f15e769]:
+                  - generic [ref=f15e770]: 最近使用
+                  - generic [ref=f15e771]: 28分钟前
+                - generic [ref=f15e772]:
+                  - generic [ref=f15e773]: 上游声明倍率
+                  - generic [ref=f15e774]: "-"
+                - generic [ref=f15e775]:
+                  - generic [ref=f15e776]: 创建时间
+                  - generic [ref=f15e777]: 2026/07/09 01:36:07
+                - generic [ref=f15e778]:
+                  - generic [ref=f15e779]: 过期时间
+                  - generic [ref=f15e781]:
+                    - generic [ref=f15e782]: 2026-09-27 01:36
+                    - generic [ref=f15e783]: 过期自动暂停调度
+                - generic [ref=f15e786]:
+                  - button "编辑" [ref=f15e787] [cursor=pointer]
+                  - button "更多" [ref=f15e790] [cursor=pointer]
+              - generic [ref=f15e793]:
+                - checkbox [ref=f15e796] [cursor=pointer]
+                - generic "#107 · 默认分组 · lab@sub2api.dev" [ref=f15e800]:
+                  - generic [ref=f15e801]: antigravity-lab
+                  - generic [ref=f15e802]: lab@sub2api.dev
+                  - generic [ref=f15e803]: "#107 · 默认分组"
+                - generic [ref=f15e804]:
+                  - generic [ref=f15e805]: 账号ID
+                  - generic [ref=f15e806]: "#107"
+                - generic [ref=f15e807]:
+                  - generic [ref=f15e808]: 平台
+                  - generic [ref=f15e809]: Antigravity
+                - generic [ref=f15e815]:
+                  - generic [ref=f15e816]: 类型
+                  - generic [ref=f15e817]: OAuth
+                - generic [ref=f15e825]:
+                  - generic [ref=f15e826]: 容量
+                  - generic [ref=f15e829]:
+                    - generic [ref=f15e832]: "0"
+                    - generic [ref=f15e833]: /
+                    - generic [ref=f15e834]: "3"
+                - generic [ref=f15e835]:
+                  - generic [ref=f15e836]: 状态
+                  - generic [ref=f15e839]:
+                    - button "临时不可调度" [ref=f15e840] [cursor=pointer]
+                    - generic [ref=f15e841]: 预计 2026/09/07 02:01:07 恢复
+                - generic [ref=f15e842]:
+                  - generic [ref=f15e843]: 调度
+                  - switch "调度已开启" [checked] [ref=f15e845] [cursor=pointer]
+                - generic [ref=f15e847]:
+                  - generic [ref=f15e848]: 分组
+                  - generic [ref=f15e849]: 默认分组
+                - generic [ref=f15e855]:
+                  - generic [ref=f15e856]: 用量窗口
+                  - generic [ref=f15e858]:
+                    - generic [ref=f15e860]:
+                      - generic [ref=f15e861]: Claude
+                      - generic [ref=f15e864]: 37%
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: Claude
+                              - generic: 37%
+                              - generic: 3h 59m
+                - generic [ref=f15e865]:
+                  - generic [ref=f15e866]: 优先级
+                  - generic [ref=f15e867]: "60"
+                - generic [ref=f15e868]:
+                  - generic [ref=f15e869]: 最近使用
+                  - generic [ref=f15e870]: 1小时前
+                - generic [ref=f15e871]:
+                  - generic [ref=f15e872]: 上游声明倍率
+                  - generic [ref=f15e873]: "-"
+                - generic [ref=f15e874]:
+                  - generic [ref=f15e875]: 创建时间
+                  - generic [ref=f15e876]: 2026/07/09 01:36:07
+                - generic [ref=f15e877]:
+                  - generic [ref=f15e878]: 过期时间
+                  - generic [ref=f15e880]:
+                    - generic [ref=f15e881]: 2026-09-27 01:36
+                    - generic [ref=f15e882]: 过期自动暂停调度
+                - generic [ref=f15e885]:
+                  - button "编辑" [ref=f15e886] [cursor=pointer]
+                  - button "更多" [ref=f15e889] [cursor=pointer]
+              - generic [ref=f15e892]:
+                - checkbox [ref=f15e895] [cursor=pointer]
+                - generic "#108 · 未分配分组" [ref=f15e899]: grok-heavy-01
+                - generic [ref=f15e902]:
+                  - generic [ref=f15e903]: 账号ID
+                  - generic [ref=f15e904]: "#108"
+                - generic [ref=f15e905]:
+                  - generic [ref=f15e906]: 平台
+                  - generic [ref=f15e907]: Grok
+                - generic [ref=f15e913]:
+                  - generic [ref=f15e914]: 类型
+                  - generic [ref=f15e915]: Key
+                - generic [ref=f15e923]:
+                  - generic [ref=f15e924]: 容量
+                  - generic [ref=f15e927]:
+                    - generic [ref=f15e930]: "0"
+                    - generic [ref=f15e931]: /
+                    - generic [ref=f15e932]: "5"
+                - generic [ref=f15e933]:
+                  - generic [ref=f15e934]: 状态
+                  - generic [ref=f15e935]: 暂停
+                - generic [ref=f15e938]:
+                  - generic [ref=f15e939]: 调度
+                  - switch "调度已关闭" [ref=f15e941] [cursor=pointer]
+                - generic [ref=f15e943]:
+                  - generic [ref=f15e944]: 分组
+                  - generic [ref=f15e945]: "-"
+                - generic [ref=f15e946]:
+                  - generic [ref=f15e947]: 用量窗口
+                  - generic [ref=f15e949]:
+                    - text: "-"
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic: 1.5K req
+                              - generic: 32.8M
+                              - generic "账号计费": A $93.52
+                              - generic "用户扣费": U $110.35
+                - generic [ref=f15e950]:
+                  - generic [ref=f15e951]: 优先级
+                  - generic [ref=f15e952]: "70"
+                - generic [ref=f15e953]:
+                  - generic [ref=f15e954]: 最近使用
+                  - generic [ref=f15e955]: 2天前
+                - generic [ref=f15e956]:
+                  - generic [ref=f15e957]: 上游声明倍率
+                  - generic [ref=f15e959]:
+                    - generic [ref=f15e960]: 未探测
+                    - button "立即探测上游倍率" [ref=f15e962] [cursor=pointer]
+                - generic [ref=f15e965]:
+                  - generic [ref=f15e966]: 创建时间
+                  - generic [ref=f15e967]: 2026/07/09 01:36:07
+                - generic [ref=f15e968]:
+                  - generic [ref=f15e969]: 过期时间
+                  - generic [ref=f15e970]: "-"
+                - generic [ref=f15e974]:
+                  - button "编辑" [ref=f15e975] [cursor=pointer]
+                  - button "更多" [ref=f15e978] [cursor=pointer]
+            - generic [ref=f15e982]:
+              - button "上一页" [disabled]
+              - generic [ref=f15e983]: 第 1 / 1 页
+              - button "下一页" [disabled]
+        - button "添加账号" [ref=f15e984] [cursor=pointer]
+  - dialog "切换菜单" [ref=f15e988]:
+    - generic [ref=f15e989]:
+      - generic [ref=f15e990]: A
+      - generic [ref=f15e992]:
+        - generic [ref=f15e993]: admin@sub2api.dev
+        - generic [ref=f15e994]: 管理员
+      - button "关闭菜单" [active] [ref=f15e995] [cursor=pointer]
+    - navigation [ref=f15e998]:
+      - generic [ref=f15e999]:
+        - button "概览" [expanded] [ref=f15e1000] [cursor=pointer]
+        - generic [ref=f15e1005]:
+          - link "仪表盘" [ref=f15e1007] [cursor=pointer]:
+            - /url: /admin/dashboard
+          - link "运维监控" [ref=f15e1013] [cursor=pointer]:
+            - /url: /admin/ops
+      - generic [ref=f15e1018]:
+        - button "创作中心" [expanded] [ref=f15e1019] [cursor=pointer]
+        - generic [ref=f15e1024]:
+          - link "对话" [ref=f15e1026] [cursor=pointer]:
+            - /url: /studio/chat
+          - link "图片" [ref=f15e1032] [cursor=pointer]:
+            - /url: /studio/image
+          - link "视频" [ref=f15e1040] [cursor=pointer]:
+            - /url: /studio/video
+          - link "语音" [ref=f15e1047] [cursor=pointer]:
+            - /url: /studio/voice
+          - link "灵感墙" [ref=f15e1054] [cursor=pointer]:
+            - /url: /studio/gallery
+      - generic [ref=f15e1059]:
+        - button "用户与资源" [expanded] [ref=f15e1060] [cursor=pointer]
+        - generic [ref=f15e1065]:
+          - link "用户管理" [ref=f15e1067] [cursor=pointer]:
+            - /url: /admin/users
+          - link "分组管理" [ref=f15e1073] [cursor=pointer]:
+            - /url: /admin/groups
+          - link "订阅管理" [ref=f15e1079] [cursor=pointer]:
+            - /url: /admin/subscriptions
+          - link "账号管理" [ref=f15e1085] [cursor=pointer]:
+            - /url: /admin/accounts
+          - link "IP管理" [ref=f15e1091] [cursor=pointer]:
+            - /url: /admin/proxies
+      - generic [ref=f15e1096]:
+        - button "渠道" [expanded] [ref=f15e1097] [cursor=pointer]
+        - generic [ref=f15e1102]:
+          - button "渠道管理" [ref=f15e1105] [cursor=pointer]
+          - link "插件管理" [ref=f15e1114] [cursor=pointer]:
+            - /url: /admin/plugins
+      - generic [ref=f15e1119]:
+        - button "运营" [expanded] [ref=f15e1120] [cursor=pointer]
+        - generic [ref=f15e1125]:
+          - link "公告" [ref=f15e1127] [cursor=pointer]:
+            - /url: /admin/announcements
+          - link "兑换码" [ref=f15e1133] [cursor=pointer]:
+            - /url: /admin/redeem
+          - link "优惠码" [ref=f15e1139] [cursor=pointer]:
+            - /url: /admin/promo-codes
+          - button "邀请返利" [ref=f15e1146] [cursor=pointer]
+          - button "订单管理" [ref=f15e1156] [cursor=pointer]
+          - link "工单管理 3" [ref=f15e1166] [cursor=pointer]:
+            - /url: /admin/tickets
+            - generic [ref=f15e1170]: 工单管理
+            - generic [ref=f15e1171]: "3"
+      - generic [ref=f15e1172]:
+        - button "安全审计" [expanded] [ref=f15e1173] [cursor=pointer]
+        - generic [ref=f15e1178]:
+          - button "安全审计" [ref=f15e1181] [cursor=pointer]
+          - link "使用记录" [ref=f15e1190] [cursor=pointer]:
+            - /url: /admin/usage
+          - link "操作日志" [ref=f15e1196] [cursor=pointer]:
+            - /url: /admin/audit-logs
+      - generic [ref=f15e1201]:
+        - button "系统" [expanded] [ref=f15e1202] [cursor=pointer]
+        - link "系统设置" [ref=f15e1209] [cursor=pointer]:
+          - /url: /admin/settings
+      - generic [ref=f15e1215]:
+        - button "我的账户" [expanded] [ref=f15e1216] [cursor=pointer]
+        - generic [ref=f15e1221]:
+          - link "API 密钥" [ref=f15e1223] [cursor=pointer]:
+            - /url: /keys
+          - link "批量生图" [ref=f15e1229] [cursor=pointer]:
+            - /url: /batch-image
+          - link "使用记录" [ref=f15e1236] [cursor=pointer]:
+            - /url: /usage
+          - link "可用渠道" [ref=f15e1242] [cursor=pointer]:
+            - /url: /available-channels
+          - link "渠道状态" [ref=f15e1248] [cursor=pointer]:
+            - /url: /monitor
+          - link "我的订阅" [ref=f15e1254] [cursor=pointer]:
+            - /url: /subscriptions
+          - link "充值/订阅" [ref=f15e1260] [cursor=pointer]:
+            - /url: /purchase
+          - link "我的订单" [ref=f15e1270] [cursor=pointer]:
+            - /url: /orders
+          - link "我的发票" [ref=f15e1276] [cursor=pointer]:
+            - /url: /invoices
+          - link "我的工单 3" [ref=f15e1282] [cursor=pointer]:
+            - /url: /tickets
+            - generic [ref=f15e1286]: 我的工单
+            - generic [ref=f15e1287]: "3"
+          - link "兑换" [ref=f15e1289] [cursor=pointer]:
+            - /url: /redeem
+          - link "邀请返利" [ref=f15e1295] [cursor=pointer]:
+            - /url: /affiliate
+          - link "个人资料" [ref=f15e1301] [cursor=pointer]:
+            - /url: /profile
+          - link "接入指南" [ref=f15e1307] [cursor=pointer]:
+            - /url: /custom/docs-guide
+          - link "外部状态页" [ref=f15e1315] [cursor=pointer]:
+            - /url: /custom/status-embed
+    - generic [ref=f15e1322]:
+      - generic [ref=f15e1323]:
+        - link "个人资料" [ref=f15e1324] [cursor=pointer]:
+          - /url: /profile
+        - link "API 密钥" [ref=f15e1328] [cursor=pointer]:
+          - /url: /keys
+      - button "重新查看新手引导" [ref=f15e1332] [cursor=pointer]
+      - button "退出登录" [ref=f15e1336] [cursor=pointer]
+      - generic [ref=f15e1340]:
+        - button "深色模式" [ref=f15e1341] [cursor=pointer]
+        - button "切换语言为English" [ref=f15e1345] [cursor=pointer]: ZH

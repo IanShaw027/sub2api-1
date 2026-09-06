@@ -1,0 +1,142 @@
+- generic [ref=f1e3]:
+  - complementary [ref=f1e4]:
+    - generic [ref=f1e5]:
+      - link [ref=f1e6] [cursor=pointer]:
+        - /url: /dashboard
+        - img "Logo" [ref=f1e7]
+      - generic [ref=f1e8]:
+        - link "Sub2API" [ref=f1e9] [cursor=pointer]:
+          - /url: /dashboard
+        - generic [ref=f1e10]: v1.8.2
+    - navigation [ref=f1e12]:
+      - generic [ref=f1e13]:
+        - button "API 服务" [expanded] [ref=f1e14] [cursor=pointer]
+        - generic [ref=f1e19]:
+          - link "仪表盘" [ref=f1e21] [cursor=pointer]:
+            - /url: /dashboard
+          - link "API 密钥" [ref=f1e27] [cursor=pointer]:
+            - /url: /keys
+          - link "批量生图" [ref=f1e33] [cursor=pointer]:
+            - /url: /batch-image
+          - link "使用记录" [ref=f1e40] [cursor=pointer]:
+            - /url: /usage
+          - link "可用渠道" [ref=f1e46] [cursor=pointer]:
+            - /url: /available-channels
+          - link "渠道状态" [ref=f1e52] [cursor=pointer]:
+            - /url: /monitor
+      - generic [ref=f1e57]:
+        - button "创作中心" [expanded] [ref=f1e58] [cursor=pointer]
+        - generic [ref=f1e63]:
+          - link "对话" [ref=f1e65] [cursor=pointer]:
+            - /url: /studio/chat
+          - link "图片" [ref=f1e71] [cursor=pointer]:
+            - /url: /studio/image
+          - link "视频" [ref=f1e79] [cursor=pointer]:
+            - /url: /studio/video
+          - link "语音" [ref=f1e86] [cursor=pointer]:
+            - /url: /studio/voice
+          - link "灵感墙" [ref=f1e93] [cursor=pointer]:
+            - /url: /studio/gallery
+      - generic [ref=f1e98]:
+        - button "订阅与账单" [expanded] [ref=f1e99] [cursor=pointer]
+        - generic [ref=f1e104]:
+          - link "我的订阅" [ref=f1e106] [cursor=pointer]:
+            - /url: /subscriptions
+          - link "充值/订阅" [ref=f1e112] [cursor=pointer]:
+            - /url: /purchase
+          - link "我的订单" [ref=f1e122] [cursor=pointer]:
+            - /url: /orders
+          - link "我的发票" [ref=f1e128] [cursor=pointer]:
+            - /url: /invoices
+          - link "兑换" [ref=f1e134] [cursor=pointer]:
+            - /url: /redeem
+      - generic [ref=f1e139]:
+        - button "账户" [expanded] [ref=f1e140] [cursor=pointer]
+        - generic [ref=f1e145]:
+          - link "邀请返利" [ref=f1e147] [cursor=pointer]:
+            - /url: /affiliate
+          - link "个人资料" [ref=f1e153] [cursor=pointer]:
+            - /url: /profile
+      - generic [ref=f1e158]:
+        - button "支持" [expanded] [ref=f1e159] [cursor=pointer]
+        - generic [ref=f1e164]:
+          - link "我的工单 3" [ref=f1e166] [cursor=pointer]:
+            - /url: /tickets
+            - generic [ref=f1e170]: 我的工单
+            - generic [ref=f1e171]: "3"
+          - link "接入指南" [ref=f1e173] [cursor=pointer]:
+            - /url: /custom/docs-guide
+          - link "外部状态页" [ref=f1e181] [cursor=pointer]:
+            - /url: /custom/status-embed
+    - generic [ref=f1e188]:
+      - generic [ref=f1e189]:
+        - button "浅色模式" [ref=f1e685] [cursor=pointer]
+        - button "收起" [ref=f1e194] [cursor=pointer]
+      - generic [ref=f1e197]:
+        - generic [ref=f1e198]: 林
+        - generic [ref=f1e200]:
+          - generic [ref=f1e201]: xiaoyu.lin@example.com
+          - generic [ref=f1e202]: 用户 · $38.25
+  - generic [ref=f1e203]:
+    - banner [ref=f1e204]:
+      - generic [ref=f1e205]:
+        - navigation "breadcrumb" [ref=f1e206]:
+          - generic [ref=f1e207]: 控制台
+          - generic [ref=f1e208]: /
+          - generic [ref=f1e209]: 创作中心
+          - generic [ref=f1e210]: /
+          - generic [ref=f1e211]: 图片
+        - generic [ref=f1e212]:
+          - button "搜索" [ref=f1e213]:
+            - generic [ref=f1e216]: 搜索账号、密钥、用户…
+            - generic [ref=f1e217]: ⌘K
+          - generic [ref=f1e218]:
+            - generic [ref=f1e219]: 余额
+            - generic [ref=f1e220]: $38.25
+          - button "2" [ref=f1e222] [cursor=pointer]
+          - link "文档" [ref=f1e229] [cursor=pointer]:
+            - /url: https://docs.example.com/
+          - link "模型广场" [ref=f1e232] [cursor=pointer]:
+            - /url: /model-plaza?embedded=1
+          - button "联系客服" [ref=f1e236] [cursor=pointer]
+          - button "公告" [ref=f1e242] [cursor=pointer]
+          - button "🇨🇳 ZH" [ref=f1e246] [cursor=pointer]:
+            - generic [ref=f1e247]: 🇨🇳
+            - generic [ref=f1e248]: ZH
+          - button "浅色模式" [ref=f1e688] [cursor=pointer]
+          - button "用户菜单" [ref=f1e256] [cursor=pointer]:
+            - generic [ref=f1e257]: 林
+            - generic [ref=f1e259]: 林小雨
+    - main [ref=f1e262]:
+      - generic [ref=f1e263]:
+        - heading "图片" [level=1] [ref=f1e1123]
+        - region "图片" [ref=f1e1124]:
+          - region "图片创作" [ref=f1e1125]:
+            - generic [ref=f1e1126]:
+              - generic [ref=f1e1127]:
+                - generic [ref=f1e1128]: 0 个作品
+                - generic [ref=f1e1129]: 保存在此设备
+              - generic [ref=f1e1130]:
+                - searchbox "搜索提示词或模型" [ref=f1e1135]
+                - button "全部" [ref=f1e1136] [cursor=pointer]
+                - button "列表视图" [ref=f1e1144] [cursor=pointer]
+                - button "历史记录" [ref=f1e1146] [cursor=pointer]
+                - button "选择" [disabled] [ref=f1e1151]
+            - generic [ref=f1e1156]:
+              - heading "图片创作" [level=2] [ref=f1e1161]
+              - button "灵感墙" [ref=f1e1162] [cursor=pointer]
+            - generic [ref=f1e1165]:
+              - textbox "提示词" [ref=f1e1166]:
+                - /placeholder: 描述想要创作的画面…
+                - text: "一个超逼真的3D渲染图，展示了四个机械键盘键帽，排列成紧密的2x2网格，所有键帽相互接触。从等轴测角度观察。一个键帽是透明的，上面用红色印刷着“{just}”字样。另外三个键帽采用颜色：{黑色、紫色和白色}。一个键帽上带有Github的Logo。另外两个键帽上分别写着“{fork}”和“{it}”。逼真的塑料纹理，圆润的雕刻键帽，柔和的阴影，干净的浅灰色背景。"
+              - generic [ref=f1e1167]:
+                - button "分组" [ref=f1e1169] [cursor=pointer]:
+                  - generic [ref=f1e1170]: OpenAI Codex
+                - button "模型" [ref=f1e1175] [cursor=pointer]:
+                  - generic [ref=f1e1176]: gpt-image-1
+                - button "生成参数" [ref=f1e1181] [cursor=pointer]:
+                  - generic [ref=f1e1183]: 自动
+                - button "上传参考图" [ref=f1e1184] [cursor=pointer]
+                - button "生成图片" [ref=f1e1189] [cursor=pointer]
+              - status [ref=f1e1192]:
+                - generic [ref=f1e1193]: 按实际用量结算

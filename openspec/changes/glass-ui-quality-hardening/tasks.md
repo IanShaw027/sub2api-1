@@ -33,22 +33,22 @@
 - [x] 3.7 暗色 hover 增加可见边框反馈；折叠侧栏保留弱归属锚点。
 - [x] 3.8 恢复移动 Keys 累计费用、多周期限额及重置时间、全部端点及测速、自定义说明。
 - [x] 3.9 恢复 Profile 账户概览、404 控制台入口和监控刷新控件的可访问名称。
-- [ ] 3.10 修复历史操作核对中发现的工单模板焦点/预览、Passkey 删除键盘提交、风控时间精度及旧直达操作入口。
+- [x] 3.10 修复历史操作核对中发现的工单模板焦点/预览、Passkey 删除键盘提交、风控时间精度及旧直达操作入口。
 - [x] 3.11 管理员请求趋势在窄容器中稀疏显示时间轴标签，保留全部数据点。
 
 ## 4. 功能保真与可访问性
 
 - [x] 4.1 比较前后路由和导航集合，确认无入口减少。
 - [x] 4.2 比较所有受影响 DataTable columns、默认可见性和列设置迁移。
-- [ ] 4.3 比较按钮、链接、菜单 action、API/store 调用和事件处理器。
-- [ ] 4.4 比较 `data-tour`、`data-testid`、id、aria-label；差异必须登记等价替代。
-- [ ] 4.5 验证 Tab 巡航、Drawer 焦点、Modal 焦点恢复、键盘关闭和 reduced-motion。
-- [ ] 4.6 验证 mobile Keys/Accounts/Usage/Settings 的筛选、批量、导出、分页和弹窗工作流。
+- [x] 4.3 比较按钮、链接、菜单 action、API/store 调用和事件处理器；356 条历史候选均已登记等价入口或修复证据。
+- [x] 4.4 比较 `data-tour`、`data-testid`、id、aria-label；差异已登记等价替代，最终审计无 per-file API/store/action 未解释丢失。
+- [x] 4.5 验证 Tab 巡航、Drawer 焦点、Modal 焦点恢复、键盘关闭和 reduced-motion。
+- [x] 4.6 验证 mobile Keys/Accounts/Usage/Settings 的筛选、批量、导出、分页和弹窗工作流。
 
 ## 5. 规范同步与最终门禁
 
-- [ ] 5.1 将 muted、border、pulse、分页、顶栏等决策同步到 `ui-standards.md` 和设计稿。
-- [ ] 5.2 更新旧视觉文档，删除 Indigo/Gray/dark:bg 旧规范残留。
-- [ ] 5.3 补齐 light/dark × 1440/1024/768/390 截图矩阵及交互态截图。
-- [ ] 5.4 在本轮最终代码上运行 `vue-tsc --noEmit`、`pnpm run lint:check`、`pnpm run lint:ui`、`pnpm run check:contrast`、`pnpm run i18n:diff`、`pnpm run test:run` 和生产构建（不能复用前一批修改的通过结论）。
-- [ ] 5.5 生成最终 Review 报告，列出已修复问题、登记偏差、未完成项和截图证据。
+- [x] 5.1 将 muted、border、pulse、分页、顶栏等决策同步到 `ui-standards.md` 和设计稿。
+- [x] 5.2 更新旧视觉文档，删除 Indigo/Gray/dark:bg 旧规范残留。
+- [x] 5.3 补齐 light/dark × 1440/1024/768/390 截图矩阵及交互态截图。
+- [x] 5.4 在本轮最终代码上运行 `vue-tsc --noEmit`、`pnpm run lint:check`、`pnpm run lint:ui`、`pnpm run check:contrast`、`pnpm run i18n:diff`、`pnpm run test:run` 和生产构建（不能复用前一批修改的通过结论）。
+- [x] 5.5 生成最终 Review 报告，列出已修复问题、登记偏差、未完成项和截图证据。

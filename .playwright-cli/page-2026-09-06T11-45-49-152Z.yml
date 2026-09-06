@@ -1,0 +1,63 @@
+- generic [ref=f10e3]:
+  - link "跳到工作区" [ref=f10e4] [cursor=pointer]:
+    - /url: "#creation-workspace"
+  - banner [ref=f10e5]:
+    - link "Sub2API" [ref=f10e6] [cursor=pointer]:
+      - /url: /admin/dashboard
+    - navigation "创作方式" [ref=f10e8]:
+      - link "对话" [ref=f10e9] [cursor=pointer]:
+        - /url: /studio?mode=chat
+      - link "图片" [ref=f10e13] [cursor=pointer]:
+        - /url: /studio?mode=image
+      - link "视频" [ref=f10e19] [cursor=pointer]:
+        - /url: /studio?mode=video
+      - link "语音" [ref=f10e24] [cursor=pointer]:
+        - /url: /studio?mode=voice
+      - link "灵感墙" [ref=f10e29] [cursor=pointer]:
+        - /url: /studio?mode=gallery
+    - generic [ref=f10e33]:
+      - link "Admin US$142.60" [ref=f10e34] [cursor=pointer]:
+        - /url: /profile
+        - generic [ref=f10e35]: Admin
+        - strong [ref=f10e36]: US$142.60
+      - button "🇨🇳 ZH" [ref=f10e38] [cursor=pointer]:
+        - generic [ref=f10e39]: 🇨🇳
+        - generic [ref=f10e40]: ZH
+      - button "深色模式" [ref=f10e43] [cursor=pointer]
+      - link "控制台" [ref=f10e46] [cursor=pointer]:
+        - /url: /admin/dashboard
+  - main [ref=f10e52]:
+    - region "Grok Voice" [ref=f10e53]:
+      - heading "Grok Voice" [level=1] [ref=f10e56]
+      - generic [ref=f10e58]:
+        - generic [ref=f10e59]:
+          - generic [ref=f10e60]: 分组
+          - combobox "分组" [disabled] [ref=f10e61]:
+            - option "Review Grok" [selected]
+        - generic [ref=f10e62]:
+          - status [ref=f10e77]:
+            - text: 通话中
+            - generic [ref=f10e90]: 0:01
+          - generic [ref=f10e78]:
+            - generic [ref=f10e79]: 音色
+            - combobox "音色" [disabled] [ref=f10e80]:
+              - option "Eve" [selected]
+              - option "Ara"
+              - option "Leo"
+              - option "Rex"
+              - option "Sal"
+          - generic [ref=f10e81]:
+            - button "静音" [ref=f10e91] [cursor=pointer]
+            - button "挂断" [ref=f10e95] [cursor=pointer]
+          - paragraph [ref=f10e85]: 挂断
+          - generic [ref=f10e100]:
+            - paragraph [ref=f10e101]:
+              - strong [ref=f10e102]: 你
+              - text: Synthetic microphone test.
+            - paragraph [ref=f10e103]:
+              - strong [ref=f10e104]: Grok
+              - text: Mock call connected.
+      - radiogroup "Grok Voice" [ref=f10e86]:
+        - radio "通话" [checked] [ref=f10e87] [cursor=pointer]
+        - radio "语音合成" [ref=f10e88] [cursor=pointer]
+        - radio "音频转录" [ref=f10e89] [cursor=pointer]

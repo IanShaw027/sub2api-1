@@ -1,0 +1,206 @@
+- generic [ref=f4e1]:
+  - generic [ref=f4e3]:
+    - complementary [aria-hidden]:
+      - generic:
+        - link:
+          - /url: /dashboard
+        - generic: v1.8.2
+      - navigation:
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /dashboard
+            - generic:
+              - link:
+                - /url: /keys
+            - generic:
+              - link:
+                - /url: /batch-image
+            - generic:
+              - link:
+                - /url: /usage
+            - generic:
+              - link:
+                - /url: /available-channels
+            - generic:
+              - link:
+                - /url: /monitor
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /studio/chat
+            - generic:
+              - link:
+                - /url: /studio/image
+            - generic:
+              - link:
+                - /url: /studio/video
+            - generic:
+              - link:
+                - /url: /studio/voice
+            - generic:
+              - link:
+                - /url: /studio/gallery
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /subscriptions
+            - generic:
+              - link:
+                - /url: /purchase
+            - generic:
+              - link:
+                - /url: /orders
+            - generic:
+              - link:
+                - /url: /invoices
+            - generic:
+              - link:
+                - /url: /redeem
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /affiliate
+            - generic:
+              - link:
+                - /url: /profile
+        - generic:
+          - generic:
+            - generic:
+              - link:
+                - /url: /tickets
+            - generic:
+              - link:
+                - /url: /custom/docs-guide
+            - generic:
+              - link:
+                - /url: /custom/status-embed
+    - generic [ref=f4e203]:
+      - banner [ref=f4e204]:
+        - generic [ref=f4e452]:
+          - link "Sub2API" [ref=f4e453] [cursor=pointer]:
+            - /url: /dashboard
+          - generic [ref=f4e454]:
+            - generic [ref=f4e455]: 图片
+            - generic [ref=f4e456]: xiaoyu.lin@example.com
+          - generic [ref=f4e457]:
+            - button "公告" [ref=f4e242] [cursor=pointer]
+            - button "切换菜单" [expanded] [ref=f4e459] [cursor=pointer]
+      - main [ref=f4e262]:
+        - generic [ref=f4e263]:
+          - heading "图片" [level=1] [ref=f4e354]
+          - region "图片" [ref=f4e355]:
+            - region "图片创作" [ref=f4e356]:
+              - generic [ref=f4e357]:
+                - generic [ref=f4e358]: 0 个作品
+                - generic [ref=f4e361]:
+                  - searchbox "搜索提示词或模型" [ref=f4e366]
+                  - button "全部" [ref=f4e367] [cursor=pointer]
+                  - button "列表视图" [ref=f4e375] [cursor=pointer]
+                  - button "历史记录" [ref=f4e377] [cursor=pointer]
+                  - button "选择" [disabled] [ref=f4e382]
+              - generic [ref=f4e387]:
+                - heading "图片创作" [level=2] [ref=f4e392]
+                - button "灵感墙" [ref=f4e393] [cursor=pointer]
+              - generic:
+                - generic [ref=f4e396]:
+                  - button "产品摄影" [ref=f4e397] [cursor=pointer]
+                  - button "水彩风景" [ref=f4e398] [cursor=pointer]
+                  - button "建筑概念" [ref=f4e399] [cursor=pointer]
+                  - button "编辑插画" [ref=f4e400] [cursor=pointer]
+                  - button "3D 角色" [ref=f4e401] [cursor=pointer]
+                - generic [ref=f4e402]:
+                  - textbox "提示词" [ref=f4e403]:
+                    - /placeholder: 描述想要创作的画面…
+                  - generic [ref=f4e404]:
+                    - button "分组" [ref=f4e406] [cursor=pointer]:
+                      - generic [ref=f4e407]: Review OpenAI
+                    - button "模型" [ref=f4e412] [cursor=pointer]:
+                      - generic [ref=f4e413]: gpt-image-1
+                    - button "生成参数" [ref=f4e418] [cursor=pointer]:
+                      - generic [ref=f4e420]: 自动
+                    - button "上传参考图" [ref=f4e421] [cursor=pointer]
+                    - button "生成图片" [disabled]
+                  - status [ref=f4e426]:
+                    - generic [ref=f4e427]: "预计费用: US$0.10 · 余额"
+  - dialog "切换菜单" [ref=f4e463]:
+    - generic [ref=f4e464]:
+      - generic [ref=f4e465]: 林
+      - generic [ref=f4e467]:
+        - generic [ref=f4e468]: xiaoyu.lin@example.com
+        - generic [ref=f4e469]: 用户
+      - button "关闭菜单" [active] [ref=f4e470] [cursor=pointer]
+    - navigation [ref=f4e473]:
+      - generic [ref=f4e474]:
+        - button "API 服务" [expanded] [ref=f4e475] [cursor=pointer]
+        - generic [ref=f4e480]:
+          - link "仪表盘" [ref=f4e482] [cursor=pointer]:
+            - /url: /dashboard
+          - link "API 密钥" [ref=f4e488] [cursor=pointer]:
+            - /url: /keys
+          - link "批量生图" [ref=f4e494] [cursor=pointer]:
+            - /url: /batch-image
+          - link "使用记录" [ref=f4e501] [cursor=pointer]:
+            - /url: /usage
+          - link "可用渠道" [ref=f4e507] [cursor=pointer]:
+            - /url: /available-channels
+          - link "渠道状态" [ref=f4e513] [cursor=pointer]:
+            - /url: /monitor
+      - generic [ref=f4e518]:
+        - button "创作中心" [expanded] [ref=f4e519] [cursor=pointer]
+        - generic [ref=f4e524]:
+          - link "对话" [ref=f4e526] [cursor=pointer]:
+            - /url: /studio/chat
+          - link "图片" [ref=f4e532] [cursor=pointer]:
+            - /url: /studio/image
+          - link "视频" [ref=f4e540] [cursor=pointer]:
+            - /url: /studio/video
+          - link "语音" [ref=f4e547] [cursor=pointer]:
+            - /url: /studio/voice
+          - link "灵感墙" [ref=f4e554] [cursor=pointer]:
+            - /url: /studio/gallery
+      - generic [ref=f4e559]:
+        - button "订阅与账单" [expanded] [ref=f4e560] [cursor=pointer]
+        - generic [ref=f4e565]:
+          - link "我的订阅" [ref=f4e567] [cursor=pointer]:
+            - /url: /subscriptions
+          - link "充值/订阅" [ref=f4e573] [cursor=pointer]:
+            - /url: /purchase
+          - link "我的订单" [ref=f4e583] [cursor=pointer]:
+            - /url: /orders
+          - link "我的发票" [ref=f4e589] [cursor=pointer]:
+            - /url: /invoices
+          - link "兑换" [ref=f4e595] [cursor=pointer]:
+            - /url: /redeem
+      - generic [ref=f4e600]:
+        - button "账户" [expanded] [ref=f4e601] [cursor=pointer]
+        - generic [ref=f4e606]:
+          - link "邀请返利" [ref=f4e608] [cursor=pointer]:
+            - /url: /affiliate
+          - link "个人资料" [ref=f4e614] [cursor=pointer]:
+            - /url: /profile
+      - generic [ref=f4e619]:
+        - button "支持" [expanded] [ref=f4e620] [cursor=pointer]
+        - generic [ref=f4e625]:
+          - link "我的工单 3" [ref=f4e627] [cursor=pointer]:
+            - /url: /tickets
+            - generic [ref=f4e631]: 我的工单
+            - generic [ref=f4e632]: "3"
+          - link "接入指南" [ref=f4e634] [cursor=pointer]:
+            - /url: /custom/docs-guide
+          - link "外部状态页" [ref=f4e642] [cursor=pointer]:
+            - /url: /custom/status-embed
+    - generic [ref=f4e649]:
+      - generic [ref=f4e650]:
+        - link "个人资料" [ref=f4e651] [cursor=pointer]:
+          - /url: /profile
+        - link "API 密钥" [ref=f4e655] [cursor=pointer]:
+          - /url: /keys
+      - button "退出登录" [ref=f4e659] [cursor=pointer]
+      - generic [ref=f4e663]:
+        - button "深色模式" [ref=f4e664] [cursor=pointer]
+        - button "切换语言为English" [ref=f4e668] [cursor=pointer]: ZH

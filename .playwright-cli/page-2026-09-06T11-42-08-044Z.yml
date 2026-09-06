@@ -1,0 +1,77 @@
+- generic [ref=f8e3]:
+  - link "跳到工作区" [ref=f8e4] [cursor=pointer]:
+    - /url: "#creation-workspace"
+  - banner [ref=f8e5]:
+    - link "Sub2API" [ref=f8e6] [cursor=pointer]:
+      - /url: /admin/dashboard
+    - navigation "创作方式" [ref=f8e8]:
+      - link "对话" [ref=f8e9] [cursor=pointer]:
+        - /url: /studio?mode=chat
+      - link "图片" [ref=f8e13] [cursor=pointer]:
+        - /url: /studio?mode=image
+      - link "视频" [ref=f8e19] [cursor=pointer]:
+        - /url: /studio?mode=video
+      - link "语音" [ref=f8e24] [cursor=pointer]:
+        - /url: /studio?mode=voice
+      - link "灵感墙" [ref=f8e29] [cursor=pointer]:
+        - /url: /studio?mode=gallery
+    - generic [ref=f8e33]:
+      - link [ref=f8e34] [cursor=pointer]:
+        - /url: /profile
+        - strong [ref=f8e35]: US$142.60
+      - button "深色模式" [ref=f8e36] [cursor=pointer]
+      - link "控制台" [ref=f8e39] [cursor=pointer]:
+        - /url: /admin/dashboard
+  - main [ref=f8e45]:
+    - region "视频创作" [ref=f8e194]:
+      - generic [ref=f8e47]:
+        - generic [ref=f8e48]:
+          - heading "视频创作" [level=1] [ref=f8e195]
+          - generic [ref=f8e50]: 1 个作品
+        - generic [ref=f8e51]:
+          - searchbox "搜索提示词或模型" [ref=f8e56]
+          - button "全部" [ref=f8e57] [cursor=pointer]
+          - button "列表视图" [ref=f8e65] [cursor=pointer]
+          - button "历史记录" [ref=f8e67] [cursor=pointer]
+          - button "选择" [ref=f8e72] [cursor=pointer]
+      - article [ref=f8e242]:
+        - generic [ref=f8e243]:
+          - button "预览" [ref=f8e244] [cursor=pointer]
+          - generic: 视频
+          - generic [ref=f8e246]:
+            - button "预览" [ref=f8e247] [cursor=pointer]
+            - button "下载" [ref=f8e251] [cursor=pointer]
+            - button "更多操作" [ref=f8e255] [cursor=pointer]
+        - generic [ref=f8e260]:
+          - paragraph [ref=f8e261]: Review video edit
+          - paragraph [ref=f8e262]: grok-video
+          - status [ref=f8e263]:
+            - generic [ref=f8e264]: "实际结算: US$0.08 · 余额"
+          - generic [ref=f8e265]:
+            - generic [ref=f8e266]: 9月6日 19:41
+            - generic [ref=f8e267]: 编辑视频
+      - generic:
+        - generic [ref=f8e268]:
+          - button "城市延时" [ref=f8e269] [cursor=pointer]
+          - button "航拍风光" [ref=f8e270] [cursor=pointer]
+          - button "产品展示" [ref=f8e271] [cursor=pointer]
+          - button "电影运镜" [ref=f8e272] [cursor=pointer]
+          - button "让画面动起来" [ref=f8e273] [cursor=pointer]
+        - generic [ref=f8e92]:
+          - group "视频操作" [ref=f8e209]:
+            - button "生成视频" [ref=f8e210] [cursor=pointer]
+            - button "编辑视频" [ref=f8e211] [cursor=pointer]
+            - button "延长视频" [active] [pressed] [ref=f8e212] [cursor=pointer]
+          - textbox "提示词" [ref=f8e93]:
+            - /placeholder: 描述接下来发生的画面…
+          - generic [ref=f8e94]:
+            - button "分组" [ref=f8e96] [cursor=pointer]:
+              - generic [ref=f8e97]: Review Grok
+            - button "模型" [ref=f8e102] [cursor=pointer]:
+              - generic [ref=f8e103]: grok-video
+            - button "生成参数" [ref=f8e108] [cursor=pointer]:
+              - generic [ref=f8e110]: +6s
+            - button "上传源视频" [ref=f8e233] [cursor=pointer]
+            - button "延长视频" [disabled] [ref=f8e276]
+          - status [ref=f8e239]:
+            - generic [ref=f8e240]: "预计费用: US$0.10 · 余额"

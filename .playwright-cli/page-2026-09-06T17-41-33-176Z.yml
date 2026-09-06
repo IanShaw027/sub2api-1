@@ -1,0 +1,578 @@
+- generic [active] [ref=f6e1]:
+  - generic [ref=f6e3]:
+    - complementary [ref=f6e4]:
+      - generic [ref=f6e5]:
+        - link "Sub2API" [ref=f6e6] [cursor=pointer]:
+          - /url: /admin/dashboard
+          - img "Logo" [ref=f6e7]
+        - generic [ref=f6e8]:
+          - link "Sub2API" [ref=f6e9] [cursor=pointer]:
+            - /url: /admin/dashboard
+          - button "v1.8.2" [ref=f6e11] [cursor=pointer]
+      - navigation [ref=f6e13]:
+        - generic [ref=f6e14]:
+          - button "概览" [expanded] [ref=f6e15] [cursor=pointer]
+          - generic [ref=f6e20]:
+            - link "仪表盘" [ref=f6e22] [cursor=pointer]:
+              - /url: /admin/dashboard
+            - link "运维监控" [ref=f6e28] [cursor=pointer]:
+              - /url: /admin/ops
+        - generic [ref=f6e33]:
+          - button "创作中心" [expanded] [ref=f6e34] [cursor=pointer]
+          - generic [ref=f6e39]:
+            - link "对话" [ref=f6e41] [cursor=pointer]:
+              - /url: /studio/chat
+            - link "图片" [ref=f6e47] [cursor=pointer]:
+              - /url: /studio/image
+            - link "视频" [ref=f6e55] [cursor=pointer]:
+              - /url: /studio/video
+            - link "语音" [ref=f6e62] [cursor=pointer]:
+              - /url: /studio/voice
+            - link "灵感墙" [ref=f6e69] [cursor=pointer]:
+              - /url: /studio/gallery
+        - generic [ref=f6e74]:
+          - button "用户与资源" [expanded] [ref=f6e75] [cursor=pointer]
+          - generic [ref=f6e80]:
+            - link "用户管理" [ref=f6e82] [cursor=pointer]:
+              - /url: /admin/users
+            - link "分组管理" [ref=f6e88] [cursor=pointer]:
+              - /url: /admin/groups
+            - link "订阅管理" [ref=f6e94] [cursor=pointer]:
+              - /url: /admin/subscriptions
+            - link "账号管理" [ref=f6e100] [cursor=pointer]:
+              - /url: /admin/accounts
+            - link "IP管理" [ref=f6e106] [cursor=pointer]:
+              - /url: /admin/proxies
+        - generic [ref=f6e111]:
+          - button "渠道" [expanded] [ref=f6e112] [cursor=pointer]
+          - generic [ref=f6e117]:
+            - button "渠道管理" [ref=f6e120] [cursor=pointer]
+            - link "插件管理" [ref=f6e129] [cursor=pointer]:
+              - /url: /admin/plugins
+        - generic [ref=f6e134]:
+          - button "运营" [expanded] [ref=f6e135] [cursor=pointer]
+          - generic [ref=f6e140]:
+            - link "公告" [ref=f6e142] [cursor=pointer]:
+              - /url: /admin/announcements
+            - link "兑换码" [ref=f6e148] [cursor=pointer]:
+              - /url: /admin/redeem
+            - link "优惠码" [ref=f6e154] [cursor=pointer]:
+              - /url: /admin/promo-codes
+            - button "邀请返利" [ref=f6e161] [cursor=pointer]
+            - button "订单管理" [ref=f6e171] [cursor=pointer]
+            - link "工单管理" [ref=f6e181] [cursor=pointer]:
+              - /url: /admin/tickets
+        - generic [ref=f6e186]:
+          - button "安全审计" [expanded] [ref=f6e187] [cursor=pointer]
+          - generic [ref=f6e192]:
+            - button "安全审计" [ref=f6e195] [cursor=pointer]
+            - link "使用记录" [ref=f6e204] [cursor=pointer]:
+              - /url: /admin/usage
+            - link "操作日志" [ref=f6e210] [cursor=pointer]:
+              - /url: /admin/audit-logs
+        - generic [ref=f6e215]:
+          - button "系统" [expanded] [ref=f6e216] [cursor=pointer]
+          - link "系统设置" [ref=f6e223] [cursor=pointer]:
+            - /url: /admin/settings
+        - generic [ref=f6e229]:
+          - button "我的账户" [expanded] [ref=f6e230] [cursor=pointer]
+          - generic [ref=f6e235]:
+            - link "API 密钥" [ref=f6e237] [cursor=pointer]:
+              - /url: /keys
+            - link "批量生图" [ref=f6e243] [cursor=pointer]:
+              - /url: /batch-image
+            - link "使用记录" [ref=f6e250] [cursor=pointer]:
+              - /url: /usage
+            - link "可用渠道" [ref=f6e256] [cursor=pointer]:
+              - /url: /available-channels
+            - link "渠道状态" [ref=f6e262] [cursor=pointer]:
+              - /url: /monitor
+            - link "我的订阅" [ref=f6e268] [cursor=pointer]:
+              - /url: /subscriptions
+            - link "充值/订阅" [ref=f6e274] [cursor=pointer]:
+              - /url: /purchase
+            - link "我的订单" [ref=f6e284] [cursor=pointer]:
+              - /url: /orders
+            - link "我的发票" [ref=f6e290] [cursor=pointer]:
+              - /url: /invoices
+            - link "我的工单 3" [ref=f6e296] [cursor=pointer]:
+              - /url: /tickets
+              - generic [ref=f6e300]: 我的工单
+              - generic [ref=f6e301]: "3"
+            - link "兑换" [ref=f6e303] [cursor=pointer]:
+              - /url: /redeem
+            - link "邀请返利" [ref=f6e309] [cursor=pointer]:
+              - /url: /affiliate
+            - link "个人资料" [ref=f6e315] [cursor=pointer]:
+              - /url: /profile
+            - link "接入指南" [ref=f6e321] [cursor=pointer]:
+              - /url: /custom/docs-guide
+            - link "外部状态页" [ref=f6e329] [cursor=pointer]:
+              - /url: /custom/status-embed
+      - generic [ref=f6e336]:
+        - generic [ref=f6e337]:
+          - button "深色模式" [ref=f6e338] [cursor=pointer]
+          - button "收起" [ref=f6e342] [cursor=pointer]
+        - generic [ref=f6e345]:
+          - generic [ref=f6e346]: A
+          - generic [ref=f6e348]:
+            - generic [ref=f6e349]: admin@sub2api.dev
+            - generic [ref=f6e350]: 管理员
+    - generic [ref=f6e351]:
+      - banner [ref=f6e352]:
+        - generic [ref=f6e353]:
+          - navigation "breadcrumb" [ref=f6e354]:
+            - generic [ref=f6e355]: 账号管理
+          - generic [ref=f6e356]:
+            - button "搜索" [ref=f6e357]
+            - button "2" [ref=f6e361] [cursor=pointer]
+            - button "公告" [ref=f6e370] [cursor=pointer]
+            - button "更多操作" [ref=f6e374] [cursor=pointer]
+            - button "用户菜单" [ref=f6e379] [cursor=pointer]:
+              - generic [ref=f6e380]: A
+      - main [ref=f6e384]:
+        - generic [ref=f6e385]:
+          - generic [ref=f6e386]:
+            - heading "账号管理" [level=1] [ref=f6e387]
+            - paragraph [ref=f6e388]: 管理 AI 平台账号和 Cookie
+          - generic [ref=f6e390]:
+            - button [ref=f6e391] [cursor=pointer]
+            - button "批量编辑" [ref=f6e394] [cursor=pointer]
+            - button "导入 / 导出" [ref=f6e396] [cursor=pointer]
+            - button "更多" [ref=f6e401] [cursor=pointer]
+            - button "添加账号" [ref=f6e405] [cursor=pointer]
+        - generic [ref=f6e406]:
+          - generic [ref=f6e407]:
+            - group "状态" [ref=f6e408]:
+              - button "全部 8" [ref=f6e409] [cursor=pointer]:
+                - generic [ref=f6e410]: 全部
+                - generic [ref=f6e412]: "8"
+              - button "正常 5" [ref=f6e413] [cursor=pointer]:
+                - generic [ref=f6e414]: 正常
+                - generic [ref=f6e416]: "5"
+              - button "限流 1" [ref=f6e417] [cursor=pointer]:
+                - generic [ref=f6e418]: 限流
+                - generic [ref=f6e420]: "1"
+              - button "异常 1" [ref=f6e421] [cursor=pointer]:
+                - generic [ref=f6e422]: 异常
+                - generic [ref=f6e424]: "1"
+              - button "已暂停 1" [ref=f6e425] [cursor=pointer]:
+                - generic [ref=f6e426]: 已暂停
+                - generic [ref=f6e428]: "1"
+            - generic [ref=f6e429]:
+              - generic [ref=f6e430]:
+                - textbox "搜索账号..." [ref=f6e432]
+                - button "Select option" [ref=f6e434] [cursor=pointer]:
+                  - generic [ref=f6e435]: 全部平台
+                - button "Select option" [ref=f6e440] [cursor=pointer]:
+                  - generic [ref=f6e441]: 全部分组
+                - button "Select option" [ref=f6e446] [cursor=pointer]:
+                  - generic [ref=f6e447]: 全部类型
+                - button "Select option" [ref=f6e452] [cursor=pointer]:
+                  - generic [ref=f6e453]: 全部状态
+                - button "Select option" [ref=f6e458] [cursor=pointer]:
+                  - generic [ref=f6e459]: 全部隐私状态
+              - button "自动刷新" [ref=f6e464] [cursor=pointer]
+              - generic [ref=f6e468]: 已选 0 / 8
+              - button "列显示" [ref=f6e470] [cursor=pointer]
+          - generic [ref=f6e474]:
+            - table [ref=f6e477]:
+              - rowgroup [ref=f6e478]:
+                - row [ref=f6e479]:
+                  - columnheader [ref=f6e480]:
+                    - checkbox [ref=f6e482] [cursor=pointer]
+                  - columnheader "名称 / ID" [ref=f6e483] [cursor=pointer]
+                  - columnheader "账号ID" [ref=f6e491] [cursor=pointer]
+                  - columnheader "平台" [ref=f6e494]
+                  - columnheader "类型" [ref=f6e497]
+                  - columnheader "容量" [ref=f6e500]
+                  - columnheader "状态" [ref=f6e503] [cursor=pointer]
+                  - columnheader "调度" [ref=f6e506] [cursor=pointer]
+                  - columnheader "分组" [ref=f6e509]
+                  - columnheader "用量窗口" [ref=f6e512]:
+                    - generic [ref=f6e514]:
+                      - generic [ref=f6e515]: 用量窗口
+                      - generic [aria-hidden] [ref=f6e517]: "?"
+                  - columnheader "优先级" [ref=f6e518] [cursor=pointer]
+                  - columnheader "最近使用" [ref=f6e521] [cursor=pointer]
+                  - columnheader "上游声明倍率" [ref=f6e524] [cursor=pointer]:
+                    - generic [ref=f6e526]:
+                      - generic [ref=f6e527]: 上游声明倍率
+                      - generic [aria-hidden] [ref=f6e530]: "?"
+                  - columnheader "创建时间" [ref=f6e531] [cursor=pointer]
+                  - columnheader "过期时间" [ref=f6e534] [cursor=pointer]
+                  - columnheader "操作" [ref=f6e537]
+              - rowgroup [ref=f6e540]:
+                - row [ref=f6e541]:
+                  - cell [ref=f6e542]:
+                    - checkbox [ref=f6e543] [cursor=pointer]
+                  - 'cell "claude-max-01 ops-01@sub2api.dev #101 · 默认分组 +1" [ref=f6e544]':
+                    - generic "#101 · 默认分组 +1 · ops-01@sub2api.dev" [ref=f6e546]:
+                      - generic [ref=f6e547]: claude-max-01
+                      - generic [ref=f6e548]: ops-01@sub2api.dev
+                      - generic [ref=f6e549]: "#101 · 默认分组 +1"
+                  - cell "#101" [ref=f6e550]
+                  - cell "Claude" [ref=f6e551]
+                  - cell "OAuth" [ref=f6e557]
+                  - cell "3 / 8 $11.42 / $25.00 3 / 6 14 / 60 [T]" [ref=f6e565]:
+                    - generic [ref=f6e566]:
+                      - generic [ref=f6e567]:
+                        - generic [ref=f6e570]: "3"
+                        - generic [ref=f6e571]: /
+                        - generic [ref=f6e572]: "8"
+                      - generic "5h窗口费用正常" [ref=f6e573]:
+                        - generic [ref=f6e575]: $11.42
+                        - generic [ref=f6e576]: /
+                        - generic [ref=f6e577]: $25.00
+                      - generic "活跃会话正常（空闲超时：5分钟）" [ref=f6e578]:
+                        - generic [ref=f6e581]: "3"
+                        - generic [ref=f6e582]: /
+                        - generic [ref=f6e583]: "6"
+                      - generic "RPM 限制 (三区模型) - 正常" [ref=f6e584]:
+                        - generic [ref=f6e586]: "14"
+                        - generic [ref=f6e587]: /
+                        - generic [ref=f6e588]: "60"
+                        - generic [ref=f6e589]: "[T]"
+                  - cell "正常" [ref=f6e590]
+                  - cell [ref=f6e593]:
+                    - switch "调度已开启" [checked] [ref=f6e594] [cursor=pointer]
+                  - cell "默认分组 Claude Max" [ref=f6e596]:
+                    - generic [ref=f6e598]:
+                      - generic [ref=f6e599]: 默认分组
+                      - generic [ref=f6e602]: Claude Max
+                  - cell "-" [ref=f6e605]
+                  - cell "10" [ref=f6e607]
+                  - cell "6分钟前" [ref=f6e608]
+                  - cell "-" [ref=f6e609]
+                  - cell "2026/07/09 01:36:07" [ref=f6e610]
+                  - cell "2026-09-27 01:36 过期自动暂停调度" [ref=f6e611]:
+                    - generic [ref=f6e612]:
+                      - generic [ref=f6e613]: 2026-09-27 01:36
+                      - generic [ref=f6e614]: 过期自动暂停调度
+                  - cell [ref=f6e616]:
+                    - generic [ref=f6e617]:
+                      - button "编辑" [ref=f6e618] [cursor=pointer]
+                      - button "更多" [ref=f6e621] [cursor=pointer]
+                - row [ref=f6e623]:
+                  - cell [ref=f6e624]:
+                    - checkbox [ref=f6e625] [cursor=pointer]
+                  - 'cell "claude-max-02 ops-02@sub2api.dev #102 · Claude Max" [ref=f6e626]':
+                    - generic "#102 · Claude Max · ops-02@sub2api.dev" [ref=f6e628]:
+                      - generic [ref=f6e629]: claude-max-02
+                      - generic [ref=f6e630]: ops-02@sub2api.dev
+                      - generic [ref=f6e631]: "#102 · Claude Max"
+                  - cell "#102" [ref=f6e632]
+                  - cell "Claude" [ref=f6e633]
+                  - cell "OAuth" [ref=f6e639]
+                  - cell "1 / 8 $24.80 / $25.00 5 / 6" [ref=f6e647]:
+                    - generic [ref=f6e648]:
+                      - generic [ref=f6e649]:
+                        - generic [ref=f6e652]: "1"
+                        - generic [ref=f6e653]: /
+                        - generic [ref=f6e654]: "8"
+                      - generic "5h窗口费用正常" [ref=f6e655]:
+                        - generic [ref=f6e657]: $24.80
+                        - generic [ref=f6e658]: /
+                        - generic [ref=f6e659]: $25.00
+                      - generic "活跃会话正常（空闲超时：5分钟）" [ref=f6e660]:
+                        - generic [ref=f6e663]: "5"
+                        - generic [ref=f6e664]: /
+                        - generic [ref=f6e665]: "6"
+                  - cell "限流中 42m 自动恢复 429 限流中，当前不参与调度，预计 2026/09/07 02:24:07 自动恢复" [ref=f6e666]:
+                    - generic [ref=f6e667]:
+                      - generic [ref=f6e668]:
+                        - generic [ref=f6e669]: 限流中
+                        - generic [ref=f6e670]: 42m 自动恢复
+                      - generic [ref=f6e671]:
+                        - generic [ref=f6e672]: "429"
+                        - generic: 限流中，当前不参与调度，预计 2026/09/07 02:24:07 自动恢复
+                  - cell [ref=f6e675]:
+                    - switch "调度已开启" [checked] [ref=f6e676] [cursor=pointer]
+                  - cell "Claude Max" [ref=f6e678]
+                  - cell "-" [ref=f6e684]
+                  - cell "10" [ref=f6e686]
+                  - cell "11分钟前" [ref=f6e687]
+                  - cell "-" [ref=f6e688]
+                  - cell "2026/07/09 01:36:07" [ref=f6e689]
+                  - cell "2026-09-27 01:36 过期自动暂停调度" [ref=f6e690]:
+                    - generic [ref=f6e691]:
+                      - generic [ref=f6e692]: 2026-09-27 01:36
+                      - generic [ref=f6e693]: 过期自动暂停调度
+                  - cell [ref=f6e695]:
+                    - generic [ref=f6e696]:
+                      - button "编辑" [ref=f6e697] [cursor=pointer]
+                      - button "更多" [ref=f6e700] [cursor=pointer]
+                - row [ref=f6e702]:
+                  - cell [ref=f6e703]:
+                    - checkbox [ref=f6e704] [cursor=pointer]
+                  - 'cell "claude-console-apikey #103 · 默认分组" [ref=f6e705]':
+                    - generic "#103 · 默认分组" [ref=f6e707]: claude-console-apikey
+                  - cell "#103" [ref=f6e710]
+                  - cell "Claude" [ref=f6e711]
+                  - cell "Key" [ref=f6e717]
+                  - cell "4 / 20 D $41.20 / $60.00 W $188.90 / $300.00 $318.60 / $500.00" [ref=f6e725]:
+                    - generic [ref=f6e726]:
+                      - generic [ref=f6e727]:
+                        - generic [ref=f6e730]: "4"
+                        - generic [ref=f6e731]: /
+                        - generic [ref=f6e732]: "20"
+                      - generic "配额正常" [ref=f6e733]:
+                        - generic [ref=f6e734]: D
+                        - generic [ref=f6e735]: $41.20
+                        - generic [ref=f6e736]: /
+                        - generic [ref=f6e737]: $60.00
+                      - generic "配额正常" [ref=f6e738]:
+                        - generic [ref=f6e739]: W
+                        - generic [ref=f6e740]: $188.90
+                        - generic [ref=f6e741]: /
+                        - generic [ref=f6e742]: $300.00
+                      - generic "配额正常" [ref=f6e743]:
+                        - generic [ref=f6e745]: $318.60
+                        - generic [ref=f6e746]: /
+                        - generic [ref=f6e747]: $500.00
+                  - cell "正常" [ref=f6e748]
+                  - cell [ref=f6e751]:
+                    - switch "调度已开启" [checked] [ref=f6e752] [cursor=pointer]
+                  - cell "默认分组" [ref=f6e754]
+                  - cell "1d 69% 7d 63% 1d 68.66% 7d 62.96% total 63.72%" [ref=f6e760]:
+                    - generic [ref=f6e761]:
+                      - generic [ref=f6e762]:
+                        - generic [ref=f6e763]:
+                          - generic [ref=f6e764]: 1d
+                          - generic [ref=f6e767]: 69%
+                        - generic [ref=f6e768]:
+                          - generic [ref=f6e769]: 7d
+                          - generic [ref=f6e772]: 63%
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic: 1d
+                                - generic: 68.66%
+                            - generic:
+                              - generic:
+                                - generic: 7d
+                                - generic: 62.96%
+                            - generic:
+                              - generic:
+                                - generic: total
+                                - generic: 63.72%
+                  - cell "30" [ref=f6e773]
+                  - cell "7分钟前" [ref=f6e774]
+                  - cell "未探测 立即探测上游倍率" [ref=f6e775]:
+                    - generic [ref=f6e776]:
+                      - generic [ref=f6e777]: 未探测
+                      - button "立即探测上游倍率" [ref=f6e779] [cursor=pointer]
+                  - cell "2026/07/09 01:36:07" [ref=f6e782]
+                  - cell "-" [ref=f6e783]
+                  - cell [ref=f6e786]:
+                    - generic [ref=f6e787]:
+                      - button "编辑" [ref=f6e788] [cursor=pointer]
+                      - button "更多" [ref=f6e791] [cursor=pointer]
+                - row [ref=f6e793]:
+                  - cell [ref=f6e794]:
+                    - checkbox [ref=f6e795] [cursor=pointer]
+                  - 'cell "claude-setup-token-03 #104 · 默认分组" [ref=f6e796]':
+                    - generic "#104 · 默认分组" [ref=f6e798]: claude-setup-token-03
+                  - cell "#104" [ref=f6e801]
+                  - cell "Claude" [ref=f6e802]
+                  - cell "Token" [ref=f6e808]
+                  - cell "0 / 4" [ref=f6e816]:
+                    - generic [ref=f6e818]:
+                      - generic [ref=f6e821]: "0"
+                      - generic [ref=f6e822]: /
+                      - generic [ref=f6e823]: "4"
+                  - cell "错误" [ref=f6e824]
+                  - cell [ref=f6e830]:
+                    - switch "调度已关闭" [ref=f6e831] [cursor=pointer]
+                  - cell "默认分组" [ref=f6e833]
+                  - cell "-" [ref=f6e839]
+                  - cell "40" [ref=f6e841]
+                  - cell "5小时前" [ref=f6e842]
+                  - cell "-" [ref=f6e843]
+                  - cell "2026/07/09 01:36:07" [ref=f6e844]
+                  - cell "2026-09-07 00:36 已过期 过期自动暂停调度" [ref=f6e845]:
+                    - generic [ref=f6e846]:
+                      - generic [ref=f6e847]: 2026-09-07 00:36
+                      - generic [ref=f6e848]:
+                        - generic [ref=f6e849]: 已过期
+                        - generic [ref=f6e850]: 过期自动暂停调度
+                  - cell [ref=f6e851]:
+                    - generic [ref=f6e852]:
+                      - button "编辑" [ref=f6e853] [cursor=pointer]
+                      - button "更多" [ref=f6e856] [cursor=pointer]
+                - row [ref=f6e858]:
+                  - cell [ref=f6e859]:
+                    - checkbox [ref=f6e860] [cursor=pointer]
+                  - 'cell "codex-team-01 codex-01@sub2api.dev #105 · OpenAI Codex 2" [ref=f6e861]':
+                    - generic [ref=f6e862]:
+                      - generic "#105 · OpenAI Codex · codex-01@sub2api.dev" [ref=f6e863]:
+                        - generic [ref=f6e864]: codex-team-01
+                        - generic [ref=f6e865]: codex-01@sub2api.dev
+                        - generic [ref=f6e866]: "#105 · OpenAI Codex"
+                      - button "2" [ref=f6e867] [cursor=pointer]
+                  - cell "#105" [ref=f6e871]
+                  - cell "OpenAI" [ref=f6e872]
+                  - cell "OAuth Compact Auto" [ref=f6e878]:
+                    - generic [ref=f6e879]:
+                      - generic [ref=f6e880]: OAuth
+                      - generic "Compact Auto" [ref=f6e886]
+                  - cell "2 / 6" [ref=f6e889]:
+                    - generic [ref=f6e891]:
+                      - generic [ref=f6e894]: "2"
+                      - generic [ref=f6e895]: /
+                      - generic [ref=f6e896]: "6"
+                  - cell "正常" [ref=f6e897]
+                  - cell [ref=f6e900]:
+                    - switch "调度已开启" [checked] [ref=f6e901] [cursor=pointer]
+                  - cell "OpenAI Codex" [ref=f6e903]
+                  - cell "-" [ref=f6e909]
+                  - cell "20" [ref=f6e911]
+                  - cell "6分钟前" [ref=f6e912]
+                  - cell "-" [ref=f6e913]
+                  - cell "2026/07/09 01:36:07" [ref=f6e914]
+                  - cell "2026-09-27 01:36 过期自动暂停调度" [ref=f6e915]:
+                    - generic [ref=f6e916]:
+                      - generic [ref=f6e917]: 2026-09-27 01:36
+                      - generic [ref=f6e918]: 过期自动暂停调度
+                  - cell [ref=f6e920]:
+                    - generic [ref=f6e921]:
+                      - button "编辑" [ref=f6e922] [cursor=pointer]
+                      - button "更多" [ref=f6e925] [cursor=pointer]
+                - row [ref=f6e927]:
+                  - cell [ref=f6e928]:
+                    - checkbox [ref=f6e929] [cursor=pointer]
+                  - 'cell "gemini-workspace-01 #106 · Gemini" [ref=f6e930]':
+                    - generic "#106 · Gemini" [ref=f6e932]: gemini-workspace-01
+                  - cell "#106" [ref=f6e935]
+                  - cell "Gemini" [ref=f6e936]
+                  - cell "OAuth" [ref=f6e942]
+                  - cell "1 / 10" [ref=f6e950]:
+                    - generic [ref=f6e952]:
+                      - generic [ref=f6e955]: "1"
+                      - generic [ref=f6e956]: /
+                      - generic [ref=f6e957]: "10"
+                  - cell "正常" [ref=f6e958]
+                  - cell [ref=f6e961]:
+                    - switch "调度已开启" [checked] [ref=f6e962] [cursor=pointer]
+                  - cell "Gemini" [ref=f6e964]
+                  - 'cell "1d 24% ai studio Gemini 配额与限流政策（参考） 注意：Gemini 官方未提供用量查询接口。此处显示的“每日配额”是由系统根据账号等级模拟计算的估算值，仅供调度参考，请以 Google 官方实际报错为准。 AI Studio API Key / OAuth: • RPD 50；RPM 2（Pro）/ 15（Flash） 官方文档 →" [ref=f6e970]':
+                    - generic [ref=f6e971]:
+                      - generic [ref=f6e973]:
+                        - generic [ref=f6e974]: 1d
+                        - generic [ref=f6e977]: 24%
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic: ai studio
+                            - generic:
+                              - generic:
+                                - generic: Gemini 配额与限流政策（参考）
+                                - generic: 注意：Gemini 官方未提供用量查询接口。此处显示的“每日配额”是由系统根据账号等级模拟计算的估算值，仅供调度参考，请以 Google 官方实际报错为准。
+                                - generic:
+                                  - generic:
+                                    - strong: "AI Studio API Key / OAuth:"
+                                  - generic: • RPD 50；RPM 2（Pro）/ 15（Flash）
+                                  - generic:
+                                    - link "官方文档 →":
+                                      - /url: https://ai.google.dev/pricing
+                  - cell "25" [ref=f6e978]
+                  - cell "20分钟前" [ref=f6e979]
+                  - cell "-" [ref=f6e980]
+                  - cell "2026/07/09 01:36:07" [ref=f6e981]
+                  - cell "2026-09-27 01:36 过期自动暂停调度" [ref=f6e982]:
+                    - generic [ref=f6e983]:
+                      - generic [ref=f6e984]: 2026-09-27 01:36
+                      - generic [ref=f6e985]: 过期自动暂停调度
+                  - cell [ref=f6e987]:
+                    - generic [ref=f6e988]:
+                      - button "编辑" [ref=f6e989] [cursor=pointer]
+                      - button "更多" [ref=f6e992] [cursor=pointer]
+                - row [ref=f6e994]:
+                  - cell [ref=f6e995]:
+                    - checkbox [ref=f6e996] [cursor=pointer]
+                  - 'cell "antigravity-lab lab@sub2api.dev #107 · 默认分组" [ref=f6e997]':
+                    - generic "#107 · 默认分组 · lab@sub2api.dev" [ref=f6e999]:
+                      - generic [ref=f6e1000]: antigravity-lab
+                      - generic [ref=f6e1001]: lab@sub2api.dev
+                      - generic [ref=f6e1002]: "#107 · 默认分组"
+                  - cell "#107" [ref=f6e1003]
+                  - cell "Antigravity" [ref=f6e1004]
+                  - cell "OAuth" [ref=f6e1010]
+                  - cell "0 / 3" [ref=f6e1018]:
+                    - generic [ref=f6e1020]:
+                      - generic [ref=f6e1023]: "0"
+                      - generic [ref=f6e1024]: /
+                      - generic [ref=f6e1025]: "3"
+                  - cell "临时不可调度 预计 2026/09/07 02:01:07 恢复" [ref=f6e1026]:
+                    - generic [ref=f6e1028]:
+                      - button "临时不可调度" [ref=f6e1029] [cursor=pointer]
+                      - generic [ref=f6e1030]: 预计 2026/09/07 02:01:07 恢复
+                  - cell [ref=f6e1031]:
+                    - switch "调度已开启" [checked] [ref=f6e1032] [cursor=pointer]
+                  - cell "默认分组" [ref=f6e1034]
+                  - cell "-" [ref=f6e1040]
+                  - cell "60" [ref=f6e1042]
+                  - cell "1小时前" [ref=f6e1043]
+                  - cell "-" [ref=f6e1044]
+                  - cell "2026/07/09 01:36:07" [ref=f6e1045]
+                  - cell "2026-09-27 01:36 过期自动暂停调度" [ref=f6e1046]:
+                    - generic [ref=f6e1047]:
+                      - generic [ref=f6e1048]: 2026-09-27 01:36
+                      - generic [ref=f6e1049]: 过期自动暂停调度
+                  - cell [ref=f6e1051]:
+                    - generic [ref=f6e1052]:
+                      - button "编辑" [ref=f6e1053] [cursor=pointer]
+                      - button "更多" [ref=f6e1056] [cursor=pointer]
+                - row [ref=f6e1058]:
+                  - cell [ref=f6e1059]:
+                    - checkbox [ref=f6e1060] [cursor=pointer]
+                  - 'cell "grok-heavy-01 #108 · 未分配分组" [ref=f6e1061]':
+                    - generic "#108 · 未分配分组" [ref=f6e1063]: grok-heavy-01
+                  - cell "#108" [ref=f6e1066]
+                  - cell "Grok" [ref=f6e1067]
+                  - cell "Key" [ref=f6e1073]
+                  - cell "0 / 5" [ref=f6e1081]:
+                    - generic [ref=f6e1083]:
+                      - generic [ref=f6e1086]: "0"
+                      - generic [ref=f6e1087]: /
+                      - generic [ref=f6e1088]: "5"
+                  - cell "暂停" [ref=f6e1089]
+                  - cell [ref=f6e1092]:
+                    - switch "调度已关闭" [ref=f6e1093] [cursor=pointer]
+                  - cell "-" [ref=f6e1095]
+                  - cell "-" [ref=f6e1096]
+                  - cell "70" [ref=f6e1098]
+                  - cell "2天前" [ref=f6e1099]
+                  - cell "未探测 立即探测上游倍率" [ref=f6e1100]:
+                    - generic [ref=f6e1101]:
+                      - generic [ref=f6e1102]: 未探测
+                      - button "立即探测上游倍率" [ref=f6e1104] [cursor=pointer]
+                  - cell "2026/07/09 01:36:07" [ref=f6e1107]
+                  - cell "-" [ref=f6e1108]
+                  - cell [ref=f6e1111]:
+                    - generic [ref=f6e1112]:
+                      - button "编辑" [ref=f6e1113] [cursor=pointer]
+                      - button "更多" [ref=f6e1116] [cursor=pointer]
+            - generic [ref=f6e1120]:
+              - generic [ref=f6e1121]:
+                - paragraph [ref=f6e1122]: 显示 1–8，共 8 条
+                - generic [ref=f6e1123]:
+                  - generic [aria-hidden] [ref=f6e1124]: ·
+                  - button "每页" [ref=f6e1127] [cursor=pointer]:
+                    - generic [ref=f6e1129]: "20"
+              - navigation "Pagination" [ref=f6e1133]:
+                - button "上一页" [disabled] [ref=f6e1134]
+                - button "跳转到第 1 页" [ref=f6e1137] [cursor=pointer]: "1"
+                - button "下一页" [disabled] [ref=f6e1138]
+  - generic:
+    - button "Close" [ref=f6e1141] [cursor=pointer]
+    - main [ref=f6e1142]:
+      - list [ref=f6e1144]:
+        - listitem [ref=f6e1145]:
+          - list [ref=f6e1146]:
+            - listitem [ref=f6e1147]:
+              - generic [ref=f6e1148]: "[vue-tsc] Type 'unknown' is not assignable to type 'Booleanish | \"grammar\" | \"spelling\" | undefined'."
+              - generic [ref=f6e1149]: /Users/ianshaw/Documents/code/personal/sub2api/frontend/src/components/ui/TextInput.vue:20:10
+              - code [ref=f6e1151]: "18 | :required=\"required\" 19 | :autocomplete=\"autocomplete\" > 20 | :aria-invalid=\"hasError ? true : $attrs['aria-invalid']\" | ^^^^^^^^^^^^ 21 | :aria-describedby=\"errorDescribedBy()\" 22 | @input=\"onInput\" 23 | @blur=\"emit('blur', $event)\""

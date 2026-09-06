@@ -1,0 +1,294 @@
+- generic [active] [ref=f3e1]:
+  - generic [ref=f3e3]:
+    - complementary [ref=f3e4]:
+      - generic [ref=f3e5]:
+        - link "Sub2API" [ref=f3e6] [cursor=pointer]:
+          - /url: /admin/dashboard
+          - img "Logo" [ref=f3e7]
+        - generic [ref=f3e8]:
+          - link "Sub2API" [ref=f3e9] [cursor=pointer]:
+            - /url: /admin/dashboard
+          - button "v1.8.2" [ref=f3e11] [cursor=pointer]
+      - navigation [ref=f3e13]:
+        - generic [ref=f3e14]:
+          - button "概览" [expanded] [ref=f3e15] [cursor=pointer]
+          - generic [ref=f3e20]:
+            - link "仪表盘" [ref=f3e22] [cursor=pointer]:
+              - /url: /admin/dashboard
+            - link "运维监控" [ref=f3e28] [cursor=pointer]:
+              - /url: /admin/ops
+        - generic [ref=f3e33]:
+          - button "创作中心" [expanded] [ref=f3e34] [cursor=pointer]
+          - generic [ref=f3e39]:
+            - link "对话" [ref=f3e41] [cursor=pointer]:
+              - /url: /studio/chat
+            - link "图片" [ref=f3e47] [cursor=pointer]:
+              - /url: /studio/image
+            - link "视频" [ref=f3e55] [cursor=pointer]:
+              - /url: /studio/video
+            - link "语音" [ref=f3e62] [cursor=pointer]:
+              - /url: /studio/voice
+            - link "灵感墙" [ref=f3e69] [cursor=pointer]:
+              - /url: /studio/gallery
+        - generic [ref=f3e74]:
+          - button "用户与资源" [expanded] [ref=f3e75] [cursor=pointer]
+          - generic [ref=f3e80]:
+            - link "用户管理" [ref=f3e82] [cursor=pointer]:
+              - /url: /admin/users
+            - link "分组管理" [ref=f3e88] [cursor=pointer]:
+              - /url: /admin/groups
+            - link "订阅管理" [ref=f3e94] [cursor=pointer]:
+              - /url: /admin/subscriptions
+            - link "账号管理" [ref=f3e100] [cursor=pointer]:
+              - /url: /admin/accounts
+            - link "IP管理" [ref=f3e106] [cursor=pointer]:
+              - /url: /admin/proxies
+        - generic [ref=f3e111]:
+          - button "渠道" [expanded] [ref=f3e112] [cursor=pointer]
+          - generic [ref=f3e117]:
+            - button "渠道管理" [ref=f3e120] [cursor=pointer]
+            - link "插件管理" [ref=f3e129] [cursor=pointer]:
+              - /url: /admin/plugins
+        - generic [ref=f3e134]:
+          - button "运营" [expanded] [ref=f3e135] [cursor=pointer]
+          - generic [ref=f3e140]:
+            - link "公告" [ref=f3e142] [cursor=pointer]:
+              - /url: /admin/announcements
+            - link "兑换码" [ref=f3e148] [cursor=pointer]:
+              - /url: /admin/redeem
+            - link "优惠码" [ref=f3e154] [cursor=pointer]:
+              - /url: /admin/promo-codes
+            - button "邀请返利" [ref=f3e161] [cursor=pointer]
+            - button "订单管理" [ref=f3e171] [cursor=pointer]
+            - link "工单管理" [ref=f3e180] [cursor=pointer]:
+              - /url: /admin/tickets
+        - generic [ref=f3e185]:
+          - button "安全审计" [expanded] [ref=f3e186] [cursor=pointer]
+          - generic [ref=f3e191]:
+            - button "安全审计" [ref=f3e194] [cursor=pointer]
+            - link "使用记录" [ref=f3e203] [cursor=pointer]:
+              - /url: /admin/usage
+            - link "操作日志" [ref=f3e209] [cursor=pointer]:
+              - /url: /admin/audit-logs
+        - generic [ref=f3e214]:
+          - button "系统" [expanded] [ref=f3e215] [cursor=pointer]
+          - link "系统设置" [ref=f3e222] [cursor=pointer]:
+            - /url: /admin/settings
+        - generic [ref=f3e228]:
+          - button "我的账户" [expanded] [ref=f3e229] [cursor=pointer]
+          - generic [ref=f3e234]:
+            - link "API 密钥" [ref=f3e236] [cursor=pointer]:
+              - /url: /keys
+            - link "使用记录" [ref=f3e242] [cursor=pointer]:
+              - /url: /usage
+            - link "可用渠道" [ref=f3e248] [cursor=pointer]:
+              - /url: /available-channels
+            - link "渠道状态" [ref=f3e254] [cursor=pointer]:
+              - /url: /monitor
+            - link "我的订阅" [ref=f3e260] [cursor=pointer]:
+              - /url: /subscriptions
+            - link "充值/订阅" [ref=f3e266] [cursor=pointer]:
+              - /url: /purchase
+            - link "我的订单" [ref=f3e276] [cursor=pointer]:
+              - /url: /orders
+            - link "我的发票" [ref=f3e282] [cursor=pointer]:
+              - /url: /invoices
+            - link "我的工单" [ref=f3e288] [cursor=pointer]:
+              - /url: /tickets
+            - link "兑换" [ref=f3e294] [cursor=pointer]:
+              - /url: /redeem
+            - link "邀请返利" [ref=f3e300] [cursor=pointer]:
+              - /url: /affiliate
+            - link "个人资料" [ref=f3e306] [cursor=pointer]:
+              - /url: /profile
+            - link "接入指南" [ref=f3e312] [cursor=pointer]:
+              - /url: /custom/docs-guide
+            - link "外部状态页" [ref=f3e320] [cursor=pointer]:
+              - /url: /custom/status-embed
+      - generic [ref=f3e327]:
+        - generic [ref=f3e328]:
+          - button "深色模式" [ref=f3e329] [cursor=pointer]
+          - button "收起" [ref=f3e333] [cursor=pointer]
+        - generic [ref=f3e336]:
+          - generic [ref=f3e337]: A
+          - generic [ref=f3e339]:
+            - generic [ref=f3e340]: admin@sub2api.dev
+            - generic [ref=f3e341]: 管理员
+    - generic [ref=f3e342]:
+      - banner [ref=f3e343]:
+        - generic [ref=f3e344]:
+          - navigation "breadcrumb" [ref=f3e345]:
+            - generic [ref=f3e346]: 账号管理
+          - generic [ref=f3e347]:
+            - button "搜索" [ref=f3e348]
+            - button "公告" [ref=f3e353] [cursor=pointer]
+            - button "更多操作" [ref=f3e357] [cursor=pointer]
+            - button "用户菜单" [ref=f3e362] [cursor=pointer]:
+              - generic [ref=f3e363]: A
+      - main [ref=f3e367]:
+        - generic [ref=f3e368]:
+          - generic [ref=f3e369]:
+            - heading "账号管理" [level=1] [ref=f3e370]
+            - paragraph [ref=f3e371]: 管理 AI 平台账号和 Cookie
+          - generic [ref=f3e373]:
+            - button [disabled]
+            - button "批量编辑" [ref=f3e374] [cursor=pointer]
+            - button "导入 / 导出" [ref=f3e376] [cursor=pointer]
+            - button "更多" [ref=f3e381] [cursor=pointer]
+            - button "添加账号" [ref=f3e385] [cursor=pointer]
+        - generic [ref=f3e386]:
+          - generic [ref=f3e387]:
+            - group "状态" [ref=f3e388]:
+              - button "全部 0" [ref=f3e389] [cursor=pointer]:
+                - generic [ref=f3e390]: 全部
+                - generic [ref=f3e392]: "0"
+              - button "正常 0" [ref=f3e393] [cursor=pointer]:
+                - generic [ref=f3e394]: 正常
+                - generic [ref=f3e396]: "0"
+              - button "限流 0" [ref=f3e397] [cursor=pointer]:
+                - generic [ref=f3e398]: 限流
+                - generic [ref=f3e400]: "0"
+              - button "异常 0" [ref=f3e401] [cursor=pointer]:
+                - generic [ref=f3e402]: 异常
+                - generic [ref=f3e404]: "0"
+              - button "已暂停 0" [ref=f3e405] [cursor=pointer]:
+                - generic [ref=f3e406]: 已暂停
+                - generic [ref=f3e408]: "0"
+            - generic [ref=f3e409]:
+              - generic [ref=f3e410]:
+                - textbox "搜索账号..." [ref=f3e412]
+                - button "Select option" [ref=f3e414] [cursor=pointer]:
+                  - generic [ref=f3e415]: 全部平台
+                - button "Select option" [ref=f3e420] [cursor=pointer]:
+                  - generic [ref=f3e421]: 全部分组
+                - button "Select option" [ref=f3e426] [cursor=pointer]:
+                  - generic [ref=f3e427]: 全部类型
+                - button "Select option" [ref=f3e432] [cursor=pointer]:
+                  - generic [ref=f3e433]: 全部状态
+                - button "Select option" [ref=f3e438] [cursor=pointer]:
+                  - generic [ref=f3e439]: 全部隐私状态
+              - button "自动刷新" [ref=f3e444] [cursor=pointer]
+              - generic [ref=f3e448]: 已选 0 / 0
+              - button "列显示" [ref=f3e450] [cursor=pointer]
+          - table [ref=f3e457]:
+            - rowgroup [ref=f3e458]:
+              - row [ref=f3e459]:
+                - columnheader [ref=f3e460]:
+                  - checkbox [ref=f3e462] [cursor=pointer]
+                - columnheader "名称 / ID" [ref=f3e463] [cursor=pointer]
+                - columnheader "账号ID" [ref=f3e471] [cursor=pointer]
+                - columnheader "平台" [ref=f3e474]
+                - columnheader "类型" [ref=f3e477]
+                - columnheader "容量" [ref=f3e480]
+                - columnheader "状态" [ref=f3e483] [cursor=pointer]
+                - columnheader "调度" [ref=f3e486] [cursor=pointer]
+                - columnheader "分组" [ref=f3e489]
+                - columnheader "用量窗口" [ref=f3e492]:
+                  - generic [ref=f3e494]:
+                    - generic [ref=f3e495]: 用量窗口
+                    - generic [aria-hidden] [ref=f3e497]: "?"
+                - columnheader "优先级" [ref=f3e498] [cursor=pointer]
+                - columnheader "最近使用" [ref=f3e501] [cursor=pointer]
+                - columnheader "上游声明倍率" [ref=f3e504] [cursor=pointer]:
+                  - generic [ref=f3e506]:
+                    - generic [ref=f3e507]: 上游声明倍率
+                    - generic [aria-hidden] [ref=f3e510]: "?"
+                - columnheader "创建时间" [ref=f3e511] [cursor=pointer]
+                - columnheader "过期时间" [ref=f3e514] [cursor=pointer]
+                - columnheader "操作" [ref=f3e517]
+            - rowgroup [ref=f3e520]:
+              - row [ref=f3e521]:
+                - cell [ref=f3e522]
+                - cell [ref=f3e524]
+                - cell [ref=f3e526]
+                - cell [ref=f3e528]
+                - cell [ref=f3e530]
+                - cell [ref=f3e532]
+                - cell [ref=f3e534]
+                - cell [ref=f3e536]
+                - cell [ref=f3e538]
+                - cell [ref=f3e540]
+                - cell [ref=f3e542]
+                - cell [ref=f3e544]
+                - cell [ref=f3e546]
+                - cell [ref=f3e548]
+                - cell [ref=f3e550]
+                - cell [ref=f3e552]
+              - row [ref=f3e554]:
+                - cell [ref=f3e555]
+                - cell [ref=f3e557]
+                - cell [ref=f3e559]
+                - cell [ref=f3e561]
+                - cell [ref=f3e563]
+                - cell [ref=f3e565]
+                - cell [ref=f3e567]
+                - cell [ref=f3e569]
+                - cell [ref=f3e571]
+                - cell [ref=f3e573]
+                - cell [ref=f3e575]
+                - cell [ref=f3e577]
+                - cell [ref=f3e579]
+                - cell [ref=f3e581]
+                - cell [ref=f3e583]
+                - cell [ref=f3e585]
+              - row [ref=f3e587]:
+                - cell [ref=f3e588]
+                - cell [ref=f3e590]
+                - cell [ref=f3e592]
+                - cell [ref=f3e594]
+                - cell [ref=f3e596]
+                - cell [ref=f3e598]
+                - cell [ref=f3e600]
+                - cell [ref=f3e602]
+                - cell [ref=f3e604]
+                - cell [ref=f3e606]
+                - cell [ref=f3e608]
+                - cell [ref=f3e610]
+                - cell [ref=f3e612]
+                - cell [ref=f3e614]
+                - cell [ref=f3e616]
+                - cell [ref=f3e618]
+              - row [ref=f3e620]:
+                - cell [ref=f3e621]
+                - cell [ref=f3e623]
+                - cell [ref=f3e625]
+                - cell [ref=f3e627]
+                - cell [ref=f3e629]
+                - cell [ref=f3e631]
+                - cell [ref=f3e633]
+                - cell [ref=f3e635]
+                - cell [ref=f3e637]
+                - cell [ref=f3e639]
+                - cell [ref=f3e641]
+                - cell [ref=f3e643]
+                - cell [ref=f3e645]
+                - cell [ref=f3e647]
+                - cell [ref=f3e649]
+                - cell [ref=f3e651]
+              - row [ref=f3e653]:
+                - cell [ref=f3e654]
+                - cell [ref=f3e656]
+                - cell [ref=f3e658]
+                - cell [ref=f3e660]
+                - cell [ref=f3e662]
+                - cell [ref=f3e664]
+                - cell [ref=f3e666]
+                - cell [ref=f3e668]
+                - cell [ref=f3e670]
+                - cell [ref=f3e672]
+                - cell [ref=f3e674]
+                - cell [ref=f3e676]
+                - cell [ref=f3e678]
+                - cell [ref=f3e680]
+                - cell [ref=f3e682]
+                - cell [ref=f3e684]
+  - generic:
+    - button "Close" [ref=f3e686] [cursor=pointer]
+    - main [ref=f3e687]:
+      - list [ref=f3e689]:
+        - listitem [ref=f3e690]:
+          - list [ref=f3e691]:
+            - listitem [ref=f3e692]:
+              - generic [ref=f3e693]: "[vue-tsc] Type 'unknown' is not assignable to type 'Booleanish | \"grammar\" | \"spelling\" | undefined'."
+              - generic [ref=f3e694]: /Users/ianshaw/Documents/code/personal/sub2api/frontend/src/components/ui/TextInput.vue:20:10
+              - code [ref=f3e696]: "18 | :required=\"required\" 19 | :autocomplete=\"autocomplete\" > 20 | :aria-invalid=\"hasError ? true : $attrs['aria-invalid']\" | ^^^^^^^^^^^^ 21 | :aria-describedby=\"errorDescribedBy()\" 22 | @input=\"onInput\" 23 | @blur=\"emit('blur', $event)\""

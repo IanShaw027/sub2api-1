@@ -49,7 +49,7 @@
   gap: 12px;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 900px) {
   .settings-page-layout-grid.has-nav {
     grid-template-columns: minmax(0, 1fr);
   }

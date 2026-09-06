@@ -32,4 +32,6 @@ pnpm run test:run
 
 ## Current verification note
 
-The full automated suite is green. `ws` is now declared as a pinned frontend dev dependency and `shot.cjs` supports `UI_SHOTS_CHROME` plus automatic Chromium discovery. Core screenshots were captured for Dashboard (desktop/mobile), Keys (tablet/mobile), and Settings (dark desktop); the Keys tablet layout was corrected after visual inspection so summary cards no longer clip. The complete route screenshot matrix remains a follow-up because it is broader than this implementation batch.
+The final automated suite is green: `vue-tsc --noEmit`, UI lint, contrast, i18n parity, the preservation-audit tests, 372 Vitest files / 2649 tests, and the production build all passed. ESLint returned 0 errors and 16 warnings in the seeded mock's existing unused fixture fields. The final preservation audit reports equal route/navigation/column/API/store inventories; remaining action/link/menu candidates are covered by the equivalence ledgers and targeted tests.
+
+The 56 core matrix screenshots and interaction evidence were generated and reviewed. After the final 768px Settings layout correction, both `admin-settings/t768-light.png` and `admin-settings/t768-dark.png` were recaptured against the seeded mock and reviewed. Their diagnostics report viewport width 768, `scrollWidth` 768, no page errors, no error toasts and no broken images; the checker overlay node is present but hidden.

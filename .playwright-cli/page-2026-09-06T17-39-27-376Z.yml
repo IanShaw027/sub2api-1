@@ -1,0 +1,11 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - button "Close" [ref=e2] [cursor=pointer]
+    - main [ref=e3]:
+      - list [ref=e5]:
+        - listitem [ref=e6]:
+          - list [ref=e7]:
+            - listitem [ref=e8]:
+              - generic [ref=e9]: "[vue-tsc] Type 'unknown' is not assignable to type 'Booleanish | \"grammar\" | \"spelling\" | undefined'."
+              - generic [ref=e10]: /Users/ianshaw/Documents/code/personal/sub2api/frontend/src/components/ui/TextInput.vue:20:10
+              - code [ref=e12]: "18 | :required=\"required\" 19 | :autocomplete=\"autocomplete\" > 20 | :aria-invalid=\"hasError ? true : $attrs['aria-invalid']\" | ^^^^^^^^^^^^ 21 | :aria-describedby=\"errorDescribedBy()\" 22 | @input=\"onInput\" 23 | @blur=\"emit('blur', $event)\""
