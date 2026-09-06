@@ -2,7 +2,7 @@
 
 本表是 `specs/*` 的可执行版本：代理与评审者在实施和验收时直接对照这里的数字与配方。原型渲染参考图在 `reference/`（由 `scripts/proto-shots.js` 从 `Sub2API Redesign.dc.html` 渲染，亮 / 暗各一套）。
 
-> 优先级：原型出稿 > 本表配方 > 现有实现。只有两种情况允许偏离原型：(a) 原型与项目实际不符（功能不存在 / 数据不存在 / 平台差异），(b) 有明显更好的呈现且经 lead 确认。所有偏离必须登记到 `deviations.md`（路由、原型位置、偏离内容、理由、截图）。
+> 原有功能与有效信息保真优先于视觉还原。原型与实现存在差异时，使用本表中已登记的加固决策；其他偏离登记到 `deviations.md`。2026-09-07 加固补充见 `../glass-ui-quality-hardening/design-reference-update.md`，原始外部画布保持不变，不再将历史原型值当作当前契约。
 
 ## 1. 令牌（唯一颜色来源）
 
@@ -13,8 +13,9 @@
 | `--surface` | oklch(100% 0 0) | oklch(21.03% .003 262.89) |
 | `--surface-secondary` | oklch(95.24% .0023 262.89) | oklch(25.7% .0023 262.89) |
 | `--surface-tertiary` | oklch(92.5% .003 262.89) | oklch(30% .003 262.89) |
-| `--muted` | oklch(55.17% .006 259.82) | oklch(70.5% .006 259.82) |
+| `--muted` | oklch(50% .006 259.82) | oklch(70.5% .006 259.82) |
 | `--border` | oklch(90% .003 259.82) | oklch(28% .003 259.82) |
+| `--border-strong` | oklch(59% .006 259.82) | oklch(51% .003 259.82) |
 | `--accent` | oklch(62.31% .1881 259.82) | 同 |
 | `--success` / `-text` | oklch(73.29% .1946 151.55) / oklch(45% .15 151.55) | 同 / = `--success` |
 | `--warning` / `-text` | oklch(78.19% .1593 73.04) / oklch(52% .14 73.04) | 同 / = `--warning` |
@@ -89,6 +90,17 @@
 ## 5. 页面模板配方（结构逐层）
 
 见 `specs/glass-page-templates/spec.md`。每个模板的骨架组件：`PublicPageLayout`（Landing / Auth / Callback / Setup / NotFound）、`DashboardPageLayout`、`TablePageLayout`（ListPage）、`DetailPageLayout`、`SettingsPageLayout`。页面只能放数据与插槽内容。
+
+### 2026-09-07 加固约束
+
+- `--border` 用于结构分隔，`--border-strong` 用于需要可辨识边界的输入、复选框和开关；不得为了控件对比度整体加亮暗色分隔线。
+- 辅助文本 `--muted` 亮色采用 50% 明度；浅底 accent 文本使用 `--info-text`，强背景使用 `--on-tone`。
+- 工作区只绘制一层环境光；`s2a-pulse` 只定义一次，状态点静态保留 3px 光环，尊重 reduced-motion。
+- 分页位于表格容器 footer，视觉布局不得改变页码、每页条数或事件绑定。
+- 顶栏搜索与操作控件统一 34px；紧凑宽度保持单行，通过明确 More 入口保留全部已有动作，不得仅隐藏。
+- 不自动隐藏原先显示的数据列；桌面宽表使用局部横向滚动，移动卡片保留字段和操作。
+- 设置页保留一处主要保存入口及 dirty/reset/loading 语义；分区导航使用共享激活态阴影。
+- 下拉与弹层目标时长为 `--motion-pop: 160ms`；迁移状态以任务/验证记录为准，不因存在令牌即宣称所有动画完成统一。
 
 ## 6. 观感评分表（每页 10 项 × 0–2 分，≥17 达标；原型出稿页 20）
 
