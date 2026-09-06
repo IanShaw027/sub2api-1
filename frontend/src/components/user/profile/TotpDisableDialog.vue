@@ -1,5 +1,5 @@
 <template>
- <UiModal :open="props.open" :title="t('profile.totp.disableTitle')" @close="$emit('close')">
+ <UiModal :open="props.open" :title="t('profile.totp.disableTitle')" @close="closeDialog">
  <div class="mb-6 flex items-start gap-3">
  <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-danger-100">
  <svg class="h-5 w-5 text-danger-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
@@ -57,7 +57,7 @@
 
  <!-- Actions -->
  <div class="flex justify-end gap-3 pt-4">
- <button type="button" class="btn btn-secondary" @click="$emit('close')">
+ <button type="button" class="btn btn-secondary" @click="closeDialog">
  {{ t('common.cancel') }}
  </button>
  <button
@@ -73,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted, watch, computed } from 'vue'
+import { ref, onBeforeUnmount, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { totpAPI } from '@/api'
@@ -84,6 +84,7 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{
  close: []
  success: []
+ changed: []
 }>()
 
 const { t } = useI18n()
@@ -95,6 +96,20 @@ const loading = ref(false)
 const sendingCode = ref(false)
 const codeCooldown = ref(0)
 const cooldownTimer = ref<ReturnType<typeof setInterval> | null>(null)
+let flowId = 0
+let disposed = false
+const isCurrentFlow = (id: number) => !disposed && props.open && id === flowId
+
+function invalidateFlow() {
+ flowId++
+ if (cooldownTimer.value) clearInterval(cooldownTimer.value)
+ cooldownTimer.value = null
+}
+
+function closeDialog() {
+ invalidateFlow()
+ emit('close')
+}
 const form = ref({
  emailCode: '',
  password: ''
@@ -108,22 +123,28 @@ const canSubmit = computed(() => {
 })
 
 const loadVerificationMethod = async () => {
+ const requestFlow = flowId
  methodLoading.value = true
  try {
  const method = await totpAPI.getVerificationMethod()
+ if (!isCurrentFlow(requestFlow)) return
  verificationMethod.value = method.method
  } catch (err: any) {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(err.response?.data?.message || t('common.error'))
- emit('close')
+ closeDialog()
  } finally {
- methodLoading.value = false
+ if (isCurrentFlow(requestFlow)) methodLoading.value = false
  }
 }
 
 const handleSendCode = async () => {
+ const requestFlow = flowId
+ if (!isCurrentFlow(requestFlow) || sendingCode.value || codeCooldown.value > 0) return
  sendingCode.value = true
  try {
  await totpAPI.sendVerifyCode()
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showSuccess(t('profile.totp.codeSent'))
  // Start cooldown
  codeCooldown.value = 60
@@ -141,14 +162,16 @@ const handleSendCode = async () => {
  }
  }, 1000)
  } catch (err: any) {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(err.response?.data?.message || t('profile.totp.sendCodeFailed'))
  } finally {
- sendingCode.value = false
+ if (isCurrentFlow(requestFlow)) sendingCode.value = false
  }
 }
 
 const handleDisable = async () => {
- if (!canSubmit.value) return
+ const requestFlow = flowId
+ if (!isCurrentFlow(requestFlow) || loading.value || !canSubmit.value) return
 
  loading.value = true
 
@@ -158,12 +181,16 @@ const handleDisable = async () => {
  : { password: form.value.password }
 
  await totpAPI.disable(request)
+ // Refresh the actual setting without closing a newer dialog flow.
+ if (!disposed) emit('changed')
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showSuccess(t('profile.totp.disableSuccess'))
  emit('success')
  } catch (err: any) {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(err.response?.data?.message || t('profile.totp.disableFailed'))
  } finally {
- loading.value = false
+ if (isCurrentFlow(requestFlow)) loading.value = false
  }
 }
 
@@ -171,11 +198,8 @@ const handleDisable = async () => {
 watch(
  () => props.open,
  (isOpen) => {
+ invalidateFlow()
  if (!isOpen) {
- if (cooldownTimer.value) {
- clearInterval(cooldownTimer.value)
- cooldownTimer.value = null
- }
  return
  }
  form.value = { emailCode: '', password: '' }
@@ -183,13 +207,12 @@ watch(
  sendingCode.value = false
  codeCooldown.value = 0
  loadVerificationMethod()
- }
+ },
+ { immediate: true, flush: 'sync' }
 )
 
-onUnmounted(() => {
- if (cooldownTimer.value) {
- clearInterval(cooldownTimer.value)
- cooldownTimer.value = null
- }
+onBeforeUnmount(() => {
+ disposed = true
+ invalidateFlow()
 })
 </script>

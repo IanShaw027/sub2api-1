@@ -1,7 +1,13 @@
 <template>
   <AppLayout>
     <div class="dash-page">
-      <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
+      <div v-if="statsLoadFailed" class="notice notice-warning" role="alert" data-testid="dashboard-load-error">
+        <div class="min-w-0 flex-1">
+          <p>{{ t('dashboard.loadFailed') }}</p>
+        </div>
+        <Button variant="secondary" :disabled="loading" @click="refreshAll">{{ t('common.refresh') }}</Button>
+      </div>
+      <div v-if="loading && !stats" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
       <template v-else-if="stats">
         <!-- ============================= 1 · Hero ============================= -->
         <section class="glass-card dash-hero">
@@ -104,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
@@ -129,6 +135,8 @@ const router = useRouter()
 const user = computed(() => authStore.user)
 const stats = ref<UserStatsType | null>(null)
 const loading = ref(false)
+const statsLoadFailed = ref(false)
+let statsRequestId = 0
 const loadingUsage = ref(false)
 const loadingCharts = ref(false)
 const trendData = ref<TrendDataPoint[]>([])
@@ -143,17 +151,21 @@ const endDate = ref(formatDateLocalInput(new Date()))
 const granularity = ref('day')
 
 const loadStats = async () => {
+  const requestId = ++statsRequestId
   loading.value = true
+  statsLoadFailed.value = false
   try {
     const [, dashboardStats] = await Promise.all([
       authStore.refreshUser(),
       usageAPI.getDashboardStats(),
     ])
-    stats.value = dashboardStats
+    if (requestId === statsRequestId) stats.value = dashboardStats
   } catch (error) {
+    if (requestId !== statsRequestId) return
+    statsLoadFailed.value = true
     console.error('Failed to load dashboard stats:', error)
   } finally {
-    loading.value = false
+    if (requestId === statsRequestId) loading.value = false
   }
 }
 
@@ -221,6 +233,8 @@ const refreshAll = () => {
 onMounted(() => {
   refreshAll()
 })
+
+onBeforeUnmount(() => { statsRequestId++ })
 
 // ---------------------------------------------------------------- formatters
 const toFiniteNumber = (value: unknown): number => {

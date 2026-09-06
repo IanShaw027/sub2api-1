@@ -56,6 +56,7 @@
  :open="showSetupModal"
  @close="showSetupModal = false"
  @success="handleSetupSuccess"
+ @changed="loadStatus"
  />
 
  <!-- Disable Dialog -->
@@ -63,12 +64,13 @@
  :open="showDisableDialog"
  @close="showDisableDialog = false"
  @success="handleDisableSuccess"
+ @changed="loadStatus"
  />
  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { totpAPI } from '@/api'
 import type { TotpStatus } from '@/types'
@@ -86,6 +88,7 @@ const loading = ref(true)
 const status = ref<TotpStatus | null>(null)
 const showSetupModal = ref(false)
 const showDisableDialog = ref(false)
+let statusRequestId = 0
 
 // 点击开关不会直接切换状态，而是按当前状态打开设置向导或禁用确认弹窗；
 // 真正的状态变更只会在弹窗流程成功后由 loadStatus() 刷新。
@@ -98,24 +101,25 @@ function handleToggle(next: boolean): void {
 }
 
 const loadStatus = async () => {
+ const requestId = ++statusRequestId
  loading.value = true
  try {
- status.value = await totpAPI.getStatus()
+ const result = await totpAPI.getStatus()
+ if (requestId === statusRequestId) status.value = result
  } catch (error) {
+ if (requestId !== statusRequestId) return
  console.error('Failed to load TOTP status:', error)
  } finally {
- loading.value = false
+ if (requestId === statusRequestId) loading.value = false
  }
 }
 
 const handleSetupSuccess = () => {
  showSetupModal.value = false
- loadStatus()
 }
 
 const handleDisableSuccess = () => {
  showDisableDialog.value = false
- loadStatus()
 }
 
 const formatDate = (timestamp: number) => {
@@ -133,4 +137,6 @@ const formatDate = (timestamp: number) => {
 onMounted(() => {
  loadStatus()
 })
+
+onBeforeUnmount(() => { statusRequestId++ })
 </script>

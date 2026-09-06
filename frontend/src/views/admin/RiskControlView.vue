@@ -220,11 +220,11 @@
         <RiskControlSettingsModal
           v-model:open="settingsOpen"
           v-model:flagged-hash-input="flaggedHashInput"
+          v-model:pending-delete-api-key-hashes="pendingDeleteApiKeyHashes"
           :config-form="configForm"
           :proxies="proxies"
           :groups="groups"
           :status="status"
-          :pending-delete-api-key-hashes="pendingDeleteApiKeyHashes"
           :load-status="loadStatus"
           :load-logs="loadLogs"
           :apply-config="applyConfig"

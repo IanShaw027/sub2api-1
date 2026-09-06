@@ -8,7 +8,7 @@
       class="segmented-item"
       :class="{ 'segmented-item-active': option.value === modelValue }"
       :aria-checked="option.value === modelValue"
-      :tabindex="option.value === modelValue ? 0 : -1"
+      :tabindex="option.value === tabStopValue ? 0 : -1"
       :disabled="option.disabled"
       @click="select(option)"
     >
@@ -18,6 +18,7 @@
 </template>
 
 <script setup lang="ts" generic="T extends string">
+import { computed, nextTick } from 'vue'
 import type { SegmentedOption } from './types'
 
 const props = withDefaults(
@@ -35,19 +36,33 @@ const emit = defineEmits<{
   'update:modelValue': [value: T]
 }>()
 
+const enabledOptions = computed(() => props.options.filter((option) => !option.disabled))
+const tabStopValue = computed(() =>
+  enabledOptions.value.find((option) => option.value === props.modelValue)?.value
+  ?? enabledOptions.value[0]?.value
+)
+
 function select(option: SegmentedOption<T>) {
   if (option.disabled) return
   emit('update:modelValue', option.value)
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-  const enabled = props.options.filter((option) => !option.disabled)
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return
+  const enabled = enabledOptions.value
   if (enabled.length === 0) return
+  const root = event.currentTarget as HTMLElement
+  const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'))
+  const focusedIndex = buttons.indexOf(event.target as HTMLButtonElement)
+  const currentIndex = focusedIndex >= 0
+    ? focusedIndex
+    : Math.max(0, enabled.findIndex((option) => option.value === props.modelValue))
   event.preventDefault()
-  const currentIndex = enabled.findIndex((option) => option.value === props.modelValue)
-  const delta = event.key === 'ArrowRight' ? 1 : -1
-  const nextIndex = (currentIndex + delta + enabled.length) % enabled.length
+  const delta = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : -1
+  const nextIndex = event.key === 'Home' ? 0
+    : event.key === 'End' ? enabled.length - 1
+    : (currentIndex + delta + enabled.length) % enabled.length
   emit('update:modelValue', enabled[nextIndex].value)
+  void nextTick(() => buttons[nextIndex]?.focus())
 }
 </script>

@@ -1,6 +1,7 @@
 export default {
   dashboard: {
     title: '仪表盘',
+    loadFailed: '仪表盘加载失败，请重试。',
     welcomeMessage: '欢迎回来！这是您账户的概览。',
     heroGreetingMorning: '早上好',
     heroGreetingAfternoon: '下午好',

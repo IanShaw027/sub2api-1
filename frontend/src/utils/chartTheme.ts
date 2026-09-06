@@ -129,9 +129,10 @@ export function chartTheme(): ChartTheme {
  *   const options = computed(() => ({ scales: { x: { ticks: { color: theme.value.text } } } }))
  */
 export function useChartTheme(): ComputedRef<ChartTheme> {
-  const { isDark } = useTheme()
+  const { isDark, accent } = useTheme()
   return computed(() => {
     void isDark.value
+    void accent.value
     return chartTheme()
   })
 }

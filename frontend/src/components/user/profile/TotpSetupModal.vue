@@ -1,5 +1,5 @@
 <template>
- <UiModal :open="props.open" :title="t('profile.totp.setupTitle')" :subtitle="stepDescription" @close="$emit('close')">
+ <UiModal :open="props.open" :title="t('profile.totp.setupTitle')" :subtitle="stepDescription" @close="closeDialog">
  <!-- Step 0: Identity Verification -->
  <div v-if="step === 0" class="space-y-6">
  <!-- Loading verification method -->
@@ -48,7 +48,7 @@
  </div>
 
  <div class="flex justify-end gap-3 pt-4">
- <button type="button" class="btn btn-secondary" @click="$emit('close')">
+ <button type="button" class="btn btn-secondary" @click="closeDialog">
  {{ t('common.cancel') }}
  </button>
  <button
@@ -95,7 +95,7 @@
  </template>
 
  <div class="flex justify-end gap-3 pt-4">
- <button type="button" class="btn btn-secondary" @click="$emit('close')">
+ <button type="button" class="btn btn-secondary" @click="closeDialog">
  {{ t('common.cancel') }}
  </button>
  <button
@@ -121,6 +121,7 @@
  v-for="(_, index) in 6"
  :key="index"
  :ref="(el) => setInputRef(el, index)"
+ :value="code[index]"
  type="text"
  maxlength="1"
  inputmode="numeric"
@@ -151,7 +152,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onUnmounted, nextTick, watch, computed } from 'vue'
+import { ref, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { totpAPI } from '@/api'
@@ -164,6 +165,7 @@ const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{
  close: []
  success: []
+ changed: []
 }>()
 
 const { t } = useI18n()
@@ -184,6 +186,20 @@ const verifying = ref(false)
 const code = ref<string[]>(['', '', '', '', '', ''])
 const inputRefs = ref<(HTMLInputElement | null)[]>([])
 const qrCodeDataUrl = ref('')
+let flowId = 0
+let disposed = false
+const isCurrentFlow = (id: number) => !disposed && props.open && id === flowId
+
+function invalidateFlow() {
+ flowId++
+ if (cooldownTimer.value) clearInterval(cooldownTimer.value)
+ cooldownTimer.value = null
+}
+
+function closeDialog() {
+ invalidateFlow()
+ emit('close')
+}
 
 const stepDescription = computed(() => {
  switch (step.value) {
@@ -211,9 +227,10 @@ const canProceedFromVerify = computed(() => {
 watch(
  () => setupData.value?.qr_code_url,
  async (url) => {
+ const requestFlow = flowId
  if (url) {
  try {
- qrCodeDataUrl.value = await QRCode.toDataURL(url, {
+ const dataUrl = await QRCode.toDataURL(url, {
  width: 200,
  margin: 2,
  // Pure black on white is a scanner requirement, not a theme choice: a
@@ -225,7 +242,9 @@ watch(
  light: '#ffffff'
  }
  })
+ if (isCurrentFlow(requestFlow) && setupData.value?.qr_code_url === url) qrCodeDataUrl.value = dataUrl
  } catch (err) {
+ if (!isCurrentFlow(requestFlow)) return
  console.error('Failed to generate QR code:', err)
  }
  }
@@ -238,12 +257,14 @@ const setInputRef = (el: any, index: number) => {
 }
 
 const handleCodeInput = (event: Event, index: number) => {
+ const requestFlow = flowId
  const input = event.target as HTMLInputElement
  const value = input.value.replace(/[^0-9]/g, '')
  code.value[index] = value
 
  if (value && index < 5) {
  nextTick(() => {
+ if (!isCurrentFlow(requestFlow)) return
  inputRefs.value[index + 1]?.focus()
  })
  }
@@ -263,6 +284,7 @@ const handleKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 const handlePaste = (event: ClipboardEvent) => {
+ const requestFlow = flowId
  event.preventDefault()
  const pastedData = event.clipboardData?.getData('text') || ''
  const digits = pastedData.replace(/[^0-9]/g, '').slice(0, 6).split('')
@@ -285,38 +307,49 @@ const handlePaste = (event: ClipboardEvent) => {
 
  const focusIndex = Math.min(digits.length, 5)
  nextTick(() => {
+ if (!isCurrentFlow(requestFlow)) return
  inputRefs.value[focusIndex]?.focus()
  })
 }
 
 const copySecret = async () => {
+ const requestFlow = flowId
+ if (!isCurrentFlow(requestFlow)) return
  if (setupData.value) {
  try {
  await navigator.clipboard.writeText(setupData.value.secret)
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showSuccess(t('common.copied'))
  } catch {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(t('common.copyFailed'))
  }
  }
 }
 
 const loadVerificationMethod = async () => {
+ const requestFlow = flowId
  methodLoading.value = true
  try {
  const method = await totpAPI.getVerificationMethod()
+ if (!isCurrentFlow(requestFlow)) return
  verificationMethod.value = method.method
  } catch (err: any) {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(err.response?.data?.message || t('common.error'))
- emit('close')
+ closeDialog()
  } finally {
- methodLoading.value = false
+ if (isCurrentFlow(requestFlow)) methodLoading.value = false
  }
 }
 
 const handleSendCode = async () => {
+ const requestFlow = flowId
+ if (!isCurrentFlow(requestFlow) || sendingCode.value || codeCooldown.value > 0) return
  sendingCode.value = true
  try {
  await totpAPI.sendVerifyCode()
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showSuccess(t('profile.totp.codeSent'))
  // Start cooldown
  codeCooldown.value = 60
@@ -334,13 +367,16 @@ const handleSendCode = async () => {
  }
  }, 1000)
  } catch (err: any) {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(err.response?.data?.message || t('profile.totp.sendCodeFailed'))
  } finally {
- sendingCode.value = false
+ if (isCurrentFlow(requestFlow)) sendingCode.value = false
  }
 }
 
 const handleVerifyAndSetup = async () => {
+ const requestFlow = flowId
+ if (!isCurrentFlow(requestFlow) || setupLoading.value || !canProceedFromVerify.value) return
  setupLoading.value = true
 
  try {
@@ -348,16 +384,21 @@ const handleVerifyAndSetup = async () => {
  ? { email_code: verifyForm.value.emailCode }
  : { password: verifyForm.value.password }
 
- setupData.value = await totpAPI.initiateSetup(request)
+ const result = await totpAPI.initiateSetup(request)
+ if (!isCurrentFlow(requestFlow)) return
+ setupData.value = result
  step.value = 1
  } catch (err: any) {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(err.response?.data?.message || t('profile.totp.setupFailed'))
  } finally {
- setupLoading.value = false
+ if (isCurrentFlow(requestFlow)) setupLoading.value = false
  }
 }
 
 const handleVerify = async () => {
+ const requestFlow = flowId
+ if (!isCurrentFlow(requestFlow) || verifying.value) return
  const totpCode = code.value.join('')
  if (totpCode.length !== 6 || !setupData.value) return
 
@@ -368,16 +409,21 @@ const handleVerify = async () => {
  totp_code: totpCode,
  setup_token: setupData.value.setup_token
  })
+ // Server mutations remain effective even when their originating wizard was closed.
+ if (!disposed) emit('changed')
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showSuccess(t('profile.totp.enableSuccess'))
  emit('success')
  } catch (err: any) {
+ if (!isCurrentFlow(requestFlow)) return
  appStore.showError(err.response?.data?.message || t('profile.totp.verifyFailed'))
  code.value = ['', '', '', '', '', '']
  nextTick(() => {
+ if (!isCurrentFlow(requestFlow)) return
  inputRefs.value[0]?.focus()
  })
  } finally {
- verifying.value = false
+ if (isCurrentFlow(requestFlow)) verifying.value = false
  }
 }
 
@@ -386,29 +432,26 @@ const handleVerify = async () => {
 watch(
  () => props.open,
  (isOpen) => {
+ invalidateFlow()
  if (!isOpen) {
- if (cooldownTimer.value) {
- clearInterval(cooldownTimer.value)
- cooldownTimer.value = null
- }
  return
  }
  step.value = 0
  setupData.value = null
  qrCodeDataUrl.value = ''
  verifying.value = false
+ setupLoading.value = false
  code.value = ['', '', '', '', '', '']
  verifyForm.value = { emailCode: '', password: '' }
  sendingCode.value = false
  codeCooldown.value = 0
  loadVerificationMethod()
- }
+ },
+ { immediate: true, flush: 'sync' }
 )
 
-onUnmounted(() => {
- if (cooldownTimer.value) {
- clearInterval(cooldownTimer.value)
- cooldownTimer.value = null
- }
+onBeforeUnmount(() => {
+ disposed = true
+ invalidateFlow()
 })
 </script>

@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import type { DOMWrapper, VueWrapper } from '@vue/test-utils'
 
 import RiskControlView from '../RiskControlView.vue'
-import type { ContentModerationConfig, UpdateContentModerationConfig } from '@/api/admin/riskControl'
+import type { ContentModerationAPIKeyStatus, ContentModerationConfig, UpdateContentModerationConfig } from '@/api/admin/riskControl'
 
 const {
   getConfig,
@@ -95,6 +95,7 @@ const baseConfig = (): ContentModerationConfig => ({
   block_message: '内容审计命中风险规则，请调整输入后重试',
   email_on_hit: true,
   auto_ban_enabled: true,
+  cyber_policy_exclude_from_ban_count: false,
   ban_threshold: 10,
   violation_window_hours: 720,
   retry_count: 2,
@@ -190,6 +191,40 @@ function findButtonByText(wrapper: VueWrapper, text: string): DOMWrapper<HTMLBut
   return button
 }
 
+function configuredKey(keyHash: string, index: number): ContentModerationAPIKeyStatus {
+  return {
+    index, key_hash: keyHash, masked: `sk-${keyHash}`, status: 'ok',
+    failure_count: 0, success_count: 1, last_error: '', last_latency_ms: 1,
+    last_http_status: 200, last_tested: true, configured: true,
+  }
+}
+
+function configWithKeys(keys: ContentModerationAPIKeyStatus[]): ContentModerationConfig {
+  return {
+    ...baseConfig(),
+    api_key_configured: keys.length > 0,
+    api_key_count: keys.length,
+    api_key_statuses: keys,
+    api_key_masks: keys.map((key) => key.masked),
+  }
+}
+
+async function mountKeySettings() {
+  const keys = [configuredKey('hash-a', 0), configuredKey('hash-b', 1)]
+  getConfig.mockResolvedValue(configWithKeys(keys))
+  getStatus.mockResolvedValue({ ...runtimeStatus(), api_key_statuses: keys })
+  const wrapper = mount(RiskControlView, {
+    global: { stubs: {
+      AppLayout: AppLayoutStub, UiModal: UiModalStub, Icon: true,
+      Select: true, Toggle: true, Pagination: true,
+      ModelWhitelistSelector: ModelWhitelistSelectorStub, ProxySelector: true,
+    } },
+  })
+  await flushPromises()
+  await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+  return { wrapper, keys }
+}
+
 describe('admin RiskControlView', () => {
   beforeEach(() => {
     getConfig.mockReset()
@@ -249,6 +284,108 @@ describe('admin RiskControlView', () => {
       },
     }))
     expect(showError).not.toHaveBeenCalled()
+  })
+
+  it.each(['replace', 'clear', 'undo'] as const)(
+    'does not submit cancelled Key deletions after %s', async (action) => {
+      const { wrapper } = await mountKeySettings()
+      try {
+        await wrapper.findAll('button[title="admin.riskControl.deleteApiKey"]')[0]!.trigger('click')
+        expect(findButtonByText(wrapper, 'admin.riskControl.testStoredApiKeys').attributes('disabled')).toBeDefined()
+        if (action === 'replace') {
+          await findButtonByText(wrapper, 'admin.riskControl.apiKeysModeReplace').trigger('click')
+          await findButtonByText(wrapper, 'admin.riskControl.apiKeysModeAppend').trigger('click')
+        } else if (action === 'clear') {
+          await findButtonByText(wrapper, 'admin.riskControl.clearApiKey').trigger('click')
+          await findButtonByText(wrapper, 'admin.riskControl.keepApiKey').trigger('click')
+        } else {
+          await wrapper.get('button[title="admin.riskControl.undoDeleteApiKey"]').trigger('click')
+        }
+        expect(findButtonByText(wrapper, 'admin.riskControl.testStoredApiKeys').attributes('disabled')).toBeUndefined()
+        await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+        await flushPromises()
+        expect(updateConfig).toHaveBeenCalledTimes(1)
+        expect(updateConfig.mock.calls[0]![0].delete_api_key_hashes).toBeUndefined()
+      } finally {
+        wrapper.unmount()
+      }
+    },
+  )
+
+  it('keeps pending Key deletions across closing and reopening settings', async () => {
+    const { wrapper } = await mountKeySettings()
+    try {
+      await wrapper.findAll('button[title="admin.riskControl.deleteApiKey"]')[0]!.trigger('click')
+      await findButtonByText(wrapper, 'common.cancel').trigger('click')
+      await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+      expect(wrapper.find('button[title="admin.riskControl.undoDeleteApiKey"]').exists()).toBe(true)
+      await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+      await flushPromises()
+      expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ delete_api_key_hashes: ['hash-a'] }))
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('clears committed deletion state even when the post-save status refresh fails', async () => {
+    const { wrapper, keys } = await mountKeySettings()
+    try {
+      await wrapper.findAll('button[title="admin.riskControl.deleteApiKey"]')[0]!.trigger('click')
+      updateConfig.mockResolvedValue(configWithKeys([keys[1]!]))
+      getStatus.mockRejectedValue(new Error('status unavailable'))
+      await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+      await flushPromises()
+      expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({ delete_api_key_hashes: ['hash-a'] }))
+      await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+      expect(wrapper.find('button[title="admin.riskControl.undoDeleteApiKey"]').exists()).toBe(false)
+      expect(findButtonByText(wrapper, 'admin.riskControl.testStoredApiKeys').attributes('disabled')).toBeUndefined()
+      await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+      await flushPromises()
+      expect(updateConfig.mock.calls[1]![0].delete_api_key_hashes).toBeUndefined()
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('preserves pending Key deletions when saving fails so a retry submits them', async () => {
+    const { wrapper } = await mountKeySettings()
+    try {
+      await wrapper.findAll('button[title="admin.riskControl.deleteApiKey"]')[0]!.trigger('click')
+      updateConfig.mockRejectedValueOnce(new Error('save unavailable'))
+      await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('button[title="admin.riskControl.undoDeleteApiKey"]').exists()).toBe(true)
+      expect(findButtonByText(wrapper, 'admin.riskControl.testStoredApiKeys').attributes('disabled')).toBeDefined()
+      await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+      await flushPromises()
+      expect(updateConfig).toHaveBeenCalledTimes(2)
+      expect(updateConfig.mock.calls[1]![0].delete_api_key_hashes).toEqual(['hash-a'])
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('prunes only deleted Keys on a runtime refresh and handles an empty Key list', async () => {
+    const { wrapper, keys } = await mountKeySettings()
+    try {
+      for (const button of wrapper.findAll('button[title="admin.riskControl.deleteApiKey"]')) {
+        await button.trigger('click')
+      }
+      getStatus.mockResolvedValue({ ...runtimeStatus(), api_key_statuses: [keys[1]!] })
+      await findButtonByText(wrapper, 'admin.riskControl.refreshStatus').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('button[title="admin.riskControl.undoDeleteApiKey"]')).toHaveLength(1)
+      expect(findButtonByText(wrapper, 'admin.riskControl.testStoredApiKeys').attributes('disabled')).toBeDefined()
+      getStatus.mockResolvedValue({ ...runtimeStatus(), api_key_statuses: [] })
+      await findButtonByText(wrapper, 'admin.riskControl.refreshStatus').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('button[title="admin.riskControl.undoDeleteApiKey"]').exists()).toBe(false)
+      await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+      await flushPromises()
+      expect(updateConfig.mock.calls[0]![0].delete_api_key_hashes).toBeUndefined()
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('submits edited risk control thresholds when saving moderation config', async () => {

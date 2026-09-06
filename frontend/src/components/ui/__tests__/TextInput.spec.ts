@@ -4,6 +4,21 @@ import TextInput from '../TextInput.vue'
 import { styleCss, tokensCss } from './source'
 
 describe('TextInput', () => {
+  it('forwards required to native constraint validation and updates it reactively', async () => {
+    const wrapper = mount(TextInput, { props: { modelValue: '', required: true, label: 'Name' } })
+    const input = wrapper.get('input').element
+    expect(input.required).toBe(true)
+    expect(input.validity.valueMissing).toBe(true)
+    expect(input.checkValidity()).toBe(false)
+
+    await wrapper.setProps({ modelValue: 'Name' })
+    expect(input.checkValidity()).toBe(true)
+    await wrapper.setProps({ modelValue: '', required: false })
+    expect(input.required).toBe(false)
+    expect(input.checkValidity()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('wraps the field class at 36px', async () => {
     const wrapper = mount(TextInput, {
       props: { modelValue: 'alpha', label: 'Name', placeholder: 'Type' }

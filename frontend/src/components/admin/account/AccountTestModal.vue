@@ -733,25 +733,6 @@ const pickDefaultModelForMode = () => {
   selectedModelId.value = opts[0].id
 }
 
-watch(
-  () => props.show,
-  async (newVal) => {
-    if (newVal && props.account) {
-      testPrompt.value = ''
-      testMode.value = 'default'
-      grokTestMode.value = 'text'
-      resetState()
-      await loadAvailableModels()
-      if (isGrokAccount.value) {
-        pickDefaultModelForMode()
-        applyDefaultPromptForMode()
-      }
-    } else {
-      abortStream()
-    }
-  }
-)
-
 watch(grokTestMode, () => {
   if (!isGrokAccount.value) return
   testPrompt.value = ''
@@ -812,6 +793,27 @@ const abortStream = () => {
     abortController = null
   }
 }
+
+// Register after the initialization helpers so an already-open mount is safe.
+watch(
+  () => props.show,
+  async (newVal) => {
+    if (newVal && props.account) {
+      testPrompt.value = ''
+      testMode.value = 'default'
+      grokTestMode.value = 'text'
+      resetState()
+      await loadAvailableModels()
+      if (isGrokAccount.value) {
+        pickDefaultModelForMode()
+        applyDefaultPromptForMode()
+      }
+    } else {
+      abortStream()
+    }
+  },
+  { immediate: true }
+)
 
 const addLine = (text: string, className: string = 'text-muted') => {
   outputLines.value.push({ text, class: className })

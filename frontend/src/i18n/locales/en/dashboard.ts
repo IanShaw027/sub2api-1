@@ -1,6 +1,7 @@
 export default {
   dashboard: {
     title: 'Dashboard',
+    loadFailed: 'Failed to load the dashboard. Please try again.',
     welcomeMessage: "Welcome back! Here's an overview of your account.",
     heroGreetingMorning: 'Good morning',
     heroGreetingAfternoon: 'Good afternoon',

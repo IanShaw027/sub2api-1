@@ -287,7 +287,6 @@
  :page="pagination.page"
  :total="pagination.total"
  :page-size="pagination.page_size"
- :show-page-size-selector="false"
  @update:page="handlePageChange"
  @update:pageSize="handlePageSizeChange"
  />

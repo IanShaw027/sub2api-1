@@ -18,7 +18,7 @@
         />
       </div>
       <input
-        v-model.number="concurrency"
+        :value="concurrency"
         id="bulk-edit-concurrency"
         type="number"
         min="1"
@@ -26,7 +26,7 @@
         class="input"
         :class="!enableConcurrency && 'cursor-not-allowed opacity-50'"
         aria-labelledby="bulk-edit-concurrency-label"
-        @input="concurrency = Math.max(1, concurrency || 1)"
+        @input="updateConcurrency"
       />
     </div>
     <div>
@@ -47,7 +47,7 @@
         />
       </div>
       <input
-        v-model.number="loadFactor"
+        :value="loadFactor"
         id="bulk-edit-load-factor"
         type="number"
         min="1"
@@ -55,7 +55,7 @@
         class="input"
         :class="!enableLoadFactor && 'cursor-not-allowed opacity-50'"
         aria-labelledby="bulk-edit-load-factor-label"
-        @input="loadFactor = (loadFactor && loadFactor >= 1) ? loadFactor : null"
+        @input="updateLoadFactor"
       />
       <p class="input-hint">{{ t('admin.accounts.loadFactorHint') }}</p>
     </div>
@@ -140,6 +140,21 @@ const enablePriority = defineModel<boolean>('enablePriority', { required: true }
 const priority = defineModel<number | null>('priority', { required: true })
 const enableRateMultiplier = defineModel<boolean>('enableRateMultiplier', { required: true })
 const rateMultiplier = defineModel<number | null>('rateMultiplier', { required: true })
+
+const updateConcurrency = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const value = Math.max(1, Number(input.value) || 1)
+  input.value = String(value)
+  concurrency.value = value
+}
+
+const updateLoadFactor = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const value = Number(input.value)
+  const normalized = value >= 1 ? value : null
+  input.value = normalized === null ? '' : String(normalized)
+  loadFactor.value = normalized
+}
 
 const { t } = useI18n()
 </script>

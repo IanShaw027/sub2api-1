@@ -117,6 +117,7 @@ export function useRiskControlData() {
     configForm.api_key_statuses = Array.isArray(config.api_key_statuses) ? [...config.api_key_statuses] : []
     configForm.api_keys_mode = 'append'
     configForm.clear_api_key = false
+    pendingDeleteApiKeyHashes.value = []
     configForm.timeout_ms = config.timeout_ms || 3000
     configForm.retry_count = config.retry_count ?? 2
     configForm.sample_rate = config.sample_rate ?? 100
@@ -143,6 +144,11 @@ export function useRiskControlData() {
     configForm.model_filter_models = modelFilter.models
   }
 
+  function prunePendingDeleteAPIKeyHashes(rows: ContentModerationAPIKeyStatus[]) {
+    const currentHashes = new Set(rows.map((row) => row.key_hash).filter(Boolean))
+    pendingDeleteApiKeyHashes.value = pendingDeleteApiKeyHashes.value.filter((hash) => currentHashes.has(hash))
+  }
+
   async function loadAll() {
     loading.value = true
     try {
@@ -159,6 +165,7 @@ export function useRiskControlData() {
       proxies.value = proxyItems
       if (Array.isArray(runtimeStatus.api_key_statuses)) {
         configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
+        prunePendingDeleteAPIKeyHashes(runtimeStatus.api_key_statuses)
       }
       await loadLogs()
     } catch (err: unknown) {
@@ -175,6 +182,7 @@ export function useRiskControlData() {
       status.value = runtimeStatus
       if (Array.isArray(runtimeStatus.api_key_statuses)) {
         configForm.api_key_statuses = [...runtimeStatus.api_key_statuses]
+        prunePendingDeleteAPIKeyHashes(runtimeStatus.api_key_statuses)
       }
     } catch (err: unknown) {
       if (!silent) {

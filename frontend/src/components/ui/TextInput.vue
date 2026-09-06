@@ -14,6 +14,7 @@
       :placeholder="placeholder"
       :disabled="disabled"
       :readonly="readonly"
+      :required="required"
       :autocomplete="autocomplete"
       :aria-invalid="error ? true : undefined"
       :aria-describedby="errorDescribedBy"

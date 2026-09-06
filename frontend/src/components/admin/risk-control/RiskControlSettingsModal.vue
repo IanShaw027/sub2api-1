@@ -720,9 +720,6 @@ const props = defineProps<{
   proxies: Proxy[]
   groups: AdminGroup[]
   status: ContentModerationRuntimeStatus | null
-  // 已保存 API Key 的“待删除”标记，由主视图（useRiskControlData）持有并共享，
-  // 保证跨越设置弹层多次打开/关闭仍然保持，与原单文件实现一致。
-  pendingDeleteApiKeyHashes: string[]
   loadStatus: (silent?: boolean) => Promise<void>
   loadLogs: () => Promise<void>
   applyConfig: (config: ContentModerationConfig) => void
@@ -737,10 +734,10 @@ const emit = defineEmits<{
 
 const settingsOpen = defineModel<boolean>('open', { required: true })
 const flaggedHashInput = defineModel<string>('flaggedHashInput', { required: true })
+const pendingDeleteApiKeyHashes = defineModel<string[]>('pendingDeleteApiKeyHashes', { required: true })
 
 const statusRef = toRef(props, 'status')
 const groupsRef = toRef(props, 'groups')
-const pendingDeleteApiKeyHashesRef = toRef(props, 'pendingDeleteApiKeyHashes')
 
 const {
   saving,
@@ -790,7 +787,7 @@ const {
   isGroupSelected,
   resetRiskThresholds,
   saveConfig,
-} = useRiskControlSettings(props.configForm, statusRef, groupsRef, pendingDeleteApiKeyHashesRef, {
+} = useRiskControlSettings(props.configForm, statusRef, groupsRef, pendingDeleteApiKeyHashes, {
   loadStatus: props.loadStatus,
   loadLogs: props.loadLogs,
   applyConfig: props.applyConfig,

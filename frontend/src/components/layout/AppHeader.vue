@@ -690,6 +690,26 @@ onBeforeUnmount(() => {
 }
 
 @media (min-width: 768px) and (max-width: 1023px) {
+  .topbar {
+    height: auto;
+    min-height: 66px;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .topbar-crumbs {
+    flex: 1 1 100%;
+  }
+
+  .topbar-actions {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
   .topbar-search {
     width: 44px;
     padding: 0;

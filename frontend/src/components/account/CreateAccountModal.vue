@@ -952,7 +952,7 @@ const canExchangeCode = computed(() => {
 // Watchers
 watch(
   () => props.show,
-  (newVal) => {
+  (newVal, wasShow) => {
     if (newVal) {
       Promise.all([
         adminAPI.tlsFingerprintProfiles.list(),
@@ -980,10 +980,11 @@ watch(
         antigravityModelMappings.value = []
         antigravityModelRestrictionMode.value = 'mapping'
       }
-    } else {
+    } else if (wasShow) {
       resetForm()
     }
-  }
+  },
+  { immediate: true }
 )
 
 // Sync form.type based on accountCategory, addMethod, and platform-specific type

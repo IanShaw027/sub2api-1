@@ -509,14 +509,20 @@ const restoreConfirmOpen = ref(false)
 const restorePassword = ref('')
 const pendingRestoreId = ref('')
 const restoreConfirming = ref(false)
+let restoreDialogGeneration = 0
+let backupViewDisposed = false
 
 function promptRestoreBackup(id: string) {
+  restoreDialogGeneration++
+  restoreConfirming.value = false
   pendingRestoreId.value = id
   restorePassword.value = ''
   restoreConfirmOpen.value = true
 }
 
 function cancelRestoreConfirm() {
+  restoreDialogGeneration++
+  restoreConfirming.value = false
   restoreConfirmOpen.value = false
   pendingRestoreId.value = ''
   restorePassword.value = ''
@@ -854,17 +860,24 @@ function closeDownloadParts() {
 }
 
 async function confirmRestoreBackup() {
-  if (!restorePassword.value) return
+  if (!restoreConfirmOpen.value || restoreConfirming.value || !pendingRestoreId.value || !restorePassword.value) return
+  const generation = restoreDialogGeneration
+  const isCurrent = () => generation === restoreDialogGeneration
   const id = pendingRestoreId.value
   const password = restorePassword.value
   restoreConfirming.value = true
   try {
     const record = await backupStepUp.run(() => adminAPI.backup.restoreBackup(id, password))
+    if (backupViewDisposed) return
     updateRecordInList(record)
-    restoreConfirmOpen.value = false
+    if (isCurrent()) {
+      restoreConfirmOpen.value = false
+      pendingRestoreId.value = ''
+    }
     restoringId.value = id
     startRestorePolling(id)
   } catch (error: any) {
+    if (!isCurrent()) return
     if (isStepUpCancelled(error)) return
     if (reportStepUpBlocked(error)) return
     // apiClient 拦截器把 HTTP 错误归一化为顶层 { status } 平面对象（无 response 字段）
@@ -874,9 +887,10 @@ async function confirmRestoreBackup() {
       appStore.showError(error?.message || t('errors.networkError'))
     }
   } finally {
-    restoreConfirming.value = false
-    restorePassword.value = ''
-    pendingRestoreId.value = ''
+    if (isCurrent()) {
+      restoreConfirming.value = false
+      restorePassword.value = ''
+    }
   }
 }
 
@@ -943,6 +957,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  backupViewDisposed = true
+  restoreDialogGeneration++
   stopPolling()
   stopRestorePolling()
   document.removeEventListener('visibilitychange', handleVisibilityChange)

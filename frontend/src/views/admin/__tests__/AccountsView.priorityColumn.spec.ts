@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 import AccountsView from '../AccountsView.vue'
+import Pagination from '@/components/common/Pagination.vue'
+import Select from '@/components/common/Select.vue'
 
 const { listAccounts } = vi.hoisted(() => ({
   listAccounts: vi.fn()
@@ -53,7 +55,7 @@ const DataTableStub = {
   `
 }
 
-function mountView() {
+function mountView(realPagination = false) {
   return mount(AccountsView, {
     global: {
       stubs: {
@@ -65,7 +67,7 @@ function mountView() {
         AccountTableActions: { template: '<div><slot name="after" /></div>' },
         AccountTableFilters: true,
         AccountBulkActionsBar: true,
-        Pagination: true,
+        Pagination: !realPagination,
         ConfirmDialog: true,
         AccountActionMenu: true,
         ImportDataModal: true,
@@ -121,6 +123,25 @@ describe('admin AccountsView priority column preferences', () => {
       expect.objectContaining({ sort_by: 'priority', sort_order: 'desc' }),
       expect.objectContaining({ signal: expect.any(AbortSignal) })
     )
+  })
+
+  it('offers page size changes and reloads accounts with the chosen size', async () => {
+    listAccounts.mockResolvedValue({ items: [], total: 100, page: 1, page_size: 20, pages: 5 })
+    const wrapper = mountView(true)
+    await flushPromises()
+
+    const pagination = wrapper.getComponent(Pagination)
+    expect(pagination.find('.page-size-select').exists()).toBe(true)
+    pagination.getComponent(Select).vm.$emit('update:modelValue', 50)
+    await flushPromises()
+
+    expect(listAccounts).toHaveBeenLastCalledWith(
+      1,
+      50,
+      expect.any(Object),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
+    wrapper.unmount()
   })
 
   it('preserves an existing preference that explicitly hides priority', async () => {

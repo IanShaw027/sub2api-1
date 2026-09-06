@@ -5,12 +5,18 @@
     width="extra-wide"
     @close="closeDialog"
   >
+    <p v-if="initializing" role="status" class="mb-3 text-sm text-muted">{{ t('common.loading') }}</p>
+    <div v-else-if="initializationError" role="alert" class="mb-3 flex items-center gap-3 text-sm text-danger-text">
+      <span>{{ initializationError }}</span>
+      <button type="button" class="btn-glass-secondary" @click="initDialog">{{ t('common.refresh') }}</button>
+    </div>
     <div class="channel-dialog-body">
       <!-- Tab Bar -->
       <div class="flex items-center border-b border-line flex-shrink-0 -mx-4 sm:-mx-6 px-4 sm:px-6 -mt-3 sm:-mt-4">
         <!-- Basic Settings Tab -->
         <button
           type="button"
+          :disabled="!initialized || submitting"
           @click="activeTab = 'basic'"
           class="channel-tab"
           :class="activeTab === 'basic' ? 'channel-tab-active' : 'channel-tab-inactive'"
@@ -22,6 +28,7 @@
           v-for="section in form.platforms.filter(s => s.enabled)"
           :key="section.platform"
           type="button"
+          :disabled="!initialized || submitting"
           @click="activeTab = section.platform"
           class="channel-tab group"
           :class="activeTab === section.platform ? 'channel-tab-active' : 'channel-tab-inactive'"
@@ -33,6 +40,7 @@
 
       <!-- Tab Content -->
       <form id="channel-form" @submit.prevent="handleSubmit" class="flex-1 overflow-y-auto pt-4">
+        <fieldset :disabled="!initialized || submitting" class="min-w-0">
         <!-- Basic Settings Tab -->
         <div v-show="activeTab === 'basic'" class="space-y-5">
           <!-- Name -->
@@ -447,6 +455,7 @@
             </div>
           </div>
         </div>
+        </fieldset>
       </form>
     </div>
 
@@ -458,7 +467,7 @@
         <button
           type="submit"
           form="channel-form"
-          :disabled="submitting"
+          :disabled="!initialized || submitting"
           class="btn-glass-primary"
         >
           {{ submitting
@@ -552,6 +561,10 @@ const billingModelSourceOptions = computed(() => [
 ])
 
 const submitting = ref(false)
+const initializing = ref(false)
+const initialized = ref(false)
+const initializationError = ref('')
+let dialogGeneration = 0
 const activeTab = ref<string>('basic')
 
 // Groups
@@ -1061,27 +1074,6 @@ function apiToForm(channel: Channel): PlatformSection[] {
   return sections
 }
 
-async function loadGroups() {
-  groupsLoading.value = true
-  try {
-    allGroups.value = await adminAPI.groups.getAll()
-  } catch (error) {
-    console.error('Error loading groups:', error)
-  } finally {
-    groupsLoading.value = false
-  }
-}
-
-async function loadAllChannelsForConflict() {
-  try {
-    const response = await adminAPI.channels.list(1, 1000)
-    allChannelsForConflict.value = response.items || []
-  } catch (error) {
-    // Fallback: leave empty, conflict detection degrades gracefully
-    allChannelsForConflict.value = []
-  }
-}
-
 // ── Dialog ──
 function resetForm() {
   form.name = ''
@@ -1147,7 +1139,7 @@ function distributeRulesToPlatforms(apiRules: AccountStatsPricingRule[]) {
 }
 
 /** Populate ruleAccountNameCache by fetching account details for all account_ids in rules */
-async function populateRuleAccountNameCache() {
+async function populateRuleAccountNameCache(isCurrent: () => boolean) {
   const allAccountIds = new Set<number>()
   for (const section of form.platforms) {
     for (const rule of section.account_stats_pricing_rules) {
@@ -1163,6 +1155,7 @@ async function populateRuleAccountNameCache() {
   const results = await Promise.allSettled(
     ids.map(id => adminAPI.accounts.getById(id))
   )
+  if (!isCurrent()) return
   for (let i = 0; i < ids.length; i++) {
     const result = results[i]
     if (result.status === 'fulfilled') {
@@ -1173,39 +1166,71 @@ async function populateRuleAccountNameCache() {
 }
 
 async function initDialog() {
-  resetForm()
+  // Keep both prerequisite data and follow-up account names within this opening.
+  const generation = ++dialogGeneration
   const channel = props.editingChannel
-  if (channel) {
-    form.name = channel.name
-    form.description = channel.description || ''
-    form.status = channel.status
-    form.restrict_models = channel.restrict_models || false
-    form.billing_model_source = channel.billing_model_source || 'channel_mapped'
-    form.apply_pricing_to_account_stats = channel.apply_pricing_to_account_stats || false
-    // Must load groups first so apiToForm can map groupID → platform
-    await Promise.all([loadGroups(), loadAllChannelsForConflict()])
-    form.platforms = apiToForm(channel)
-
-    // Distribute channel-level rules into per-platform sections
-    distributeRulesToPlatforms(channel.account_stats_pricing_rules || [])
-
-    // Populate ruleAccountNameCache for existing rule accounts
-    await populateRuleAccountNameCache()
-  } else {
-    await Promise.all([loadGroups(), loadAllChannelsForConflict()])
+  const isCurrent = () => props.show && generation === dialogGeneration && props.editingChannel === channel
+  initialized.value = false
+  initializing.value = true
+  initializationError.value = ''
+  submitting.value = false
+  groupsLoading.value = true
+  resetForm()
+  allGroups.value = []
+  allChannelsForConflict.value = []
+  try {
+    const [groups, channels] = await Promise.all([
+      adminAPI.groups.getAll(),
+      adminAPI.channels.list(1, 1000)
+    ])
+    if (!isCurrent()) return
+    allGroups.value = groups
+    allChannelsForConflict.value = channels.items || []
+    if (channel) {
+      form.name = channel.name
+      form.description = channel.description || ''
+      form.status = channel.status
+      form.restrict_models = channel.restrict_models || false
+      form.billing_model_source = channel.billing_model_source || 'channel_mapped'
+      form.apply_pricing_to_account_stats = channel.apply_pricing_to_account_stats || false
+      form.platforms = apiToForm(channel)
+      distributeRulesToPlatforms(channel.account_stats_pricing_rules || [])
+      await populateRuleAccountNameCache(isCurrent)
+    }
+    if (isCurrent()) initialized.value = true
+  } catch (error) {
+    if (isCurrent()) initializationError.value = extractApiErrorMessage(error, t('admin.channels.loadError'))
+  } finally {
+    if (isCurrent()) {
+      initializing.value = false
+      groupsLoading.value = false
+    }
   }
 }
 
-watch(() => props.show, (val) => {
-  if (val) initDialog()
-})
+watch(() => [props.show, props.editingChannel] as const, ([show]) => {
+  if (show) void initDialog()
+  else {
+    dialogGeneration++
+    initialized.value = false
+    initializing.value = false
+    submitting.value = false
+    resetForm()
+  }
+}, { immediate: true, flush: 'sync' })
 
 function closeDialog() {
+  dialogGeneration++
+  initialized.value = false
+  submitting.value = false
   emit('close')
 }
 
 async function handleSubmit() {
-  if (submitting.value) return
+  if (!props.show || !initialized.value || submitting.value) return
+  const generation = dialogGeneration
+  const channel = props.editingChannel
+  const isCurrent = () => props.show && generation === dialogGeneration && props.editingChannel === channel
   if (!form.name.trim()) {
     appStore.showError(t('admin.channels.nameRequired', 'Please enter a channel name'))
     return
@@ -1314,7 +1339,7 @@ async function handleSubmit() {
 
   submitting.value = true
   try {
-    if (props.editingChannel) {
+    if (channel) {
       const req: UpdateChannelRequest = {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
@@ -1328,7 +1353,7 @@ async function handleSubmit() {
         apply_pricing_to_account_stats: form.apply_pricing_to_account_stats,
         account_stats_pricing_rules: accountStatsRulesToAPI()
       }
-      await adminAPI.channels.update(props.editingChannel.id, req)
+      await adminAPI.channels.update(channel.id, req)
       appStore.showSuccess(t('admin.channels.updateSuccess', 'Channel updated'))
     } else {
       const req: CreateChannelRequest = {
@@ -1347,13 +1372,13 @@ async function handleSubmit() {
       appStore.showSuccess(t('admin.channels.createSuccess', 'Channel created'))
     }
     emit('saved')
-    emit('close')
+    if (isCurrent()) closeDialog()
   } catch (error: unknown) {
-    appStore.showError(extractApiErrorMessage(error, props.editingChannel
+    if (isCurrent()) appStore.showError(extractApiErrorMessage(error, channel
       ? t('admin.channels.updateError', 'Failed to update channel')
       : t('admin.channels.createError', 'Failed to create channel')))
   } finally {
-    submitting.value = false
+    if (isCurrent()) submitting.value = false
   }
 }
 
@@ -1364,6 +1389,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  dialogGeneration++
   document.removeEventListener('click', handleRuleAccountClickOutside)
   ruleAccountSearchRunner.clearAll()
   clearAllRuleAccountSearchState()

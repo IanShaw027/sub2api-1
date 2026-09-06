@@ -1,4 +1,4 @@
-import { computed, ref, watch, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type {
@@ -46,8 +46,7 @@ export function useRiskControlSettings(
   configForm: ConfigFormState,
   status: Ref<ContentModerationRuntimeStatus | null>,
   groups: Ref<AdminGroup[]>,
-  // 已保存 API Key 的“待删除”标记；由主视图的 useRiskControlData 持有（页面级，跨弹层
-  // 打开/关闭保持不重置），本 composable 与主视图共享同一份引用，仅在此处读写。
+  // Parent-owned state persists across modal openings; writes use the modal's v-model.
   pendingDeleteApiKeyHashes: Ref<string[]>,
   refreshers: {
     loadStatus: (silent?: boolean) => Promise<void>
@@ -360,25 +359,14 @@ export function useRiskControlSettings(
 
   function toggleDeleteStoredApiKey(row: ContentModerationAPIKeyStatus) {
     if (!row.configured || !row.key_hash) return
-    const index = pendingDeleteApiKeyHashes.value.indexOf(row.key_hash)
-    if (index >= 0) {
-      pendingDeleteApiKeyHashes.value.splice(index, 1)
-      return
-    }
-    pendingDeleteApiKeyHashes.value.push(row.key_hash)
+    pendingDeleteApiKeyHashes.value = pendingDeleteApiKeyHashes.value.includes(row.key_hash)
+      ? pendingDeleteApiKeyHashes.value.filter((hash) => hash !== row.key_hash)
+      : [...pendingDeleteApiKeyHashes.value, row.key_hash]
   }
 
   function isStoredApiKeyPendingDelete(row: ContentModerationAPIKeyStatus): boolean {
     return row.configured && row.key_hash !== '' && pendingDeleteApiKeyHashes.value.includes(row.key_hash)
   }
-
-  function prunePendingDeleteAPIKeyHashes() {
-    const currentHashes = new Set(savedApiKeyRows.value.map((row) => row.key_hash).filter(Boolean))
-    pendingDeleteApiKeyHashes.value = pendingDeleteApiKeyHashes.value.filter((hash) => currentHashes.has(hash))
-  }
-
-  // 保持与旧实现一致：每次已保存 Key 状态刷新后，清理已不存在的“待删除”标记。
-  watch(() => configForm.api_key_statuses, () => prunePendingDeleteAPIKeyHashes())
 
   function clearModerationTestInput() {
     moderationTestPrompt.value = ''
@@ -499,6 +487,8 @@ export function useRiskControlSettings(
 
       const updated = await adminAPI.riskControl.updateConfig(payload)
       refreshers.applyConfig(updated)
+      testedApiKeyStatuses.value = []
+      apiKeyRowsExpanded.value = false
       refreshers.close()
       appStore.showSuccess(t('admin.riskControl.saved'))
       await Promise.all([refreshers.loadStatus(true), refreshers.loadLogs()])

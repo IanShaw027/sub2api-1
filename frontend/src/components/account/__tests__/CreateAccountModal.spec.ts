@@ -11,6 +11,8 @@ const {
   showWarningMock,
   importCodexSessionMock,
   createOpenAICodexPATMock,
+  listTLSProfilesMock,
+  listTLSRoutersMock,
   authIsSimpleMode,
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
@@ -19,6 +21,8 @@ const {
   showWarningMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn(),
+  listTLSProfilesMock: vi.fn().mockResolvedValue([]),
+  listTLSRoutersMock: vi.fn().mockResolvedValue([]),
   authIsSimpleMode: { value: true },
 }))
 
@@ -53,10 +57,10 @@ vi.mock('@/api/admin', () => ({
       getSettings: vi.fn().mockResolvedValue({}),
     },
     tlsFingerprintRouters: {
-      list: vi.fn().mockResolvedValue([])
+      list: listTLSRoutersMock
     },
     tlsFingerprintProfiles: {
-      list: vi.fn().mockResolvedValue([]),
+      list: listTLSProfilesMock,
     },
   },
 }))
@@ -231,6 +235,21 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
       warnings: [],
     })
     createOpenAICodexPATMock.mockReset().mockResolvedValue({})
+    listTLSProfilesMock.mockReset().mockResolvedValue([])
+    listTLSRoutersMock.mockReset().mockResolvedValue([])
+  })
+
+  it('loads TLS choices when the async component first mounts open', async () => {
+    listTLSProfilesMock.mockResolvedValue([{ id: 7, name: 'Profile' }])
+    listTLSRoutersMock.mockResolvedValue([{ id: 9, name: 'Router' }])
+    const wrapper = mountModal()
+    await flushPromises()
+
+    expect(listTLSProfilesMock).toHaveBeenCalledTimes(1)
+    expect(listTLSRoutersMock).toHaveBeenCalledTimes(1)
+    const panel = wrapper.findComponent({ name: 'TlsFingerprintPanel' })
+    expect(panel.props('tlsFingerprintProfiles')).toEqual([{ id: 7, name: 'Profile' }])
+    expect(panel.props('tlsFingerprintRouters')).toEqual([{ id: 9, name: 'Router' }])
   })
 
   it('hides only the redundant account toggle when every selected group enables tier pricing', async () => {

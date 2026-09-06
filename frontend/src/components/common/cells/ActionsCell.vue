@@ -33,6 +33,7 @@
           class="dropdown cell-actions-menu"
           :style="menuStyle"
           @click.stop
+          @keydown.esc.stop.prevent="closeAndFocusTrigger"
         >
           <slot name="menu" :close="close">
             <button
@@ -59,6 +60,7 @@ import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import { getFloatingPanelPosition } from '@/utils/floatingPanel'
 
 export interface ActionsCellItem {
   label: string
@@ -98,24 +100,43 @@ const rootRef = ref<HTMLElement | null>(null)
 const triggerRef = ref<HTMLElement | null>(null)
 const menuRef = ref<HTMLElement | null>(null)
 const open = ref(false)
-const menuStyle = ref<{ top: string; left: string }>({ top: '0px', left: '0px' })
+const menuStyle = ref<Record<string, string>>({ top: '0px', left: '0px' })
 
 const positionMenu = () => {
   const trigger = triggerRef.value
   if (!trigger) return
   const rect = trigger.getBoundingClientRect()
-  const menuWidth = menuRef.value?.offsetWidth ?? 180
-  const left = Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)
+  const position = getFloatingPanelPosition(rect, window.innerWidth, window.innerHeight, {
+    viewportPadding: 8,
+    gap: 4,
+    maxWidth: menuRef.value?.offsetWidth || 180,
+    mobileBreakpoint: 0,
+    minComfortableHeight: menuRef.value?.scrollHeight || 264
+  })
   menuStyle.value = {
-    top: `${rect.bottom + 4}px`,
-    left: `${Math.max(8, left)}px`
+    top: position.top === null ? '' : `${position.top}px`,
+    bottom: position.bottom === null ? '' : `${position.bottom}px`,
+    left: `${position.left}px`,
+    width: `${position.width}px`,
+    maxHeight: `${position.maxHeight}px`
   }
 }
 
 const close = () => {
   open.value = false
-  window.removeEventListener('scroll', close, true)
+  window.removeEventListener('scroll', onScroll, true)
   window.removeEventListener('resize', positionMenu)
+}
+
+const closeAndFocusTrigger = () => {
+  close()
+  triggerRef.value?.focus()
+}
+
+const onScroll = (event: Event) => {
+  // Scrolling the menu must not dismiss actions below its visible area.
+  if (event.target instanceof Node && menuRef.value?.contains(event.target)) return
+  close()
 }
 
 const toggleOpen = async () => {
@@ -125,8 +146,9 @@ const toggleOpen = async () => {
   }
   open.value = true
   await nextTick()
+  if (!open.value || !menuRef.value) return
   positionMenu()
-  window.addEventListener('scroll', close, true)
+  window.addEventListener('scroll', onScroll, true)
   window.addEventListener('resize', positionMenu)
 }
 
@@ -139,7 +161,7 @@ const handleItemClick = (item: ActionsCellItem) => {
 onClickOutside(menuRef, () => close(), { ignore: [triggerRef] })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', close, true)
+  window.removeEventListener('scroll', onScroll, true)
   window.removeEventListener('resize', positionMenu)
 })
 </script>
@@ -153,5 +175,8 @@ onBeforeUnmount(() => {
 
 .cell-actions-menu {
   position: fixed;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 </style>

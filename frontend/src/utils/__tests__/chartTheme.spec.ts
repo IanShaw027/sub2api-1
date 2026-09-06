@@ -1,8 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
-
-vi.mock('@/composables/useTheme', () => ({ useTheme: () => ({ isDark: { value: false } }) }))
-
-import { alpha, baseChartOptions, chartTheme, cssVar, pieChartOptions } from '../chartTheme'
+import { afterEach, describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { initTheme, setAccent, setTheme } from '@/composables/useTheme'
+import { alpha, baseChartOptions, chartTheme, cssVar, pieChartOptions, useChartTheme } from '../chartTheme'
 
 describe('chartTheme', () => {
   it('alpha handles hex and oklch inputs', () => {
@@ -35,5 +34,46 @@ describe('chartTheme', () => {
     expect('scales' in o).toBe(false)
     expect(o.plugins.legend.labels.color).toBe(t.text)
     expect(o.plugins.tooltip.backgroundColor).toBe(t.surface)
+  })
+})
+
+describe('useChartTheme', () => {
+  let style: HTMLStyleElement | undefined
+
+  afterEach(() => {
+    style?.remove()
+    style = undefined
+    localStorage.clear()
+    initTheme()
+  })
+
+  it('updates the palette for accent-only changes as well as light/dark changes', async () => {
+    style = document.createElement('style')
+    style.textContent = `
+      :root[data-accent="blue"] { --accent: #3b82f6; }
+      :root[data-accent="teal"] { --accent: #0d9488; }
+      :root[data-theme="glass-light"] { --foreground: #111111; }
+      :root[data-theme="glass-dark"] { --foreground: #eeeeee; }
+    `
+    document.head.appendChild(style)
+    initTheme()
+    setTheme('light')
+    setAccent('blue')
+    const theme = useChartTheme()
+    expect(theme.value.accent).toBe('#3b82f6')
+    expect(theme.value.foreground).toBe('#111111')
+
+    setAccent('teal')
+    await nextTick()
+    expect(document.documentElement.dataset.theme).toBe('glass-light')
+    expect(chartTheme().accent).toBe('#0d9488')
+    expect(theme.value.accent).toBe('#0d9488')
+    expect(theme.value.series[0]).toBe('#0d9488')
+
+    setTheme('dark')
+    await nextTick()
+    expect(theme.value.accent).toBe('#0d9488')
+    expect(theme.value.foreground).toBe('#eeeeee')
+    expect(theme.value.tooltip.titleColor).toBe('#eeeeee')
   })
 })
