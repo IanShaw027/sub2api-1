@@ -1,5 +1,6 @@
 | 路由 | 原型区块 | 原型呈现 | 实际呈现 | 类型(不符/更优) | 理由 | 截图 |
 |---|---|---|---|---|---|---|
+| `/studio/chat`、`/studio/image`、`/studio/video`、`/studio/voice`、`/studio/gallery` | 创作工作台 | 历史记录曾采用独立全屏导航与三列工作台 | 统一 AppLayout，侧栏「创作中心」下五个子菜单，共享顶栏、面包屑与 Glass 控件；用户其他菜单按 API 服务、订阅与账单、账户、支持分类 | 用户明确变更 | 2026-09-06 用户明确不接受独立页面；本行取代下方旧 `/studio` 全屏/三栏呈现记录，原功能与本地数据保留 | `output/playwright/creation-v4/` |
 | `/home` | 顶部导航 | 仅 登录 / 立即开始 | 增加 语言切换 + 主题切换，均为 34px 图标按钮（LocaleSwitcher 用 `:deep()` 隐藏文字/箭头仅留国旗，尺寸与 `.header-icon-btn` 主题按钮对齐） | 不符（项目已有 LocaleSwitcher 与主题切换） | 功能必须保留；5.1 已复核并统一为 34px 图标按钮排版 | reference/light/01_首页.png vs .shots/g5a-home-light.png |
 | `/home` | Hero 副文案 | 固定文案「无需管理多个订阅账号...」 | 站点配置了 `site_subtitle`（mock 值「订阅转 API 转换平台」）时优先展示该值 + `heroDescriptionExt` 固定后缀 | 不符（数据驱动，非代码问题） | 代码按设计接“站点副标题”，无自定义值时才回退到原型默认文案；当前差异来自 mock `site_subtitle` 与原型截图环境不同，非视觉缺陷；建议 lead 视觉核对时使用 `--ignore` 排除该行或让 mock 清空该字段 | reference/light/01_首页.png vs .shots/g5a-home-light.png |
 | `/home` | 社证行 | 「已服务 1,284 名开发者 · 累计 8.6 亿次请求」（真实统计） | 无公开统计 API，展示 i18n 默认文案 `home.socialProof`（「面向 Claude Code · Codex CLI · Cursor 等客户端的开发者」） | 不符（mock/后端缺少公开统计接口） | 按 5.1 要求「无数据时用 i18n 默认文案」实现；若需要还原真实数字需要新增公开统计 API，超出本代理所有权（views/home 组件），已记录供 lead 评估 | reference/light/01_首页.png vs .shots/g5a-home-light.png |

@@ -125,7 +125,8 @@
 | 路由 | 视图 / 组件 | 状态 | 任务 |
 |---|---|---|---|
 | `/custom/:id` | `views/user/CustomPageView.vue` | 接近 | 12.15 |
-| `/studio` | `features/creation/**` | 部分（SessionList / ComposerBar 改了） | 12.16 |
+| `/studio/chat`、`/studio/image`、`/studio/video`、`/studio/voice`、`/studio/gallery` | `features/creation/**` | WorkspacePage：统一 AppLayout、PageHeader、侧栏分类和 Glass 控件 | 12.16 / 2026-09-06 用户要求 |
+| `/studio?mode=...` | 路由兼容重定向 | 保留 prompt，跳转对应子菜单路由 | 2026-09-06 |
 
 ## 共享层（非路由）
 
