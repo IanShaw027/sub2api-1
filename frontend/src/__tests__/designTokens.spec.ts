@@ -158,16 +158,15 @@ describe('design tokens', () => {
 
   it('matches the prototype dark-theme oklch values (documented deviations excepted)', () => {
     const dark = cssBlock(tokensSource, "[data-theme='glass-dark']")
-    // NOTE: --border is intentionally 51% L, not the prototype's 28% L — see
-    // deviations.md ("--border 暗色"): 28% fails 3:1 non-text contrast against
-    // --surface / --background in dark mode. 51% is the minimum safe value.
+    // Decorative borders follow the prototype; stronger control boundaries use
+    // --border-strong and are covered by the contrast suite.
     // --accent/--success/--warning/--danger are redeclared identically to
     // light here: the prototype marks them "同" (same as light).
     const DARK_TOKENS: Record<string, string> = {
       '--background': 'oklch(12% 0.0015 262.89)',
       '--foreground': 'oklch(95% 0.004 262)',
       '--surface': 'oklch(21.03% 0.003 262.89)',
-      '--border': 'oklch(51% 0.003 259.82)',
+      '--border': 'oklch(28% 0.003 259.82)',
       '--muted': 'oklch(70.5% 0.006 259.82)',
       '--accent': 'oklch(62.31% 0.1881 259.82)',
       '--success': 'oklch(73.29% 0.1946 151.55)',

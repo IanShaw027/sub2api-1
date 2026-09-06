@@ -26,6 +26,12 @@
   --border-strong: oklch(59% 0.006 259.82);
   --accent: oklch(62.31% 0.1881 259.82);
   --focus-ring: oklch(59% 0.1881 259.82);
+  --focus-ring-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
+  --border-hover: color-mix(in oklch, var(--foreground) 18%, transparent);
+  --table-sticky-shadow: color-mix(in oklch, black 8%, transparent);
+  --shadow-active: inset 0 1px 0 var(--btn-hi), 0 1px 3px rgba(16, 24, 40, 0.1),
+    0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
+  --motion-pop: 160ms;
   --success: oklch(73.29% 0.1946 151.55);
   --success-text: oklch(45% 0.15 151.55);
   --warning: oklch(78.19% 0.1593 73.04);
@@ -145,11 +151,11 @@
   --surface-secondary: oklch(25.7% 0.0023 262.89);
   --surface-tertiary: oklch(30% 0.003 262.89);
   --muted: oklch(70.5% 0.006 259.82);
-  /* 50.38% is the minimum L that clears 3:1 against --surface (the closest-in-lightness
-     of the surfaces --border is drawn against in dark mode: canvas/background/surface);
-     51% keeps a small safety margin so input/field borders are perceivable (WCAG 1.4.11). */
-  --border: oklch(51% 0.003 259.82);
-  --border-strong: var(--border);
+  /* Decorative dividers remain quiet; interactive boundaries use the 3:1 control token. */
+  --border: oklch(28% 0.003 259.82);
+  --border-strong: oklch(51% 0.003 259.82);
+  --border-hover: color-mix(in oklch, var(--foreground) 24%, var(--surface));
+  --table-sticky-shadow: color-mix(in oklch, black 20%, transparent);
   --accent: oklch(62.31% 0.1881 259.82);
   --focus-ring: var(--accent);
   --success: oklch(73.29% 0.1946 151.55);
@@ -206,9 +212,11 @@ samp {
 @keyframes s2a-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 color-mix(in oklch, var(--success) 60%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--pulse-color, var(--success)) 25%, transparent),
+      0 0 0 0 color-mix(in oklch, var(--pulse-color, var(--success)) 60%, transparent);
   }
   70% {
-    box-shadow: 0 0 0 6px transparent;
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--pulse-color, var(--success)) 25%, transparent),
+      0 0 0 6px transparent;
   }
 }

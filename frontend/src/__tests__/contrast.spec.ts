@@ -35,9 +35,9 @@ describe('color contrast (WCAG AA)', () => {
     })
 
     it('borders (ComposerBar input, .field, GlassCard, SessionList) meet 3:1 against their backgrounds', () => {
-      expect(contrastRatio(dark.border, dark.canvas)).toBeGreaterThanOrEqual(AA_NON_TEXT)
-      expect(contrastRatio(dark.border, dark.background)).toBeGreaterThanOrEqual(AA_NON_TEXT)
-      expect(contrastRatio(dark.border, dark.surface)).toBeGreaterThanOrEqual(AA_NON_TEXT)
+      expect(contrastRatio(dark['border-strong'], dark.canvas)).toBeGreaterThanOrEqual(AA_NON_TEXT)
+      expect(contrastRatio(dark['border-strong'], dark.background)).toBeGreaterThanOrEqual(AA_NON_TEXT)
+      expect(contrastRatio(dark['border-strong'], dark.surface)).toBeGreaterThanOrEqual(AA_NON_TEXT)
     })
 
     it('the accent focus ring meets 3:1 against canvas and background', () => {
