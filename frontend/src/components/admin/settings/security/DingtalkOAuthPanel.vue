@@ -11,7 +11,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.dingtalk.enable")
@@ -104,7 +104,7 @@
  {{ t("admin.settings.dingtalk.corpPolicy.hint") }}
  </p>
  <div class="space-y-2">
- <label class="flex cursor-pointer items-center gap-3">
+ <label class="settings-flex-row flex cursor-pointer items-center gap-3">
  <input
  v-model="form.dingtalk_connect_corp_restriction_policy"
  type="radio"
@@ -115,7 +115,7 @@
  {{ t("admin.settings.dingtalk.corpPolicy.none") }}
  </span>
  </label>
- <label class="flex cursor-pointer items-center gap-3">
+ <label class="settings-flex-row flex cursor-pointer items-center gap-3">
  <input
  v-model="form.dingtalk_connect_corp_restriction_policy"
  type="radio"
@@ -132,7 +132,7 @@
  <!-- bypass_registration toggle（仅 internal_only 模式下可见可用） -->
  <div
  v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
- class="flex items-center justify-between pt-4 border-t border-line "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between pt-4 border-t border-line "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -150,7 +150,7 @@
  v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
  class="pt-4 border-t border-line space-y-2"
  >
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.dingtalk.syncDisplayName")
@@ -162,7 +162,7 @@
  <Toggle v-model="form.dingtalk_connect_sync_display_name" />
  </div>
  <div v-if="form.dingtalk_connect_sync_display_name" class="space-y-2">
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <label class="text-sm text-muted whitespace-nowrap min-w-[5rem]">
  {{ t("admin.settings.dingtalk.syncDisplayNameTarget") }}
  </label>
@@ -173,7 +173,7 @@
  class="input text-sm flex-1 max-w-xs"
  />
  </div>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <label class="text-sm text-muted whitespace-nowrap min-w-[5rem]">
  {{ t("admin.settings.dingtalk.syncAttrDisplayName") }}
  </label>
@@ -193,7 +193,7 @@
  v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
  class="pt-4 border-t border-line space-y-2"
  >
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.dingtalk.syncCorpEmail")
@@ -208,7 +208,7 @@
  <Toggle v-model="form.dingtalk_connect_sync_corp_email" />
  </div>
  <div v-if="form.dingtalk_connect_sync_corp_email" class="space-y-2">
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <label class="text-sm text-muted whitespace-nowrap min-w-[5rem]">
  {{ t("admin.settings.dingtalk.syncCorpEmailTarget") }}
  </label>
@@ -219,7 +219,7 @@
  class="input text-sm flex-1 max-w-xs"
  />
  </div>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <label class="text-sm text-muted whitespace-nowrap min-w-[5rem]">
  {{ t("admin.settings.dingtalk.syncAttrDisplayName") }}
  </label>
@@ -239,7 +239,7 @@
  v-if="form.dingtalk_connect_corp_restriction_policy === 'internal_only'"
  class="pt-4 border-t border-line space-y-2"
  >
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.dingtalk.syncDept")
@@ -254,7 +254,7 @@
  <Toggle v-model="form.dingtalk_connect_sync_dept" />
  </div>
  <div v-if="form.dingtalk_connect_sync_dept" class="space-y-2">
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <label class="text-sm text-muted whitespace-nowrap min-w-[5rem]">
  {{ t("admin.settings.dingtalk.syncDeptTarget") }}
  </label>
@@ -265,7 +265,7 @@
  class="input text-sm flex-1 max-w-xs"
  />
  </div>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <label class="text-sm text-muted whitespace-nowrap min-w-[5rem]">
  {{ t("admin.settings.dingtalk.syncAttrDisplayName") }}
  </label>

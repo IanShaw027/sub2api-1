@@ -10,7 +10,7 @@
  :label="t('admin.settings.site.backendMode')"
  :description="t('admin.settings.site.backendModeDescription')"
  >
- <div class="flex items-center gap-3">
+ <div class="settings-flex-row flex items-center gap-3">
  <Toggle v-model="form.backend_mode_enabled" />
  <span class="settings-warning-hint">
  <svg
@@ -97,7 +97,7 @@
  :key="`support-qr-${index}`"
  class="rounded-hero border border-line bg-surface-2/80 p-4 "
  >
- <div class="flex items-start justify-between gap-3">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-3">
  <div class="min-w-0 flex-1 space-y-4">
  <ImageUpload
  v-model="item.image_url"
@@ -134,7 +134,7 @@
  <button
  v-if="form.support_qr_codes.length < 8"
  type="button"
- class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-2.5 text-sm text-muted transition-colors hover:border-accent hover:text-accent "
+ class="settings-flex-row flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line px-4 py-2.5 text-sm text-muted transition-colors hover:border-accent hover:text-accent "
  @click="addSupportQRCode"
  >
  {{ t("admin.settings.site.addSupportQRCode") }}
@@ -355,7 +355,7 @@
  :key="item.id || index"
  class="rounded-lg border border-line p-4 "
  >
- <div class="mb-3 flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row mb-3 flex items-center justify-between">
  <span
  class="text-sm font-medium text-foreground "
  >
@@ -363,7 +363,7 @@
  t("admin.settings.customMenu.itemLabel", { n: index + 1 })
  }}
  </span>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <!-- Move up -->
  <button
  v-if="index > 0"
@@ -509,7 +509,7 @@
  <!-- Add button -->
  <button
  type="button"
- class="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line py-3 text-sm text-muted transition-colors hover:border-accent hover:text-accent "
+ class="settings-flex-row flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-line py-3 text-sm text-muted transition-colors hover:border-accent hover:text-accent "
  @click="addMenuItem"
  >
  <svg

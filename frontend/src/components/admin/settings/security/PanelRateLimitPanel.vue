@@ -3,7 +3,7 @@
  <div
  class="settings-card-head"
  >
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <Icon
  name="shield"
  size="md"
@@ -20,7 +20,7 @@
  <div class="settings-card-body">
  <div
  v-if="panelRateLimitLoading"
- class="flex items-center gap-2 text-muted"
+ class="settings-flex-row flex items-center gap-2 text-muted"
  >
  <div
  class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
@@ -33,7 +33,7 @@
  <div
  class="rounded-lg border border-accent-200 bg-accent-50 p-4 "
  >
- <div class="flex items-start">
+ <div class="settings-flex-row flex items-start">
  <Icon
  name="infoCircle"
  size="md"
@@ -45,7 +45,7 @@
  </div>
  </div>
 
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.panelRateLimit.enabled")
@@ -68,7 +68,7 @@
  >
  {{ t("admin.settings.panelRateLimit.userRpm") }}
  </label>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <input
  v-model.number="panelRateLimitForm.user_rpm"
  data-testid="panel-rate-limit-user-rpm"
@@ -92,7 +92,7 @@
  >
  {{ t("admin.settings.panelRateLimit.heavyRpm") }}
  </label>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <input
  v-model.number="panelRateLimitForm.heavy_rpm"
  type="number"
@@ -115,7 +115,7 @@
  >
  {{ t("admin.settings.panelRateLimit.publicIpRpm") }}
  </label>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <input
  v-model.number="panelRateLimitForm.public_ip_rpm"
  type="number"
@@ -134,7 +134,7 @@
  </div>
 
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -149,7 +149,7 @@
  </div>
 
  <div
- class="flex justify-end border-t border-line pt-4 "
+ class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 "
  >
  <button
  type="button"

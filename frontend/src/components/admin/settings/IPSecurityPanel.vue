@@ -33,13 +33,13 @@
       <Toggle v-model="form.block_datacenter_registration" />
     </SettingRow>
     <div class="settings-card-body">
-      <div class="flex justify-end">
+      <div class="settings-flex-row flex justify-end">
         <button type="button" class="btn btn-primary btn-sm" :disabled="saving" @click="saveConfig">
           {{ t('common.save') }}
         </button>
       </div>
 
-      <div class="mt-4 flex flex-wrap items-center gap-3">
+      <div class="settings-flex-row mt-4 flex flex-wrap items-center gap-3">
         <select v-model="status" class="input w-auto" @change="loadBans(1)">
           <option value="active">{{ t('admin.settings.ipSecurity.statusActive') }}</option>
           <option value="whitelisted">{{ t('admin.settings.ipSecurity.statusWhitelisted') }}</option>
@@ -79,9 +79,9 @@
           </tbody>
         </table>
       </div>
-      <div v-if="total" class="flex items-center justify-between text-sm text-muted">
+      <div v-if="total" class="settings-flex-row settings-control-row flex items-center justify-between text-sm text-muted">
         <span>{{ t('admin.settings.ipSecurity.total', { count: total }) }}</span>
-        <div class="flex items-center gap-2">
+        <div class="settings-flex-row flex items-center gap-2">
           <button type="button" class="btn btn-secondary btn-xs" :disabled="page <= 1 || loading" @click="loadBans(page - 1)">
             <Icon name="chevronLeft" size="sm" />
           </button>
@@ -93,7 +93,7 @@
       </div>
 
       <div v-if="detail" class="rounded border border-line p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="settings-flex-row settings-control-row flex flex-wrap items-center justify-between gap-3">
           <div>
             <div class="font-mono font-semibold">{{ detail.ban.ip_address }}</div>
             <div class="text-xs text-muted">{{ formatStatus(detail.ban.status) }} · {{ detail.ban.reason }}</div>
@@ -121,7 +121,7 @@
             :key="`${activity.user_id}-${activity.source}-${activity.api_key_id}-${activity.request_id}-${activity.path}`"
             class="rounded bg-surface-2 p-2"
           >
-            <div class="flex flex-wrap justify-between gap-2">
+            <div class="settings-flex-row flex flex-wrap justify-between gap-2">
               <span>{{ activity.user_email || activity.user_username || `#${activity.user_id}` }}</span>
               <span class="font-mono text-xs">
                 {{ activity.source }}

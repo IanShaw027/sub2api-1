@@ -11,7 +11,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.linuxdo.enable")
@@ -91,7 +91,7 @@
  "
  />
  <div
- class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
+ class="settings-flex-row mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
  >
  <button
  type="button"

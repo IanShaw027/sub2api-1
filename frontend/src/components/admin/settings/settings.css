@@ -43,15 +43,11 @@
   background: var(--warning);
   flex: none;
 }
-.settings-layout {
-  display: grid;
-  grid-template-columns: 224px minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-.settings-nav {
+.settings-page .settings-page-layout-nav {
   position: sticky;
   top: 4.75rem;
+}
+.settings-nav {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -99,11 +95,11 @@
 .settings-tab-active,
 .settings-tab-active:hover {
   background: color-mix(in oklch, var(--surface) 92%, transparent);
-  color: var(--accent);
+  color: var(--info-text);
   font-weight: 600;
   box-shadow:
     inset 0 1px 0 var(--btn-hi),
-    var(--shadow-hover),
+    0 1px 3px color-mix(in oklch, var(--foreground) 10%, transparent),
     0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
 }
 .settings-tab-label {
@@ -153,6 +149,35 @@
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+}
+.settings-save {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.settings-save .settings-dirty {
+  margin-right: auto;
+  white-space: normal;
+}
+.settings-loading {
+  display: grid;
+  gap: 12px;
+  min-height: 360px;
+}
+.settings-loading-row {
+  height: 78px;
+  border-radius: var(--radius-field);
+  background: color-mix(in oklch, var(--muted) 12%, transparent);
 }
 .settings-stack {
   display: flex;
@@ -286,18 +311,18 @@
 }
 
 /* 开关/说明行：左侧 240px 标签块 + 右侧控件 */
-.settings-card-body > .flex.items-center.justify-between,
-.settings-card-body > .flex.items-start.justify-between,
-.settings-row-group > .flex.items-center.justify-between,
-.settings-card-body > * > .flex.items-center.justify-between.border-t {
+.settings-card-body > .settings-control-row,
+.settings-card-body > .settings-control-row-start,
+.settings-row-group > .settings-control-row,
+.settings-card-body > * > .settings-control-row.settings-divider-row {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
   column-gap: 24px;
   align-items: center;
 }
-.settings-card-body > .flex.items-center.justify-between > *:first-child,
-.settings-card-body > .flex.items-start.justify-between > *:first-child,
-.settings-row-group > .flex.items-center.justify-between > *:first-child {
+.settings-card-body > .settings-control-row > *:first-child,
+.settings-card-body > .settings-control-row-start > *:first-child,
+.settings-row-group > .settings-control-row > *:first-child {
   min-width: 0;
 }
 .settings-card-body h3,
@@ -325,17 +350,17 @@
 }
 
 /* 开关行内的标签/说明排版 */
-.settings-card-body > .flex > div > label,
-.settings-card-body > .flex > div > h3,
-.settings-row-group > .flex > div > label,
-.settings-row-group > .flex > div > h3 {
+.settings-card-body > .settings-flex-row > div > label,
+.settings-card-body > .settings-flex-row > div > h3,
+.settings-row-group > .settings-flex-row > div > label,
+.settings-row-group > .settings-flex-row > div > h3 {
   display: block;
   font-size: 13px;
   font-weight: 600;
   color: var(--foreground);
 }
-.settings-card-body > .flex > div > p,
-.settings-row-group > .flex > div > p {
+.settings-card-body > .settings-flex-row > div > p,
+.settings-row-group > .settings-flex-row > div > p {
   margin-top: 2px;
   font-size: 12px;
   color: var(--muted);
@@ -404,17 +429,13 @@
 }
 
 @media (max-width: 767px) {
-  .settings-layout {
-    grid-template-columns: 1fr;
-  }
-  .settings-nav {
+  .settings-page .settings-page-layout-nav {
     position: static;
   }
   .settings-nav-mobile {
     display: block;
   }
-  .settings-tabs-scroll,
-  .settings-deploy {
+  .settings-tabs-scroll {
     display: none;
   }
   .settings-row {
@@ -433,9 +454,10 @@
   .settings-row-group > * {
     padding: 14px 16px;
   }
-  .settings-card-body > .flex.items-center.justify-between,
-  .settings-card-body > .flex.items-start.justify-between,
-  .settings-row-group > .flex.items-center.justify-between {
+  .settings-card-body > .settings-control-row,
+  .settings-card-body > .settings-control-row-start,
+  .settings-row-group > .settings-control-row,
+  .settings-card-body > * > .settings-control-row.settings-divider-row {
     grid-template-columns: 1fr;
     row-gap: 10px;
   }

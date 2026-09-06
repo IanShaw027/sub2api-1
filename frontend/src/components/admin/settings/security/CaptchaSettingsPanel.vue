@@ -12,7 +12,7 @@
  </div>
  <div class="settings-card-body">
  <!-- Enable Captcha -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.captcha.enable")
@@ -256,7 +256,7 @@
  <p class="mt-2 text-xs text-muted ">
  {{ t("admin.settings.tencentCaptcha.aidEncryptedHint") }}
  </p>
- <div class="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm">
+ <div class="settings-flex-row mt-3 flex flex-wrap gap-x-4 gap-y-2 text-sm">
  <a
  :href="tencentCaptchaLinks.console"
  target="_blank"

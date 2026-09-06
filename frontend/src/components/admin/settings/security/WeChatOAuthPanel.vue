@@ -11,7 +11,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.wechatConnect.enabledLabel")
@@ -34,7 +34,7 @@
  <div
  class="rounded-lg border border-line p-4 "
  >
- <div class="flex items-start justify-between gap-4">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-4">
  <div>
  <h3 class="font-medium text-foreground ">
  {{ localText("PC 应用", "PC App") }}
@@ -107,7 +107,7 @@
  <div
  class="rounded-lg border border-line p-4 "
  >
- <div class="flex items-start justify-between gap-4">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-4">
  <div>
  <h3 class="font-medium text-foreground ">
  {{ localText("公众号", "Official Account") }}
@@ -185,7 +185,7 @@
  <div
  class="rounded-lg border border-line p-4 "
  >
- <div class="flex items-start justify-between gap-4">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-4">
  <div>
  <h3 class="font-medium text-foreground ">
  {{ localText("移动应用", "Mobile App") }}
@@ -300,7 +300,7 @@
  }}
  </p>
  <div
- class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
+ class="settings-flex-row mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
  >
  <button
  type="button"

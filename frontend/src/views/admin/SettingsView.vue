@@ -3,7 +3,68 @@
  <AppLayout>
  <div class="settings-page">
  <PageHeader :title="t('admin.settings.title')" :description="t('admin.settings.description')">
- <template #actions>
+ </PageHeader>
+ <div v-if="loading" class="settings-loading" role="status" :aria-label="t('common.loading')">
+ <div v-for="row in 4" :key="row" class="settings-loading-row" aria-hidden="true"></div>
+ </div>
+
+ <form
+ v-else
+ id="settings-form"
+ @submit.prevent="saveSettings"
+ novalidate
+ >
+ <SettingsPageLayout>
+ <template #nav>
+ <aside class="settings-nav">
+ <label class="settings-nav-mobile">
+ <span class="sr-only">{{ t('admin.settings.title') }}</span>
+ <select class="field" :value="activeTab" @change="onSettingsMobileTabChange($event)">
+ <option v-for="tab in settingsTabs" :key="tab.key" :value="tab.key">
+ {{ t(`admin.settings.tabs.${tab.key}`) }}
+ </option>
+ </select>
+ </label>
+ <nav class="settings-tabs-scroll" role="tablist" :aria-label="t('admin.settings.title')">
+ <div class="settings-tabs">
+ <button v-for="tab in settingsTabs" :key="tab.key" :id="`settings-tab-${tab.key}`"
+ type="button" role="tab" :aria-selected="activeTab === tab.key"
+ :tabindex="activeTab === tab.key ? 0 : -1"
+ :class="['settings-tab', activeTab === tab.key && 'settings-tab-active']"
+ @click="selectSettingsTab(tab.key)" @keydown="handleSettingsTabKeydown($event, tab.key)">
+ <span class="settings-tab-label">{{ t(`admin.settings.tabs.${tab.key}`) }}</span>
+ <span v-if="isSettingsTabDirty(tab.key)" class="settings-tab-dot" aria-hidden="true"></span>
+ </button>
+ </div>
+ </nav>
+ <div v-if="hasDeploymentInfo" class="settings-deploy">
+ <span class="settings-deploy-title">{{ t("admin.settings.deployment.title") }}</span>
+ <div v-if="deploymentVersion" class="settings-deploy-row">
+ <span>{{ t("admin.settings.deployment.version") }}</span>
+ <span class="settings-deploy-value">{{ deploymentVersion }}</span>
+ </div>
+ <div v-if="deploymentCodexVersion" class="settings-deploy-row">
+ <span>{{ t("admin.settings.deployment.codexSync") }}</span>
+ <span class="settings-deploy-value">{{ deploymentCodexVersion }}</span>
+ </div>
+ </div>
+ </aside>
+ </template>
+ <template #content>
+ <div class="settings-content">
+ <GeneralTab />
+ <AgreementTab />
+ <FeaturesTab />
+ <SecurityTab />
+ <UserDefaultsTab />
+ <GatewayTab />
+ <PaymentTab />
+ <EmailTab />
+ <BackupTab />
+ </div>
+ </template>
+ </SettingsPageLayout>
+ <div v-show="activeTab !== 'backup'" class="settings-save">
  <span
  v-if="settingsDirtyCount > 0"
  class="settings-dirty"
@@ -26,127 +87,11 @@
  v-show="activeTab !== 'backup'"
  native-type="submit"
  form="settings-form"
- :disabled="saving || loadFailed"
+ :disabled="saving || loading || loadFailed"
  :loading="saving"
  >
  {{ saving ? t("admin.settings.saving") : t("admin.settings.saveSettings") }}
  </Button>
- </template>
- </PageHeader>
- <div v-if="loading" class="flex items-center justify-center py-12">
- <div class="settings-spinner"></div>
- </div>
-
- <form
- v-else
- id="settings-form"
- @submit.prevent="saveSettings"
- class="settings-layout"
- novalidate
- >
- <aside class="settings-nav">
- <label class="settings-nav-mobile">
- <span class="sr-only">{{ t('admin.settings.title') }}</span>
- <select
- class="field"
- :value="activeTab"
- @change="onSettingsMobileTabChange($event)"
- >
- <option v-for="tab in settingsTabs" :key="tab.key" :value="tab.key">
- {{ t(`admin.settings.tabs.${tab.key}`) }}
- </option>
- </select>
- </label>
- <nav
- class="settings-tabs-scroll"
- role="tablist"
- :aria-label="t('admin.settings.title')"
- >
- <div class="settings-tabs">
- <button
- v-for="tab in settingsTabs"
- :key="tab.key"
- :id="`settings-tab-${tab.key}`"
- type="button"
- role="tab"
- :aria-selected="activeTab === tab.key"
- :tabindex="activeTab === tab.key ? 0 : -1"
- :class="[
- 'settings-tab',
- activeTab === tab.key && 'settings-tab-active',
- ]"
- @click="selectSettingsTab(tab.key)"
- @keydown="handleSettingsTabKeydown($event, tab.key)"
- >
- <span class="settings-tab-label">{{
- t(`admin.settings.tabs.${tab.key}`)
- }}</span>
- <span
- v-if="isSettingsTabDirty(tab.key)"
- class="settings-tab-dot"
- aria-hidden="true"
- ></span>
- </button>
- </div>
- </nav>
- <div v-if="hasDeploymentInfo" class="settings-deploy">
- <span class="settings-deploy-title">{{
- t("admin.settings.deployment.title")
- }}</span>
- <div v-if="deploymentVersion" class="settings-deploy-row">
- <span>{{ t("admin.settings.deployment.version") }}</span>
- <span class="settings-deploy-value">{{ deploymentVersion }}</span>
- </div>
- <div v-if="deploymentCodexVersion" class="settings-deploy-row">
- <span>{{ t("admin.settings.deployment.codexSync") }}</span>
- <span class="settings-deploy-value">{{ deploymentCodexVersion }}</span>
- </div>
- </div>
- </aside>
- <div class="settings-content">
- <GeneralTab />
- <AgreementTab />
- <FeaturesTab />
- <SecurityTab />
- <UserDefaultsTab />
- <GatewayTab />
- <PaymentTab />
- <EmailTab />
- <BackupTab />
- </div>
- <!-- Save Button -->
- <div v-show="activeTab !== 'backup'" class="settings-save">
- <button
- type="submit"
- :disabled="saving || loadFailed"
- class="btn-glass-primary"
- >
- <svg
- v-if="saving"
- class="h-4 w-4 animate-spin"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- {{
- saving
- ? t("admin.settings.saving")
- : t("admin.settings.saveSettings")
- }}
- </button>
  </div>
  </form>
 
@@ -192,6 +137,7 @@ import { provide } from "vue";
 import { useSettingsForm, SettingsFormKey } from "@/components/admin/settings/useSettingsForm";
 import "@/components/admin/settings/settings.css";
 import AppLayout from "@/components/layout/AppLayout.vue";
+import SettingsPageLayout from "@/components/layout/SettingsPageLayout.vue";
 import PageHeader from "@/components/ui/PageHeader.vue";
 import Button from "@/components/ui/Button.vue";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";

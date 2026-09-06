@@ -11,7 +11,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.oidc.enable")
@@ -217,7 +217,7 @@
  "
  />
  <div
- class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
+ class="settings-flex-row mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3"
  >
  <button
  type="button"
@@ -313,7 +313,7 @@
 
  <div class="settings-row-group">
  <div
- class="flex items-center justify-between rounded border border-line px-4 py-3 "
+ class="settings-flex-row settings-control-row flex items-center justify-between rounded border border-line px-4 py-3 "
  >
  <div>
  <label class="font-medium text-foreground ">
@@ -327,7 +327,7 @@
  </div>
 
  <div
- class="flex items-center justify-between rounded border border-line px-4 py-3 "
+ class="settings-flex-row settings-control-row flex items-center justify-between rounded border border-line px-4 py-3 "
  >
  <div>
  <label class="font-medium text-foreground ">
@@ -341,7 +341,7 @@
  </div>
 
  <div
- class="flex items-center justify-between rounded border border-line px-4 py-3 "
+ class="settings-flex-row settings-control-row flex items-center justify-between rounded border border-line px-4 py-3 "
  >
  <div>
  <label class="font-medium text-foreground ">

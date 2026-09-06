@@ -48,7 +48,7 @@
  :label="t('admin.settings.defaults.defaultSubscriptions')"
  :description="t('admin.settings.defaults.defaultSubscriptionsHint')"
  >
- <div class="mb-3 flex justify-end">
+ <div class="settings-flex-row mb-3 flex justify-end">
  <button
  type="button"
  class="btn-glass-secondary"
@@ -162,7 +162,7 @@
  class="input h-[42px]"
  />
  </div>
- <div class="flex items-end">
+ <div class="settings-flex-row flex items-end">
  <button
  type="button"
  class="btn-glass-secondary default-sub-delete-btn w-full text-danger-text "
@@ -254,7 +254,7 @@
  :key="authSource.source"
  class="rounded-xl border border-line p-4 "
  >
- <div class="flex items-center justify-between gap-4">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between gap-4">
  <div>
  <div class="font-medium text-foreground ">
  {{ authSource.title }}
@@ -317,7 +317,7 @@
  </div>
 
  <div
- class="flex items-center justify-between rounded border border-line px-4 py-3 "
+ class="settings-flex-row settings-control-row flex items-center justify-between rounded border border-line px-4 py-3 "
  >
  <div>
  <label
@@ -339,7 +339,7 @@
  />
  </div>
 
- <div class="mb-3 flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row mb-3 flex items-center justify-between">
  <div>
  <label
  class="font-medium text-foreground "
@@ -476,7 +476,7 @@
  class="input h-[42px]"
  />
  </div>
- <div class="flex items-end">
+ <div class="settings-flex-row flex items-end">
  <button
  type="button"
  class="btn-glass-secondary w-full text-danger-text "

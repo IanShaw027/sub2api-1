@@ -26,7 +26,7 @@
  :key="ruleIndex"
  class="rounded-lg border border-line p-4 "
  >
- <div class="mb-3 flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row mb-3 flex items-center justify-between">
  <span
  class="text-sm font-medium text-foreground "
  >
@@ -59,7 +59,7 @@
  </div>
 
  <div
- class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted "
+ class="settings-flex-row mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted "
  :data-testid="`openai-fast-policy-summary-${ruleIndex}`"
  >
  <span class="font-medium text-foreground ">
@@ -222,7 +222,7 @@
  <div
  v-for="(_, patternIdx) in rule.model_whitelist || []"
  :key="patternIdx"
- class="mb-1.5 flex items-center gap-2"
+ class="settings-flex-row mb-1.5 flex items-center gap-2"
  >
  <input
  v-model="rule.model_whitelist![patternIdx]"

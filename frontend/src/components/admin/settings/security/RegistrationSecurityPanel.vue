@@ -12,7 +12,7 @@
  </div>
  <div class="settings-card-body">
  <!-- Enable Registration -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.registration.enableRegistration")
@@ -28,7 +28,7 @@
 
  <!-- Email Verification -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -54,7 +54,7 @@
  <div
  class="mt-3 rounded-lg border border-line bg-surface p-2 "
  >
- <div class="flex flex-wrap items-center gap-2">
+ <div class="settings-flex-row flex flex-wrap items-center gap-2">
  <span
  v-for="suffix in registrationEmailSuffixWhitelistTags"
  :key="suffix"
@@ -78,7 +78,7 @@
  </span>
 
  <div
- class="flex min-w-[220px] flex-1 items-center gap-1 rounded border border-transparent px-2 py-1 focus-within:border-accent "
+ class="settings-flex-row flex min-w-[220px] flex-1 items-center gap-1 rounded border border-transparent px-2 py-1 focus-within:border-accent "
  >
  <input
  v-model="registrationEmailSuffixWhitelistDraft"
@@ -112,7 +112,7 @@
 
  <!-- Email Domain Quota -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -129,7 +129,7 @@
 
  <!-- Promo Code -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -144,7 +144,7 @@
 
  <!-- Invitation Code -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -159,7 +159,7 @@
  <!-- Password Reset - Only show when email verification is enabled -->
  <div
  v-if="form.email_verify_enabled"
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -196,7 +196,7 @@
 
  <!-- TOTP 2FA -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -224,7 +224,7 @@
  class="border-t border-line pt-4 "
  data-testid="passkey-settings"
  >
- <div class="flex items-start justify-between gap-4">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-4">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.security.passkey")
@@ -280,7 +280,7 @@
 
  <!-- 敏感操作 step-up 2FA -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -295,7 +295,7 @@
 
  <!-- 会话 IP/UA 绑定 -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -310,7 +310,7 @@
 
  <!-- 审计日志保留天数 -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{

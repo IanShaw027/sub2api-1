@@ -38,7 +38,7 @@
  {{ t("admin.settings.gatewayForwarding.grokDefaultTextModelHint") }}
  </p>
  </div>
- <div class="flex items-center justify-between gap-5 md:min-w-72">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between gap-5 md:min-w-72">
  <div>
  <label class="text-sm font-medium text-foreground ">
  {{ t("admin.settings.gatewayForwarding.grokCrossClientMap") }}
@@ -104,7 +104,7 @@
  </div>
 
  <!-- Fingerprint Unification -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -127,7 +127,7 @@
  </div>
 
  <!-- Metadata Passthrough -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -148,7 +148,7 @@
  </div>
 
  <!-- CCH Signing -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -163,7 +163,7 @@
  </div>
 
  <!-- Claude OAuth System Prompt Injection -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -226,7 +226,7 @@
  {{ getClaudeOAuthPresetLabel(block.preset) }}
  </div>
  </div>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <button
  type="button"
  class="btn-glass-secondary px-2"
@@ -339,7 +339,7 @@
  <div
  class="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_160px]"
  >
- <div class="flex items-center justify-between gap-4">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between gap-4">
  <div>
  <label
  class="text-xs font-medium text-muted "
@@ -364,7 +364,7 @@
  </div>
  </div>
 
- <div class="mt-3 flex flex-wrap gap-2">
+ <div class="settings-flex-row mt-3 flex flex-wrap gap-2">
  <button
  type="button"
  class="btn-glass-secondary"
@@ -394,7 +394,7 @@
  </div>
 
  <!-- Anthropic Cache TTL 1h Injection -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -419,7 +419,7 @@
  </div>
 
  <!-- messages cache_control 改写 -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -442,7 +442,7 @@
  </div>
 
  <!-- 客户端 dateline 归一化（仅 Anthropic OAuth/SetupToken） -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -557,7 +557,7 @@
  </div>
 
  <!-- Codex 版本号自动同步 -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "

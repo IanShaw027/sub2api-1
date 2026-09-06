@@ -12,7 +12,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -63,7 +63,7 @@
  :key="platform"
  class="rounded-lg border border-line p-4 "
  >
- <div class="flex items-start justify-between gap-3">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-3">
  <div>
  <label
  class="font-mono text-sm font-medium text-foreground "
@@ -100,7 +100,7 @@
 
  <div
  v-if="!form.openai_advanced_scheduler_enabled"
- class="flex items-center justify-between border-t border-line pt-5 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 "
  >
  <div>
  <label
@@ -122,7 +122,7 @@
 
  <div
  v-if="!form.openai_advanced_scheduler_enabled && form.openai_low_upstream_rate_priority_enabled"
- class="flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 "
+ class="settings-flex-row settings-divider-row flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 "
  >
  <div class="min-w-0">
  <label
@@ -152,7 +152,7 @@
  </div>
  </div>
 
- <div class="flex items-center justify-between border-t border-line pt-5 ">
+ <div class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 ">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -173,7 +173,7 @@
 
  <div
  v-if="form.openai_advanced_scheduler_enabled"
- class="flex items-center justify-between border-t border-line pt-5 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 "
  >
  <div>
  <label
@@ -192,7 +192,7 @@
 
  <div
  v-if="form.openai_advanced_scheduler_enabled"
- class="flex items-center justify-between border-t border-line pt-5 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 "
  >
  <div>
  <label
@@ -211,7 +211,7 @@
 
  <div
  v-if="form.openai_advanced_scheduler_enabled"
- class="flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 "
+ class="settings-flex-row settings-divider-row flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 "
  >
  <div class="min-w-0">
  <label

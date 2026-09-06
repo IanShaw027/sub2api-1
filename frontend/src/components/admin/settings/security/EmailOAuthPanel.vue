@@ -18,7 +18,7 @@
  <div class="settings-card-body">
  <div class="settings-row-group">
  <div class="rounded-lg border border-line p-4 ">
- <div class="flex items-start justify-between gap-4">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-4">
  <div>
  <h3 class="font-medium text-foreground ">
  GitHub
@@ -96,7 +96,7 @@
  class="input font-mono text-sm"
  placeholder="https://your-domain.com/api/v1/auth/oauth/github/callback"
  />
- <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+ <div class="settings-flex-row mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
  <button
  type="button"
  class="btn-glass-secondary w-fit"
@@ -128,7 +128,7 @@
  </div>
 
  <div class="rounded-lg border border-line p-4 ">
- <div class="flex items-start justify-between gap-4">
+ <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-4">
  <div>
  <h3 class="font-medium text-foreground ">
  Google
@@ -190,7 +190,7 @@
  class="input font-mono text-sm"
  placeholder="https://your-domain.com/api/v1/auth/oauth/google/callback"
  />
- <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+ <div class="settings-flex-row mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
  <button
  type="button"
  class="btn-glass-secondary w-fit"

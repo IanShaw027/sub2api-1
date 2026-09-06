@@ -94,7 +94,7 @@
  :label="t('admin.settings.features.channelMonitor.defaultInterval')"
  :description="t('admin.settings.features.channelMonitor.defaultIntervalHint')"
  >
- <div class="flex items-center gap-1">
+ <div class="settings-flex-row flex items-center gap-1">
  <input
  v-model.number="form.channel_monitor_default_interval_seconds"
  type="number"
@@ -226,7 +226,7 @@
  </SettingRow>
 
  <SettingRow v-if="form.cyber_session_block_enabled" :label="t('admin.settings.features.riskControl.cyberSessionBlockTTL')">
- <div class="flex items-center gap-1">
+ <div class="settings-flex-row flex items-center gap-1">
  <input
  v-model.number="form.cyber_session_block_ttl_seconds"
  type="number"
@@ -358,7 +358,7 @@
 
  <!-- 专属用户管理 -->
  <div class="settings-card-body">
- <div class="mb-3 flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row mb-3 flex items-center justify-between">
  <div>
  <h3 class="text-sm font-semibold text-foreground ">
  {{ t('admin.settings.features.affiliate.customUsers.title') }}
@@ -376,7 +376,7 @@
  </button>
  </div>
 
- <div class="mb-3 flex items-center gap-2">
+ <div class="settings-flex-row mb-3 flex items-center gap-2">
  <input
  v-model="affiliateState.search"
  type="text"
@@ -445,7 +445,7 @@
  <span v-else class="text-muted">{{ t('admin.settings.features.affiliate.customUsers.useGlobal') }}</span>
  </td>
  <td class="px-3 py-2 text-sm">
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <button type="button" class="text-accent hover:underline" @click="openAffiliateModal(entry)">
  {{ t('common.edit') }}
  </button>
@@ -463,11 +463,11 @@
  </table>
  </div>
 
- <div v-if="affiliateState.total > affiliateState.pageSize" class="mt-3 flex items-center justify-between text-sm">
+ <div v-if="affiliateState.total > affiliateState.pageSize" class="settings-flex-row settings-control-row mt-3 flex items-center justify-between text-sm">
  <span class="text-muted">
  {{ t('admin.settings.features.affiliate.customUsers.totalLabel', { total: affiliateState.total }) }}
  </span>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <button
  type="button"
  class="btn-glass-secondary"
@@ -494,7 +494,7 @@
  <!-- Affiliate add/edit modal -->
  <div
  v-if="affiliateModal.open"
- class="fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim p-4"
+ class="settings-flex-row fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim p-4"
  @click.self="closeAffiliateModal"
  >
  <div class="w-full max-w-md glass-card-solid rounded-hero p-6">
@@ -507,7 +507,7 @@
  <!-- Chip showing the picked user; clicking it re-opens the search -->
  <div
  v-if="affiliateModal.selectedUser"
- class="flex items-center justify-between rounded-md border border-accent bg-accent/10 px-3 py-2 "
+ class="settings-flex-row settings-control-row flex items-center justify-between rounded-md border border-accent bg-accent/10 px-3 py-2 "
  >
  <div class="text-sm">
  <span class="font-medium text-foreground ">{{ affiliateModal.selectedUser.email }}</span>
@@ -591,7 +591,7 @@
  </div>
  </div>
 
- <div class="mt-6 flex items-center justify-between gap-3">
+ <div class="settings-flex-row settings-control-row mt-6 flex items-center justify-between gap-3">
  <p
  v-if="!affiliateModalCanSubmit"
  class="text-xs text-muted "
@@ -599,7 +599,7 @@
  {{ t('admin.settings.features.affiliate.modal.errorEmpty') }}
  </p>
  <span v-else></span>
- <div class="flex gap-2">
+ <div class="settings-flex-row flex gap-2">
  <button type="button" class="btn-glass-secondary" @click="closeAffiliateModal">
  {{ t('common.cancel') }}
  </button>
@@ -619,7 +619,7 @@
  <!-- Affiliate batch rate modal -->
  <div
  v-if="affiliateBatchModal.open"
- class="fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim p-4"
+ class="settings-flex-row fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim p-4"
  @click.self="affiliateBatchModal.open = false"
  >
  <div class="w-full max-w-md glass-card-solid rounded-hero p-6">
@@ -644,7 +644,7 @@
  <p class="mt-2 text-xs text-muted">
  {{ t('admin.settings.features.affiliate.batchModal.clearHint') }}
  </p>
- <div class="mt-6 flex justify-end gap-2">
+ <div class="settings-flex-row mt-6 flex justify-end gap-2">
  <button type="button" class="btn-glass-secondary" @click="affiliateBatchModal.open = false">
  {{ t('common.cancel') }}
  </button>

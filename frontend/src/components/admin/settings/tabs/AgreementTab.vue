@@ -2,7 +2,7 @@
 	 <div v-show="activeTab === 'agreement'" class="settings-stack">
 	 <SettingsSection>
 	 <template #header>
-	 <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+	 <div class="settings-flex-row flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 	 <div>
 	 <h2 class="settings-card-title">
 	 {{ localText("登录条款确认", "Login agreement") }}
@@ -16,7 +16,7 @@
 	 }}
 	 </p>
 	 </div>
-	 <div class="flex items-center gap-3">
+	 <div class="settings-flex-row flex items-center gap-3">
 	 <span class="text-sm text-muted ">
 	 {{ form.login_agreement_enabled ? localText("已启用", "Enabled") : localText("未启用", "Disabled") }}
 	 </span>
@@ -77,7 +77,7 @@
 	 </SettingRow>
 
 	 <div class="settings-card-body">
-	 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+	 <div class="settings-flex-row flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 	 <div>
 	 <h3 class="text-sm font-medium text-foreground ">
 	 {{ localText("协议文档", "Agreement documents") }}
@@ -107,9 +107,9 @@
 	 :key="doc.id || index"
 	 class="rounded-lg border border-line bg-surface p-4 "
 	 >
-	 <div class="mb-3 flex items-center justify-between gap-3">
-	 <div class="flex min-w-0 items-center gap-3">
-	 <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-surface-2 text-foreground ">
+	 <div class="settings-flex-row settings-control-row mb-3 flex items-center justify-between gap-3">
+	 <div class="settings-flex-row flex min-w-0 items-center gap-3">
+	 <span class="settings-flex-row flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md bg-surface-2 text-foreground ">
 	 <Icon
 	 :name="
 	 index === 1
@@ -161,7 +161,7 @@
 	 <label class="settings-sub-label">
 	 {{ localText("路由标识", "Route slug") }}
 	 </label>
-	 <div class="flex overflow-hidden rounded-lg border border-line bg-surface focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ">
+	 <div class="settings-flex-row flex overflow-hidden rounded-lg border border-line bg-surface focus-within:border-accent focus-within:ring-1 focus-within:ring-accent ">
 	 <span class="inline-flex flex-shrink-0 items-center border-r border-line bg-surface-2 px-3 text-sm text-muted ">
 	 /legal/
 	 </span>

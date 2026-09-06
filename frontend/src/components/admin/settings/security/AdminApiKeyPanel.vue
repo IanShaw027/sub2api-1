@@ -15,7 +15,7 @@
  <div
  class="rounded-lg border border-warning bg-[color-mix(in_oklch,var(--warning)_10%,transparent)] p-4 "
  >
- <div class="flex items-start">
+ <div class="settings-flex-row flex items-start">
  <Icon
  name="exclamationTriangle"
  size="md"
@@ -30,7 +30,7 @@
  <!-- Loading State -->
  <div
  v-if="adminApiKeyLoading"
- class="flex items-center gap-2 text-muted"
+ class="settings-flex-row flex items-center gap-2 text-muted"
  >
  <div
  class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
@@ -41,7 +41,7 @@
  <!-- No Key Configured -->
  <div
  v-else-if="!adminApiKeyExists"
- class="flex items-center justify-between"
+ class="settings-flex-row settings-control-row flex items-center justify-between"
  >
  <span class="text-muted ">
  {{ t("admin.settings.adminApiKey.notConfigured") }}
@@ -82,7 +82,7 @@
 
  <!-- Key Exists -->
  <div v-else class="space-y-4">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="mb-1 block text-sm font-medium text-foreground "
@@ -95,7 +95,7 @@
  {{ adminApiKeyMasked }}
  </code>
  </div>
- <div class="flex gap-2">
+ <div class="settings-flex-row flex gap-2">
  <button
  type="button"
  @click="regenerateAdminApiKey"
@@ -129,7 +129,7 @@
  >
  {{ t("admin.settings.adminApiKey.keyWarning") }}
  </p>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <code
  class="flex-1 select-all break-all rounded border border-success bg-surface px-3 py-2 font-mono text-sm "
  >

@@ -13,7 +13,7 @@
  </div>
  <div class="settings-card-body">
  <!-- Global Toggle -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -29,7 +29,7 @@
 
  <!-- Providers -->
  <div v-if="webSearchConfig.enabled" class="space-y-4">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <label
  class="text-sm font-medium text-foreground "
  >
@@ -58,10 +58,10 @@
  >
  <!-- Collapsible header -->
  <div
- class="flex cursor-pointer items-center justify-between px-4 py-3"
+ class="settings-flex-row settings-control-row flex cursor-pointer items-center justify-between px-4 py-3"
  @click="toggleProviderExpand(pIdx)"
  >
- <div class="flex items-center gap-3">
+ <div class="settings-flex-row flex items-center gap-3">
  <svg
  class="h-4 w-4 text-muted transition-transform"
  :class="{ 'rotate-90': expandedProviders[pIdx] }"
@@ -150,7 +150,7 @@
  />
  <div
  v-if="provider.api_key || provider.api_key_configured"
- class="absolute inset-y-0 right-0 flex items-center pr-1.5"
+ class="settings-flex-row absolute inset-y-0 right-0 flex items-center pr-1.5"
  >
  <button
  type="button"
@@ -278,7 +278,7 @@
  </div>
 
  <!-- Usage display -->
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <span class="text-xs text-muted"
  >{{
  t("admin.settings.webSearchEmulation.quotaUsage")
@@ -328,7 +328,7 @@
  </div>
 
  <!-- Proxy + Test on same row -->
- <div class="flex items-end gap-3">
+ <div class="settings-flex-row flex items-end gap-3">
  <div class="flex-1">
  <label class="text-xs text-muted">{{
  t("admin.settings.webSearchEmulation.proxy")
@@ -355,7 +355,7 @@
  <!-- Web Search Test Dialog -->
  <div
  v-if="wsTestDialogOpen"
- class="fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim"
+ class="settings-flex-row fixed inset-0 z-50 flex items-center justify-center glass-modal-scrim"
  @click.self="wsTestDialogOpen = false"
  >
  <div
@@ -366,7 +366,7 @@
  >
  {{ t("admin.settings.webSearchEmulation.testResultTitle") }}
  </h3>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <input
  v-model="wsTestQuery"
  type="text"
@@ -423,7 +423,7 @@
  </p>
  </div>
  </div>
- <div class="mt-4 flex justify-end">
+ <div class="settings-flex-row mt-4 flex justify-end">
  <button
  type="button"
  class="btn-glass-secondary"

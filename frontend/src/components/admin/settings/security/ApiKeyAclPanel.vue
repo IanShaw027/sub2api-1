@@ -11,7 +11,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between gap-4">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between gap-4">
  <div>
  <label class="font-medium text-foreground ">
  {{ t("admin.settings.apiKeyAcl.trustForwardedIp") }}
@@ -39,7 +39,7 @@
  <div
  class="mt-3 rounded-lg border border-line bg-surface p-2 "
  >
- <div class="flex flex-wrap items-center gap-2">
+ <div class="settings-flex-row flex flex-wrap items-center gap-2">
  <span
  v-for="header in form.forwarded_client_ip_headers"
  :key="header"
@@ -62,7 +62,7 @@
  </button>
  </span>
  <div
- class="flex min-w-[220px] flex-1 items-center gap-1 rounded border border-transparent px-2 py-1 focus-within:border-accent "
+ class="settings-flex-row flex min-w-[220px] flex-1 items-center gap-1 rounded border border-transparent px-2 py-1 focus-within:border-accent "
  >
  <input
  id="forwarded-client-ip-headers"

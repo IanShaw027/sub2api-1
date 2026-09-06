@@ -11,7 +11,7 @@
  </div>
  <div class="settings-card-body">
  <!-- User error requests visibility -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="text-sm font-medium text-foreground ">
  {{ t('admin.settings.user_error_view.label') }}

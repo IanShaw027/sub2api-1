@@ -15,7 +15,7 @@
  <!-- Loading State -->
  <div
  v-if="betaPolicyLoading"
- class="flex items-center gap-2 text-muted"
+ class="settings-flex-row flex items-center gap-2 text-muted"
  >
  <div
  class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
@@ -30,7 +30,7 @@
  :key="rule.beta_token"
  class="rounded-lg border border-line p-4 "
  >
- <div class="mb-3 flex items-center gap-2">
+ <div class="settings-flex-row mb-3 flex items-center gap-2">
  <span
  class="text-sm font-medium text-foreground "
  >
@@ -100,7 +100,7 @@
  >
  {{ t("admin.settings.betaPolicy.quickPresets") }}
  </label>
- <div class="flex flex-wrap gap-2">
+ <div class="settings-flex-row flex flex-wrap gap-2">
  <button
  v-for="preset in betaPresets[rule.beta_token]"
  :key="preset.label"
@@ -128,7 +128,7 @@
  <div
  v-for="(_, index) in rule.model_whitelist || []"
  :key="index"
- class="mb-1.5 flex items-center gap-2"
+ class="settings-flex-row mb-1.5 flex items-center gap-2"
  >
  <input
  v-model="rule.model_whitelist![index]"
@@ -183,7 +183,7 @@
  {{ t("admin.settings.betaPolicy.addModelPattern") }}
  </button>
  <!-- Common pattern chips -->
- <div class="flex flex-wrap items-center gap-1.5">
+ <div class="settings-flex-row flex flex-wrap items-center gap-1.5">
  <span class="text-xs text-muted "
  >{{
  t("admin.settings.betaPolicy.commonPatterns")
@@ -242,7 +242,7 @@
 
  <!-- Save Button -->
  <div
- class="flex justify-end border-t border-line pt-4 "
+ class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 "
  >
  <button
  type="button"

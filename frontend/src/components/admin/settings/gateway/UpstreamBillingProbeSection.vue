@@ -14,7 +14,7 @@
  <div class="settings-card-body">
  <div
  v-if="upstreamBillingProbeLoading"
- class="flex items-center gap-2 text-muted"
+ class="settings-flex-row flex items-center gap-2 text-muted"
  >
  <div
  class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
@@ -23,7 +23,7 @@
  </div>
 
  <template v-else>
- <div class="flex items-center justify-between gap-4">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between gap-4">
  <div>
  <label class="font-medium text-foreground ">
  {{ t("admin.settings.upstreamBillingProbe.enabled") }}
@@ -65,7 +65,7 @@
  </div>
 
  <div
- class="flex justify-end border-t border-line pt-4 "
+ class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 "
  >
  <button
  type="button"

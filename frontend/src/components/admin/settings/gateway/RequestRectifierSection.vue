@@ -15,7 +15,7 @@
  <!-- Loading State -->
  <div
  v-if="rectifierLoading"
- class="flex items-center gap-2 text-muted"
+ class="settings-flex-row flex items-center gap-2 text-muted"
  >
  <div
  class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
@@ -25,7 +25,7 @@
 
  <template v-else>
  <!-- Master Toggle -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.rectifier.enabled")
@@ -43,7 +43,7 @@
  class="space-y-4 border-t border-line pt-4 "
  >
  <!-- Thinking Signature Rectifier -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -63,7 +63,7 @@
  </div>
 
  <!-- Thinking Budget Rectifier -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -79,7 +79,7 @@
  </div>
 
  <!-- API Key Signature Rectifier -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label
  class="text-sm font-medium text-foreground "
@@ -115,7 +115,7 @@
  _, index
  ) in rectifierForm.apikey_signature_patterns"
  :key="index"
- class="flex items-center gap-2"
+ class="settings-flex-row flex items-center gap-2"
  >
  <input
  v-model="rectifierForm.apikey_signature_patterns[index]"
@@ -162,7 +162,7 @@
 
  <!-- Save Button -->
  <div
- class="flex justify-end border-t border-line pt-4 "
+ class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 "
  >
  <button
  type="button"

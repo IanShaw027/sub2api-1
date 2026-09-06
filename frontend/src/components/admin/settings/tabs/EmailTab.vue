@@ -3,7 +3,7 @@
  <!-- Email disabled hint - show when email_verify_enabled is off -->
  <div v-if="!form.email_verify_enabled" class="glass-card settings-card">
  <div class="settings-card-body">
- <div class="flex items-start gap-3">
+ <div class="settings-flex-row flex items-start gap-3">
  <Icon
  name="mail"
  size="md"
@@ -24,7 +24,7 @@
  <!-- SMTP Settings - Only show when email verification is enabled -->
  <div v-if="form.email_verify_enabled" class="glass-card settings-card">
  <div
- class="flex items-center justify-between border-b border-line px-6 py-4 "
+ class="settings-flex-row settings-control-row flex items-center justify-between border-b border-line px-6 py-4 "
  >
  <div>
  <h2 class="settings-card-title">
@@ -169,7 +169,7 @@
 
  <!-- Use TLS Toggle -->
  <div
- class="flex items-center justify-between border-t border-line pt-4 "
+ class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-4 "
  >
  <div>
  <label class="font-medium text-foreground ">{{
@@ -197,7 +197,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between gap-4">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between gap-4">
  <p class="text-sm text-muted ">
  {{ t("admin.settings.testEmail.recipientEmailPlaceholder") }}
  </p>
@@ -295,7 +295,7 @@
  </p>
  </div>
  <div class="px-6 py-6">
- <div class="flex items-center justify-between gap-4">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between gap-4">
  <div>
  <label
  class="mb-0 block text-sm font-medium text-foreground "
@@ -326,7 +326,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <label
  class="mb-0 block text-sm font-medium text-foreground "
  >{{ t("admin.settings.balanceNotify.enabled") }}</label
@@ -386,7 +386,7 @@
  </p>
  </div>
  <div class="settings-card-body">
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <label
  class="mb-0 block text-sm font-medium text-foreground "
  >{{ t("admin.settings.quotaNotify.enabled") }}</label
@@ -403,7 +403,7 @@
  v-for="(entry, index) in form.account_quota_notify_emails ||
  []"
  :key="index"
- class="flex items-center gap-2"
+ class="settings-flex-row flex items-center gap-2"
  >
  <label
  class="relative inline-flex items-center cursor-pointer shrink-0"

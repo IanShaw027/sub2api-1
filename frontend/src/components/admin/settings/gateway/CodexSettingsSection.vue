@@ -67,7 +67,7 @@
  <div
  v-for="(row, i) in codexFingerprintRows"
  :key="`codex-fp-${i}`"
- class="mb-2 flex items-center gap-2"
+ class="settings-flex-row mb-2 flex items-center gap-2"
  >
  <select v-model="row.type" class="input w-32 text-sm">
  <option value="header_exact">{{ t("admin.settings.gatewayForwarding.codexFpTypeHeaderExact") }}</option>
@@ -80,7 +80,7 @@
  class="input flex-1 font-mono text-sm"
  :placeholder="t('admin.settings.gatewayForwarding.codexFpMatchPlaceholder')"
  />
- <label class="flex shrink-0 items-center gap-1 text-xs text-muted ">
+ <label class="settings-flex-row flex shrink-0 items-center gap-1 text-xs text-muted ">
  <input v-model="row.required" type="checkbox" />
  {{ t("admin.settings.gatewayForwarding.codexFpRequired") }}
  </label>
@@ -103,7 +103,7 @@
  </p>
  </div>
 
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div class="pr-4">
  <label
  class="block text-sm font-medium text-foreground "
@@ -137,7 +137,7 @@
  <div
  v-for="(row, i) in codexBlacklistRows"
  :key="`codex-bl-${i}`"
- class="mb-2 flex gap-2"
+ class="settings-flex-row mb-2 flex gap-2"
  >
  <input
  v-model="row.originator"
@@ -188,7 +188,7 @@
  <div
  v-for="(row, i) in codexWhitelistRows"
  :key="`codex-wl-${i}`"
- class="mb-2 flex gap-2"
+ class="settings-flex-row mb-2 flex gap-2"
  >
  <input
  v-model="row.originator"
@@ -211,7 +211,7 @@
  "
  />
  <label
- class="flex shrink-0 items-center gap-1 text-xs text-muted "
+ class="settings-flex-row flex shrink-0 items-center gap-1 text-xs text-muted "
  :title="
  t(
  'admin.settings.gatewayForwarding.codexWhitelistSkipFingerprintTooltip',

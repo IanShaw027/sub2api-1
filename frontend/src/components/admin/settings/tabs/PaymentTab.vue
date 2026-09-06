@@ -54,7 +54,7 @@
  </div>
  <div class="settings-card-body">
  <!-- Enable toggle -->
- <div class="flex items-center justify-between">
+ <div class="settings-flex-row settings-control-row flex items-center justify-between">
  <div>
  <label class="font-medium text-foreground ">{{
  t("admin.settings.payment.enabled")
@@ -257,7 +257,7 @@
  class="input pr-8"
  />
  <span
- class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-muted"
+ class="settings-flex-row pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-muted"
  >%</span
  >
  </div>
@@ -294,7 +294,7 @@
  </div>
  </div>
  <!-- Row 3: Pending orders + load balance + cancel rate limit (all in one row) -->
- <div class="flex flex-wrap items-end gap-4">
+ <div class="settings-flex-row flex flex-wrap items-end gap-4">
  <div class="w-28">
  <label class="input-label">{{
  t("admin.settings.payment.maxPendingOrders")
@@ -320,7 +320,7 @@
  <label class="input-label">{{
  t("admin.settings.payment.cancelRateLimit")
  }}</label>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <button
  type="button"
  :class="[
@@ -410,7 +410,7 @@
  <label class="input-label">{{
  t("admin.settings.payment.alipayForceQRCode")
  }}</label>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <button
  type="button"
  :class="[
@@ -442,7 +442,7 @@
  <label class="input-label">{{
  t("admin.settings.payment.alipayMobilePrecreateDeepLink")
  }}</label>
- <div class="flex items-center gap-2">
+ <div class="settings-flex-row flex items-center gap-2">
  <button
  type="button"
  :class="[
@@ -476,7 +476,7 @@
  <label class="input-label">{{
  t("admin.settings.payment.enabledPaymentTypes")
  }}</label>
- <div class="mt-1.5 flex flex-wrap gap-2">
+ <div class="settings-flex-row mt-1.5 flex flex-wrap gap-2">
  <button
  v-for="pt in allPaymentTypes"
  :key="pt.value"
