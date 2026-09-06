@@ -590,3 +590,49 @@ lead 复核：vue-tsc 0（排除 16A 在制品）；eslint 0；`vitest run src/v
 纯重构。`views/admin/RiskControlView.vue` 2432 → 332 行，新增 `components/admin/risk-control/` 9 个文件（`RiskControlSettingsModal.vue` 808、`useRiskControlSettings.ts` 566、`useRiskControlData.ts` 377、`riskControlUtils.ts` 340、`RiskRecordsTable.vue` 254 …）。`views/user/KeysView.vue` 1527 → 1044 行，新增 `components/keys/KeysDataTable.vue` 494、`KeysMobileList.vue` 97。代理在拆分中发现并修复两处 scoped `:deep()` 搬移导致的级联退化（桌面行高 59 → 58/65、移动端 1px 边框丢失），最终 DOM/class 不变。
 
 lead 复核：vue-tsc 0；eslint 0；vitest 同上通过；ui-lint 0；anchor-diff 两文件全部类别 `lost 0`；`/keys` 行高探针 `tbody tr: 59x6`（与 15.x 基线一致）；代理 before/after `pixel-diff --tol 0`：risk-control 桌面 0、keys 桌面 0、keys 390 0；lead 与 15.4 存档 diff keys 0.41% / risk-control 0.26%。`RiskControlSettingsModal.vue` 808 行超 800 软阈值 8 行，已记 deviations。
+
+## 16A EditAccountModal 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.2）
+
+纯重构。`components/account/EditAccountModal.vue` 4060 → 1401 行，`CreateAccountModal.vue` 保持 1495。新增 `components/account/edit/`（`EditSchedulingSection.vue` 165、`EditKiroSection.vue` 134、`EditAdvancedOptionsSection.vue`、`useEditAccountOpenAIOptions.ts` 293、`useEditAccountSubmit.ts` 1070 …）。共享 reactive `form`/`quotaNotifyState` 整体透传，`vue/no-mutating-props` 按 `AccountsFilterBar.vue` 先例用块级注释关闭。
+
+lead 复核（提交 `42c56bb44`）：vue-tsc 全仓 0；eslint 0；`vitest run src/components/account src/views/admin/__tests__` 57 文件 543 用例通过；ui-lint 0；anchor-diff 两文件七类锚点 `lost 0`。弹层需点击打开，`shot.cjs` 不支持，像素核验沿用 16 已记录的替代方法（门禁 + 逐块源码核对）。
+
+## 16E AccountsView 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.4）
+
+纯重构。`views/admin/AccountsView.vue` 3289 → 1340 行，新增 `views/admin/accounts/`：`AccountsFilterBar.vue` 278、`AccountsHeaderMenus.vue` 188、`useAccountRowActions.ts` 523、`useAccountListState.ts` 458、`useAccountBulkActions.ts` 331、`useAccountAutoRefresh.ts` 290、`useUpstreamBillingRates.ts` 283、`useAccountUsageBatch.ts` 220、`useAccountSelection.ts` 155、`useAccountRowState.ts` 148、`useAccountToolbarMenus.ts` 106。组合式函数返回值在 `<script setup>` 顶层解构回原变量名，模板文本逐字不变。
+
+lead 复核（提交 `fedfc0baf`）：vue-tsc 0；eslint 0；`vitest run src/views/admin/__tests__` 35 文件 211 用例通过；ui-lint 0；anchor-diff 七类 `lost 0`；i18n-diff 8956/8956。代理 before/after `pixel-diff --tol 0`：glass-light 0、glass-dark 0；行高探针 `tbody tr: 61x8` 前后一致。
+
+## 16F DashboardView / UsersView 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.4）
+
+纯重构。`views/admin/DashboardView.vue` 2196 → 727 行，新增 `components/admin/dashboard/` `DashHeroSection.vue` 552、`DashTrendDistRow.vue` 377、`DashHealthEventsRow.vue` 307、`DashUserTrendActionsRow.vue` 227、`DashStatGrid.vue` 172、`useDashboardStats.ts` 236、`useDashboardRange.ts` 63、`useDashboardFormat.ts` 71。`views/admin/UsersView.vue` 1938 → 1398 行，仅抽取 `views/admin/users/` 6 个 composable（`useUserColumns` 217、`useUserFilters` 190、`useUserSecondaryData` 173、`useUserSort` 172、`useUserGroupsData` 64、`useUserAttributes` 35），模板未拆；`applyFilter` 不重置分页 / `toggle*Filter` 重置分页的不对称行为与 50ms 次要数据补拉时序原样保留。
+
+lead 复核（提交 `091d715d1`）：vue-tsc 0；eslint 0；两 spec 6 用例通过；ui-lint 0；anchor-diff 两文件 `lost 0`。代理 before/after `pixel-diff --tol 0`：dashboard 0.013%（172 px，定位 (916,177)-(929,190) 为服务状态 `.dash-pulse` 呼吸点相位，两张改后截图互比复现同样 172 px）；users 0.001%（17 px 渲染噪声）；`/admin/users` 行高 `58x9` 前后一致。
+
+## 16G UseKeyModal / OpsDashboardHeader / useBatchImageGuide 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.4）
+
+纯重构。`components/keys/UseKeyModal.vue` 1869 → 300 行，新增 `components/keys/use-key/` 11 文件（`useUseKeySnippets.ts` 761、`opencodeModelCatalogs.ts` 500 纯数据、`useUseKeyDescriptions.ts` 118 …）。`views/admin/ops/components/OpsDashboardHeader.vue` 1651 → 599 行，新增 `header/` 10 文件（`MetricSummaryCards.vue` 286、`useOpsSystemHealth.ts` 261、`useOpsHealthScore.ts` 237 …）。`views/user/batchImage/useBatchImageGuide.ts` 1532 → 366 行，新增 `guide/` 9 个 composable，根文件返回对象键与类型不变；两处循环依赖（keys↔models、keys↔jobsList）以前向声明闭包与 `filters` 上提解除。
+
+lead 复核（提交 `221e77f94`）：vue-tsc 0；eslint 0；`vitest run src/components/keys src/views/admin/ops src/views/user` 24 文件 118 用例通过；ui-lint 0；anchor-diff 三文件 `lost 0`。代理 before/after `pixel-diff --tol 0`：UseKeyModal 打开态（scratchpad 临时 CDP 点击脚本）0；`/batch-image` 0；`/admin/ops` 0.092%（`hot_bands_y` 119-128 倒计时秒数、454-457 健康卡呼吸点）。
+
+## 16H types/index.ts / api/admin/settings.ts 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.5）
+
+`types/index.ts` 2534 → 18 行 barrel，新增 `types/{common,settings,user,group,apiKey,account,accountUsage,usage,ops,subscription}.ts`（最大 `account.ts` 667）；导出符号 208 = 208。`api/admin/settings.ts` 1834 → 84 行 barrel，新增 `api/admin/settings/{general 743,security 654,gateway 272,email 162}.ts`，`settingsAPI` 聚合与默认导出重建不变，微信 `wechat_connect_mode` 辅助函数逐字迁移（7.1 待办）；导出符号 93 = 92 + 1。顺带修复 `types/user.ts` 缺少 `Group` 导入。
+
+lead 复核（提交 `a4080e4f2`）：vue-tsc 0；eslint 0；`vitest run src/api src/types src/components/admin/settings` 25 文件 173 用例通过；调用方 `@/types` / `@/api/admin/settings` 别名导入无需改动。
+
+## 16I AccountUsageCell 拆分（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.4）
+
+纯重构。`components/account/AccountUsageCell.vue` 1859 → 845 行，新增 `components/account/usage/`：`useGeminiUsage.ts` 259、`AntigravityUsageBlock.vue` 216、`useGrokUsage.ts` 169、`GeminiUsageBlock.vue` 145、`GrokUsageBlock.vue` 140、`useAntigravityUsage.ts` 133、`useApiKeyQuota.ts` 73、`KiroUsageBlock.vue` 60、`useUsageErrorState.ts` 54、`useTodayStatsFormat.ts` 31、`useKiroUsage.ts` 27。
+
+lead 复核（提交 `f79ff315e`）：vue-tsc 0；eslint 0；`vitest run src/components/account src/views/admin/__tests__` 57 文件 543 用例通过；ui-lint 0；anchor-diff `lost 0`；i18n-diff 8956/8956。代理 before/after `pixel-diff --tol 0`（同一 mock 进程紧凑采集）：glass-light 0.001%（17 px）、glass-dark 0.004%（56 px），`hot_bands_y` 为空，残余为"最近使用"相对时间文案跨分钟；行高 `61x8` 前后一致。代理发现并修复的两处环境问题（Vite 缺 `VITE_DEV_PROXY_TARGET`、改前/改后用了不同 mock 进程导致 0.6% 假差异）记于 deviations。
+
+## 16J i18n admin 字典目录化（sonnet 5 代理 + lead 验收；file-size 门禁）
+
+`i18n/locales/{zh,en}/admin/accounts.ts`（1812/1835）→ `admin/accounts/{index,list,platform,form,vendor,model,oauth}.ts`；`admin/settings.ts`（1497/1503）→ `admin/settings/{index,general,platform,site,email,advanced}.ts`；最大分片 585 行。以 TypeScript Compiler API 按属性节点源区间切片，值字节级不变、子对象键序不变；`admin/index.ts` 的 `import accounts from './accounts'` 自动解析到目录 index，未改动。
+
+lead 复核（提交 `54c74b793`）：vue-tsc 0；eslint 0；`vitest run src/i18n src/__tests__` 14 文件 91 用例通过；i18n-diff zh 8956 / en 8956 / 差集 0 / 重复 0。代理：原文件 vs 新 index 深比较 value diffs 0、order diffs 0（4 文件）；`keyname-leak --only admin-accounts,admin-settings` leaks 0 overflows 0。
+
+## 16 汇总：文件行数门禁
+
+`find src -name '*.vue' -o -name '*.ts'`（含 i18n，排除 `__tests__`）> 1,500 行文件数：拆分前 21 → **0**。`vite build` 40.9s、180 个 chunk；最大路由块 `AccountsView-*.js` 890 KB（静态导入，与 6.1 的 ≤ 300 KB 目标不符，16K 处理中）。

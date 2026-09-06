@@ -52,11 +52,15 @@
 
 ## 6. 超大文件拆分（与 glass-ui-redesign 组 8 / 10 / 11 同批）
 
-- [ ] 6.1 `components/account/CreateAccountModal.vue`（7,464 行）按平台面板拆为 `components/account/platform/{Anthropic,OpenAI,Gemini,Antigravity,Grok,Kiro,Ollama,Generic}Panel.vue`（`defineModel` 直通、`defineAsyncComponent` 加载）；验证 `CreateAccountModal.spec` 全绿、主文件 ≤ 1,500 行、`AccountsView` 块 ≤ 300KB
-- [ ] 6.2 `EditAccountModal.vue`（5,932 行）复用 6.1 的平台面板；验证 spec 全绿、≤ 1,500 行
+- [~] 6.1 `components/account/CreateAccountModal.vue`（7,464 行）按平台面板拆为 `components/account/platform/{Anthropic,OpenAI,Gemini,Antigravity,Grok,Kiro,Ollama,Generic}Panel.vue`（`defineModel` 直通、`defineAsyncComponent` 加载）；验证 `CreateAccountModal.spec` 全绿、主文件 ≤ 1,500 行、`AccountsView` 块 ≤ 300KB
+  - 2026-09-06：主文件 1495 行（`create/` + `platform/` + `shared/`，glass 16 / 16A）；块 890 KB 未达标 → 16K 改 `defineAsyncComponent` 处理中
+- [x] 6.2 `EditAccountModal.vue`（5,932 行）复用 6.1 的平台面板；验证 spec 全绿、≤ 1,500 行
+  - 2026-09-06：1401 行（`edit/`，glass 16A，提交 `42c56bb44`）
 - [x] 6.3 `views/admin/SettingsView.vue`（14,077 行）按 tab 拆为 `components/admin/settings/tabs/{General,Agreement,Features,Security,UserDefaults,Gateway,Payment,Email,Backup}Tab.vue`（单一 `<form id="settings-form">` 与 `v-show` 保留，settings 对象经 `defineModel`）；验证 `SettingsView*.spec` 全绿、主文件 ≤ 1,500 行、块 ≤ 300KB
-- [~] 6.4 `views/admin/GroupsView.vue`（7,015 行）拆出弹层到 `components/admin/group/*`；`AccountsView.vue`、`BulkEditAccountModal.vue`、`KeysView.vue`、`RiskControlView.vue`、`ProxiesView.vue`、`DashboardView.vue`、`UsersView.vue`、`UseKeyModal.vue`、`AccountUsageCell.vue`、`ChannelsView.vue`、`RedeemView.vue`、`OpsDashboardHeader.vue`、`BatchImageGuideView.vue`、`SubscriptionsView.vue` 按弹层 / 面板拆分至 ≤ 1,500 行；验证各 spec 全绿、`anchor-diff` 无丢失
-- [ ] 6.5 `types/index.ts`（2,534 行）按域拆为 `types/{account,user,group,payment,settings,ops,...}.ts` 并由 `index.ts` re-export；`api/admin/settings.ts`（1,834 行）按 tab 域拆分；验证 `vue-tsc` 0 错误
+- [x] 6.4 `views/admin/GroupsView.vue`（7,015 行）拆出弹层到 `components/admin/group/*`；`AccountsView.vue`、`BulkEditAccountModal.vue`、`KeysView.vue`、`RiskControlView.vue`、`ProxiesView.vue`、`DashboardView.vue`、`UsersView.vue`、`UseKeyModal.vue`、`AccountUsageCell.vue`、`ChannelsView.vue`、`RedeemView.vue`、`OpsDashboardHeader.vue`、`BatchImageGuideView.vue`、`SubscriptionsView.vue` 按弹层 / 面板拆分至 ≤ 1,500 行；验证各 spec 全绿、`anchor-diff` 无丢失
+  - 2026-09-06：全部 ≤ 1,500（含 `AccountUsageCell` 845、i18n admin 字典目录化）；证据见 glass-ui-redesign/verification.md 16B–16J；`src` 下 > 1,500 行文件 21 → 0
+- [x] 6.5 `types/index.ts`（2,534 行）按域拆为 `types/{account,user,group,payment,settings,ops,...}.ts` 并由 `index.ts` re-export；`api/admin/settings.ts`（1,834 行）按 tab 域拆分；验证 `vue-tsc` 0 错误
+  - 2026-09-06：提交 `a4080e4f2`，导出符号 208/93 一致
 - [ ] 6.6 `health-allowlist.json` 清空；提交 `refactor(frontend): split oversized views and modals into lazy sub-components (tasks 6.1–6.5)`
 
 ## 7. 遗留分支、类型债与门禁接入
