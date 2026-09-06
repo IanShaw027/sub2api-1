@@ -10,13 +10,7 @@ vi.mock('vue-i18n', () => ({
 }))
 
 describe('AccountBulkActionsBar', () => {
-  // Glass redesign (Issue 1): the bar used to render unconditionally whenever
-  // `totalResults > 0` — i.e. almost always — which is exactly why it consumed a
-  // permanent 58px slot above the filter row. It now overlays the filter row and only
-  // mounts once there is an active selection, so the pre-selection "select all results"
-  // shortcut this test used to cover no longer exists; the escalation button is instead
-  // reachable once the user has selected at least one row (e.g. via "select current page").
-  it('does not render before any row is selected, even with results available', () => {
+  it('preserves filtered editing and select-all before selection without exposing selected-only operations', async () => {
     const wrapper = mount(AccountBulkActionsBar, {
       props: {
         selectedIds: [],
@@ -26,7 +20,23 @@ describe('AccountBulkActionsBar', () => {
       }
     })
 
-    expect(wrapper.find('.acct-bulk-overlay').exists()).toBe(false)
+    expect(wrapper.find('.acct-bulk-overlay').exists()).toBe(true)
+    const buttons = wrapper.findAll('button')
+    await buttons.find(button => button.text() === 'admin.accounts.bulkEdit.submit')!.trigger('click')
+    expect(wrapper.emitted('edit-filtered')).toHaveLength(1)
+    await buttons.find(button => button.text() === 'admin.accounts.bulkActions.selectAllResults')!.trigger('click')
+    expect(wrapper.emitted('select-all-results')).toHaveLength(1)
+    expect(buttons.some(button => button.text() === 'admin.accounts.bulkActions.delete')).toBe(false)
+    expect(buttons.some(button => button.text() === 'admin.accounts.bulkActions.edit')).toBe(false)
+  })
+
+  it('keeps selected editing and filtered editing as independent visible actions', async () => {
+    const wrapper = mount(AccountBulkActionsBar, { props: { selectedIds: [1], totalResults: 45, selectingAll: false, allResultsSelected: false } })
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.bulkEdit.submit')!.trigger('click')
+    expect(wrapper.emitted('edit-filtered')).toHaveLength(1)
+    expect(wrapper.emitted('edit-selected')).toBeUndefined()
+    await wrapper.findAll('button').find(button => button.text() === 'admin.accounts.bulkActions.edit')!.trigger('click')
+    expect(wrapper.emitted('edit-selected')).toHaveLength(1)
   })
 
   it('allows escalating to select all results once the current page is selected', async () => {

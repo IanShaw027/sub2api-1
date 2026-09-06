@@ -50,6 +50,8 @@ describe('dashboard hero metric migration', () => {
   it('retains live RPM, concurrency and the balance history action in the hero', async () => {
     const wrapper = await mountDashboard()
     const metrics = wrapper.findAll('.dash-hero-mini')
+    expect(metrics[0].element.tagName).toBe('BUTTON')
+    expect(metrics[0].attributes('type')).toBe('button')
     expect(metrics[0].text()).toContain('$10.00')
     expect(metrics[1].get('.dash-mini-value').text()).toBe('7')
     expect(metrics[1].text()).toContain('RPM 7/20')
@@ -69,6 +71,7 @@ describe('dashboard hero metric migration', () => {
     rpmStatus.mockResolvedValue({})
     const wrapper = await mountDashboard()
     const metrics = wrapper.findAll('.dash-hero-mini')
+    expect(metrics[0].element.tagName).toBe('DIV')
     expect(metrics[0].text()).toContain('dashboard.apiKeys')
     expect(metrics[0].text()).not.toContain('dashboard.balance')
     expect(metrics[1].get('.dash-mini-value').text()).toBe('0')

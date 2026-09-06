@@ -1,8 +1,44 @@
 <template>
  <SettingsSection
+ data-testid="profile-basics-panel"
  :title="t('profile.basicsTitle')"
  :description="t('profile.basicsDescription')"
  >
+ <div data-testid="profile-overview-hero" class="border-b border-line">
+ <SettingRow :label="t('profile.role')" data-testid="profile-overview-role">
+ <StatusBadge :tone="user?.role === 'admin' ? 'accent' : 'muted'">
+ {{ user?.role === 'admin' ? t('profile.administrator') : t('profile.user') }}
+ </StatusBadge>
+ </SettingRow>
+
+ <SettingRow :label="t('profile.status')" data-testid="profile-overview-status">
+ <StatusBadge :tone="user?.status === 'active' ? 'success' : 'danger'">
+ {{ user?.status === 'active' ? t('common.active') : t('common.disabled') }}
+ </StatusBadge>
+ </SettingRow>
+
+ <SettingRow
+ :label="t('profile.accountBalance')"
+ data-testid="profile-overview-metric-balance"
+ >
+ <span class="text-sm font-medium tabular-nums text-foreground">{{ balanceLabel }}</span>
+ </SettingRow>
+
+ <SettingRow
+ :label="t('profile.concurrencyLimit')"
+ data-testid="profile-overview-metric-concurrency"
+ >
+ <span class="text-sm font-medium tabular-nums text-foreground">{{ user?.concurrency || 0 }}</span>
+ </SettingRow>
+
+ <SettingRow
+ :label="t('profile.memberSince')"
+ data-testid="profile-overview-metric-member-since"
+ >
+ <span class="text-sm text-foreground">{{ memberSinceLabel }}</span>
+ </SettingRow>
+ </div>
+
  <SettingRow
  :label="t('profile.avatar.title')"
  :description="t('profile.avatar.uploadHint')"
@@ -49,6 +85,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import SettingsSection from '@/components/ui/SettingsSection.vue'
 import SettingRow from '@/components/ui/SettingRow.vue'
+import StatusBadge from '@/components/ui/StatusBadge.vue'
 import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
@@ -61,6 +98,18 @@ const props = withDefaults(defineProps<{
 })
 
 const { t } = useI18n()
+
+const balanceLabel = computed(() => `$${(props.user?.balance || 0).toFixed(2)}`)
+const memberSinceLabel = computed(() => {
+ const raw = props.user?.created_at?.trim()
+ if (!raw) return '-'
+ const date = new Date(raw)
+ if (Number.isNaN(date.getTime())) return '-'
+ return new Intl.DateTimeFormat(undefined, {
+ year: 'numeric',
+ month: 'short',
+ }).format(date)
+})
 
 function normalizeBindingStatus(binding: boolean | UserAuthBindingStatus | undefined): boolean | null {
  if (typeof binding === 'boolean') {

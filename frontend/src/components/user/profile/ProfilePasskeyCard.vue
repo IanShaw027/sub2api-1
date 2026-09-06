@@ -147,6 +147,7 @@
  :message="deleteTarget ? t('profile.passkey.deleteConfirm', { name: deleteTarget.name }) : ''"
  tone="danger"
  :confirming="busy"
+ :confirm-disabled="deletePassword.length === 0"
  :confirm-text="busy ? t('common.processing') : t('common.delete')"
  @confirm="confirmDelete"
  @cancel="closeDeleteDialog"
@@ -163,6 +164,8 @@
  class="input"
  :placeholder="t('profile.passkey.passwordPlaceholder')"
  autofocus
+ :disabled="busy"
+ @keydown.enter.prevent="confirmDelete"
  />
  </div>
  </ConfirmDialog>
@@ -270,7 +273,7 @@ function closeDeleteDialog(): void {
 
 async function confirmDelete(): Promise<void> {
  const credential = deleteTarget.value
- if (!credential || deletePassword.value.length === 0) return
+ if (busy.value || !credential || deletePassword.value.length === 0) return
  busy.value = true
  try {
  await passkeyAPI.remove(credential.id, deletePassword.value)

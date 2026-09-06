@@ -316,16 +316,9 @@ export function canUnbanRow(row: ContentModerationLog): boolean {
   return Boolean(row.auto_banned && row.user_id && row.user_status === 'disabled')
 }
 
-export function normalizeFromDate(value: string): string | undefined {
+export function normalizeDateTimeLocal(value: string): string | undefined {
   if (!value) return undefined
-  const date = new Date(`${value}T00:00:00`)
-  if (Number.isNaN(date.getTime())) return undefined
-  return date.toISOString()
-}
-
-export function normalizeToDate(value: string): string | undefined {
-  if (!value) return undefined
-  const date = new Date(`${value}T23:59:59.999`)
+  const date = new Date(value)
   if (Number.isNaN(date.getTime())) return undefined
   return date.toISOString()
 }

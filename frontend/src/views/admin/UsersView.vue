@@ -8,6 +8,7 @@
 
         <!-- 更多：筛选设置 + 属性配置 -->
         <div class="usr-menu" ref="moreDropdownRef">
+          <Button variant="secondary" :title="t('admin.users.filterSettings')" :aria-label="t('admin.users.filterSettings')" :aria-expanded="showMoreDropdown" @click="showMoreDropdown = !showMoreDropdown"><Icon name="filter" size="sm" /></Button>
           <Button variant="secondary" :aria-expanded="showMoreDropdown" @click="showMoreDropdown = !showMoreDropdown">
             <span>{{ t('common.more') }}</span>
             <Icon name="chevronDown" size="xs" />
@@ -46,6 +47,8 @@
             </button>
           </div>
         </div>
+
+        <Button variant="secondary" :title="t('admin.users.attributes.configButton')" :aria-label="t('admin.users.attributes.configButton')" @click="showAttributesModal = true"><Icon name="cog" size="sm" /></Button>
 
         <Button
           v-if="selectedCount > 0"

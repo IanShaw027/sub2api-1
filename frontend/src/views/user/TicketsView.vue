@@ -12,7 +12,7 @@
         >
           <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
         </Button>
-        <Button class="tickets-create-desktop" to="/tickets/new">
+        <Button class="tickets-create-desktop" @click="openCreate">
           <Icon name="plus" size="md" />
           {{ t('tickets.create') }}
         </Button>
@@ -101,6 +101,16 @@
                   >
                     <Icon name="eye" size="sm" />
                   </button>
+                  <button
+                    v-if="canCloseTicket(row.status)"
+                    type="button"
+                    class="icon-btn"
+                    :title="t('tickets.actions.close')"
+                    :aria-label="t('tickets.actions.close')"
+                    @click="closeTicketItem(row.id)"
+                  >
+                    <Icon name="xCircle" size="sm" />
+                  </button>
                 </template>
               </ActionsCell>
             </template>
@@ -126,7 +136,7 @@
       </template>
     </TablePageLayout>
 
-    <Fab class="tickets-fab" :label="t('tickets.create')" @click="router.push('/tickets/new')">
+    <Fab class="tickets-fab" :label="t('tickets.create')" @click="openCreate">
       <Icon name="plus" size="md" />
     </Fab>
   </AppLayout>
@@ -134,7 +144,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -159,29 +169,55 @@ import type { SupportTicket, TicketCategory, TicketStatus } from '@/types/ticket
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
 const appStore = useAppStore()
 const loading = ref(false)
 const hasLoadedTickets = ref(false)
 const items = ref<SupportTicket[]>([])
 const pagination = reactive({
-  page: 1,
-  page_size: 20,
+  page: queryPage('page', 1),
+  page_size: queryPage('page_size', 20),
   total: 0,
 })
 const filters = reactive<{ search: string; category: TicketCategory | ''; status: TicketStatus | ''; start_date: string; end_date: string }>({
-  search: '',
-  category: '',
-  status: '',
-  start_date: '',
-  end_date: '',
+  search: queryString('keyword'),
+  category: ticketCategoryOptions.find((option) => option.value === queryString('category'))?.value || '',
+  status: ticketStatusOptions.find((option) => option.value === queryString('status'))?.value || '',
+  start_date: queryString('start_date'),
+  end_date: queryString('end_date'),
 })
+
+function queryString(key: string): string {
+  const value = route.query[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function queryPage(key: string, fallback: number): number {
+  const value = Number(queryString(key))
+  return Number.isSafeInteger(value) && value > 0 ? value : fallback
+}
+
+async function openCreate() {
+  const query = {
+    page: String(pagination.page),
+    page_size: String(pagination.page_size),
+    keyword: filters.search || undefined,
+    category: filters.category || undefined,
+    status: filters.status || undefined,
+    start_date: filters.start_date || undefined,
+    end_date: filters.end_date || undefined,
+  }
+  // Keep browser Back as well as the create page's cancel link on the same list state.
+  await router.replace({ path: '/tickets', query })
+  await router.push({ path: '/tickets/new', query })
+}
 
 const columns = computed<Column[]>(() => [
   { key: 'title', label: t('tickets.table.title'), class: 'min-w-[18rem] whitespace-normal' },
   { key: 'status', label: t('tickets.table.status'), class: 'w-32' },
   { key: 'created_at', label: t('tickets.table.createdAt'), class: 'w-28' },
   { key: 'updated_at', label: t('tickets.table.updatedAt'), class: 'w-28' },
-  { key: 'actions', label: t('tickets.table.actions'), class: 'w-24 text-right' },
+  { key: 'actions', label: t('tickets.table.actions'), class: 'w-32 text-right' },
 ])
 const categoryFilterOptions = computed(() => [
   { value: '', label: t('tickets.filters.allCategories') },

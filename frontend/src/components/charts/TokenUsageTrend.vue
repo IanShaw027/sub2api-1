@@ -3,8 +3,8 @@
  <h3 v-if="!bare" class="mb-4 text-sm font-semibold text-foreground">
  {{ t('admin.dashboard.tokenUsageTrend') }}
  </h3>
- <div v-if="loading" class="flex h-48 items-center justify-center">
- <LoadingSpinner />
+ <div v-if="loading" class="h-48" role="status" :aria-label="t('common.loading')" aria-busy="true">
+ <Skeleton height="100%" />
  </div>
  <div v-else-if="trendData.length > 0 && chartData" class="h-48">
  <Line :data="chartData" :options="lineOptions" />
@@ -33,7 +33,7 @@ import {
  Filler
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
 import type { TrendDataPoint } from '@/types'
 import { alpha, baseChartOptions, useChartTheme } from '@/utils/chartTheme'
 

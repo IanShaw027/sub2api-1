@@ -252,6 +252,34 @@ describe('admin RiskControlView', () => {
     }))
   })
 
+  it('preserves local start/end time precision when filtering records and clearing the range', async () => {
+    const { wrapper } = await mountKeySettings()
+    try {
+      const inputs = wrapper.findAll('input[type="datetime-local"]')
+      expect(inputs).toHaveLength(2)
+      const from = '2026-09-07T10:23'
+      const to = '2026-09-07T11:47'
+      await inputs[0].setValue(from)
+      await inputs[1].setValue(to)
+      await flushPromises()
+      expect(listLogs).toHaveBeenLastCalledWith(expect.objectContaining({
+        from: new Date(from).toISOString(),
+        to: new Date(to).toISOString(),
+        page: 1,
+      }))
+      const query = listLogs.mock.lastCall![0]
+      expect(new Date(query.from).getMinutes()).toBe(23)
+      expect(new Date(query.to).getMinutes()).toBe(47)
+
+      await inputs[0].setValue('')
+      await inputs[1].setValue('')
+      await flushPromises()
+      expect(listLogs).toHaveBeenLastCalledWith(expect.objectContaining({ from: undefined, to: undefined }))
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('saves the selected model filter mode and models', async () => {
     const wrapper = mount(RiskControlView, {
       global: {

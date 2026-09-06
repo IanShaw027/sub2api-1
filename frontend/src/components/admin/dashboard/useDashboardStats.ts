@@ -54,6 +54,7 @@ export function useDashboardStats(range: {
   const userTrendLoading = ref(false)
   const rankingLoading = ref(false)
   const rankingError = ref(false)
+  const snapshotError = ref(false)
 
   // Chart data
   const trendData = ref<TrendDataPoint[]>([])
@@ -78,6 +79,7 @@ export function useDashboardStats(range: {
       loading.value = true
     }
     chartsLoading.value = true
+    if (includeStats) snapshotError.value = false
     try {
       const response = await adminAPI.dashboard.getSnapshotV2({
         start_date: range.startDate.value,
@@ -98,6 +100,7 @@ export function useDashboardStats(range: {
     } catch (error) {
       if (currentSeq !== chartLoadSeq) return
       appStore.showError(t('admin.dashboard.failedToLoad'))
+      if (includeStats) snapshotError.value = true
       console.error('Error loading dashboard snapshot:', error)
     } finally {
       if (currentSeq === chartLoadSeq) {
@@ -219,6 +222,7 @@ export function useDashboardStats(range: {
     userTrendLoading,
     rankingLoading,
     rankingError,
+    snapshotError,
     trendData,
     modelStats,
     userTrend,

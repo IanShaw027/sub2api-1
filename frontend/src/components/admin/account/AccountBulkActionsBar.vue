@@ -1,17 +1,18 @@
 <template>
-  <div v-if="selectedIds.length > 0" class="notice notice-info acct-bulk-overlay">
+  <div class="notice notice-info acct-bulk-overlay">
     <div class="acct-bulk-info">
       <span v-if="allResultsSelected" class="acct-bulk-label">
         {{ t('admin.accounts.bulkActions.selectedAll', { count: selectedIds.length }) }}
       </span>
-      <span v-else class="acct-bulk-label">
+      <span v-else-if="selectedIds.length > 0" class="acct-bulk-label">
         {{ t('admin.accounts.bulkActions.selected', { count: selectedIds.length }) }}
       </span>
-      <button type="button" class="acct-bulk-link" @click="$emit('select-page')">
+      <span v-else class="acct-bulk-label">{{ t('admin.accounts.bulkEdit.title') }}</span>
+      <button v-if="selectedIds.length > 0" type="button" class="acct-bulk-link" @click="$emit('select-page')">
         {{ t('admin.accounts.bulkActions.selectCurrentPage') }}
       </button>
       <template v-if="!allResultsSelected && totalResults > selectedIds.length">
-        <span class="acct-bulk-sep">·</span>
+        <span v-if="selectedIds.length > 0" class="acct-bulk-sep">·</span>
         <button type="button" class="acct-bulk-link" :disabled="selectingAll" @click="$emit('select-all-results')">
           {{
             selectingAll
@@ -20,12 +21,13 @@
           }}
         </button>
       </template>
-      <span class="acct-bulk-sep">·</span>
-      <button type="button" class="acct-bulk-link" @click="$emit('clear')">
+      <span v-if="selectedIds.length > 0" class="acct-bulk-sep">·</span>
+      <button v-if="selectedIds.length > 0" type="button" class="acct-bulk-link" @click="$emit('clear')">
         {{ t('admin.accounts.bulkActions.clear') }}
       </button>
     </div>
     <div class="acct-bulk-actions">
+      <template v-if="selectedIds.length > 0">
       <Button variant="danger" size="sm" @click="$emit('delete')">{{ t('admin.accounts.bulkActions.delete') }}</Button>
       <Button variant="secondary" size="sm" @click="$emit('reset-status')">{{ t('admin.accounts.bulkActions.resetStatus') }}</Button>
       <Button variant="secondary" size="sm" @click="$emit('refresh-token')">{{ t('admin.accounts.bulkActions.refreshToken') }}</Button>
@@ -33,6 +35,8 @@
       <Button variant="success" size="sm" @click="$emit('toggle-schedulable', true)">{{ t('admin.accounts.bulkActions.enableScheduling') }}</Button>
       <Button variant="warning" size="sm" @click="$emit('toggle-schedulable', false)">{{ t('admin.accounts.bulkActions.disableScheduling') }}</Button>
       <Button variant="primary" size="sm" @click="$emit('edit-selected')">{{ t('admin.accounts.bulkActions.edit') }}</Button>
+      </template>
+      <Button variant="secondary" size="sm" @click="$emit('edit-filtered')">{{ t('admin.accounts.bulkEdit.submit') }}</Button>
     </div>
   </div>
 </template>
@@ -66,12 +70,6 @@ const { t } = useI18n()
 
 <style scoped>
 .acct-bulk-overlay {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  right: 0;
-  transform: translateY(-50%);
-  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;

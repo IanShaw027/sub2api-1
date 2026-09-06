@@ -2,6 +2,10 @@
   <Button variant="secondary" @click="emit('bulk-edit-header')">
     {{ t('admin.accounts.bulkEditHeader') }}
   </Button>
+  <Button variant="secondary" @click="openCapacityForecast">
+    <Icon name="chartBar" size="sm" />
+    {{ t('admin.accounts.capacityForecast.action') }}
+  </Button>
 
   <!-- Import / Export -->
   <div class="acct-menu" ref="importExportDropdownRef">
@@ -47,10 +51,6 @@
       >
         <div class="acct-tools-scroll" :style="{ maxHeight: `${accountToolsDropdownPosition.maxHeight}px` }">
           <div class="dropdown-label">{{ t('admin.accounts.toolActions') }}</div>
-          <button type="button" class="dropdown-item" @click="openCapacityForecast">
-            <Icon name="chartBar" size="sm" />
-            <span>{{ t('admin.accounts.capacityForecast.action') }}</span>
-          </button>
           <button type="button" class="dropdown-item" @click="openErrorPassthrough">
             <Icon name="shield" size="sm" />
             <span>{{ t('admin.errorPassthrough.title') }}</span>

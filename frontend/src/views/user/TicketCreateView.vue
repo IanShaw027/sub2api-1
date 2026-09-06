@@ -2,7 +2,7 @@
   <AppLayout>
     <PageHeader :title="t('tickets.create')" :description="t('tickets.createDescription')">
       <template #actions>
-        <Button variant="secondary" to="/tickets">
+        <Button variant="secondary" :to="returnToList">
           <Icon name="arrowLeft" size="sm" :stroke-width="1.8" />
           {{ t('common.back') }}
         </Button>
@@ -32,7 +32,7 @@
       </SettingsSection>
 
       <div class="form-actions">
-        <Button variant="secondary" to="/tickets">{{ t('common.cancel') }}</Button>
+        <Button variant="secondary" :to="returnToList">{{ t('common.cancel') }}</Button>
         <Button :loading="submitting" @click="submit">{{ t('tickets.submit') }}</Button>
       </div>
     </div>
@@ -41,7 +41,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -60,6 +60,8 @@ import type { TicketCategory, TicketRateGroupOption } from '@/types/ticket'
 
 const { t } = useI18n()
 const router = useRouter()
+const route = useRoute()
+const returnToList = computed(() => ({ path: '/tickets', query: route.query }))
 const appStore = useAppStore()
 const authStore = useAuthStore()
 

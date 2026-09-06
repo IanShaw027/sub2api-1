@@ -11,25 +11,33 @@
             <Icon name="arrowLeft" size="sm" />
             {{ t('notFound.goBack') }}
           </button>
-          <Button variant="primary" to="/home">
+          <Button variant="secondary" to="/home">
             <Icon name="home" size="sm" />
             {{ t('notFound.backHome') }}
           </Button>
         </div>
+        <Button class="mt-2 w-full" :to="dashboardPath">
+          <Icon name="chart" size="sm" />
+          {{ t('home.goToDashboard') }}
+        </Button>
       </div>
     </div>
   </PublicPageLayout>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import PublicPageLayout from '@/components/layout/PublicPageLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Button from '@/components/ui/Button.vue'
+import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
 const router = useRouter()
+const authStore = useAuthStore()
+const dashboardPath = computed(() => authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
 
 function goBack(): void {
   router.back()

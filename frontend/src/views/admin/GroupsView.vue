@@ -6,23 +6,14 @@
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </Button>
 
-        <!-- 更多：排序 -->
-        <div class="grp-menu" ref="moreDropdownRef">
-          <Button variant="secondary" :aria-expanded="showMoreDropdown" @click="showMoreDropdown = !showMoreDropdown">
-            <span>{{ t("common.more") }}</span>
-            <Icon name="chevronDown" size="xs" />
-          </Button>
-          <div v-if="showMoreDropdown" class="dropdown grp-dropdown">
-            <button
-              type="button"
-              class="dropdown-item"
-              @click="showSortModal = true; showMoreDropdown = false"
-            >
-              <Icon name="arrowsUpDown" size="sm" />
-              <span>{{ t("admin.groups.sortOrder") }}</span>
-            </button>
-          </div>
-        </div>
+        <Button
+          variant="secondary"
+          :title="t('admin.groups.sortOrder')"
+          :aria-label="t('admin.groups.sortOrder')"
+          @click="showSortModal = true"
+        >
+          <Icon name="arrowsUpDown" size="md" />
+        </Button>
 
         <Button class="groups-create-desktop" :data-tour="isMobile ? undefined : 'groups-create-btn'" @click="openCreateModal">
           <Icon name="plus" size="md" />
@@ -337,8 +328,6 @@
           <template #cell-actions="{ row }">
             <ActionsCell
               :edit-label="t('common.edit')"
-              :more-label="t('common.more')"
-              :items="getGroupActionItems(row)"
               @edit="handleEdit(row)"
             >
               <template #extra>
@@ -360,6 +349,19 @@
                   @click.stop="handleDuplicate(row)"
                 >
                   <Icon name="copy" size="sm" :stroke-width="1.8" />
+                </button>
+                <button
+                  v-for="item in getGroupActionItems(row)"
+                  :key="item.label"
+                  type="button"
+                  class="icon-btn"
+                  :class="{ 'text-danger-text': item.danger }"
+                  :title="item.label"
+                  :aria-label="item.label"
+                  :disabled="item.disabled"
+                  @click.stop="item.onClick?.()"
+                >
+                  <Icon :name="(item.icon as any)" size="sm" :stroke-width="1.8" />
                 </button>
               </template>
             </ActionsCell>
@@ -562,8 +564,6 @@ const showColumnDropdown = ref(false);
 const columnDropdownRef = ref<HTMLElement | null>(null);
 
 // Header "更多" dropdown（排序入口）
-const showMoreDropdown = ref(false);
-const moreDropdownRef = ref<HTMLElement | null>(null);
 
 const getValidHiddenColumnKeys = () =>
   new Set(toggleableColumns.value.map((col) => col.key));
@@ -1053,8 +1053,7 @@ const handleDelete = (group: AdminGroup) => {
   showDeleteDialog.value = true;
 };
 
-// ListPage 配方：操作列改用共享的 ActionsCell（编辑图标 + 复制图标 + `…` 溢出菜单），
-// 不再手写 flex 按钮组。菜单项与旧版一一对应，零功能损失。
+// Keep the pre-Glass row actions directly visible; the shared cell supplies edit.
 const getGroupActionItems = (group: AdminGroup): ActionsCellItem[] => {
   const items: ActionsCellItem[] = [];
   if (group.platform === "composite") {
@@ -1095,9 +1094,6 @@ const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement;
   if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
     showColumnDropdown.value = false;
-  }
-  if (moreDropdownRef.value && !moreDropdownRef.value.contains(target)) {
-    showMoreDropdown.value = false;
   }
 };
 

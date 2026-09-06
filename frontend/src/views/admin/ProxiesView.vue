@@ -1,10 +1,19 @@
 <template>
   <AppLayout>
-    <PageHeader :title="t('admin.proxies.title')" :description="t('admin.proxies.description')">
+    <PageHeader class="proxies-header" :title="t('admin.proxies.title')" :description="t('admin.proxies.description')">
       <template #actions>
         <Button variant="secondary" :disabled="loading" :title="t('common.refresh')" @click="loadProxies">
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </Button>
+        <Button variant="secondary" :disabled="batchTesting || loading" :title="t('admin.proxies.testConnection')" :aria-label="t('admin.proxies.testConnection')" @click="handleBatchTest">
+          <Icon name="play" size="sm" :class="batchTesting ? 'animate-pulse' : ''" />
+        </Button>
+        <Button variant="secondary" :disabled="batchQualityChecking || loading" :title="t('admin.proxies.batchQualityCheck')" :aria-label="t('admin.proxies.batchQualityCheck')" @click="handleBatchQualityCheck">
+          <Icon name="shield" size="sm" :class="batchQualityChecking ? 'animate-pulse' : ''" />
+        </Button>
+        <Button variant="secondary" :title="t('admin.proxies.dataImport')" :aria-label="t('admin.proxies.dataImport')" @click="showImportData = true"><Icon name="upload" size="sm" /></Button>
+        <Button variant="secondary" :title="selectedCount > 0 ? t('admin.proxies.dataExportSelected') : t('admin.proxies.dataExport')" :aria-label="selectedCount > 0 ? t('admin.proxies.dataExportSelected') : t('admin.proxies.dataExport')" @click="showExportDataDialog = true"><Icon name="download" size="sm" /></Button>
+        <Button variant="secondary" :disabled="selectedCount === 0" :title="t('admin.proxies.batchDeleteAction')" :aria-label="t('admin.proxies.batchDeleteAction')" @click="openBatchDelete"><Icon name="trash" size="sm" /></Button>
         <div class="proxies-menu">
           <Button variant="secondary" :aria-expanded="showMoreMenu" @click="showMoreMenu = !showMoreMenu">
             <span>{{ t('common.more') }}</span>
@@ -272,6 +281,12 @@
 
           <template #cell-actions="{ row }">
             <div class="flex items-center justify-end gap-1">
+              <button type="button" class="icon-btn" :disabled="testingProxyIds.has(row.id)" :title="t('admin.proxies.testConnection')" :aria-label="t('admin.proxies.testConnection')" @click.stop="handleTestConnection(row)">
+                <Icon name="play" size="sm" :class="testingProxyIds.has(row.id) ? 'animate-pulse' : ''" />
+              </button>
+              <button type="button" class="icon-btn" :disabled="qualityCheckingProxyIds.has(row.id)" :title="t('admin.proxies.qualityCheck')" :aria-label="t('admin.proxies.qualityCheck')" @click.stop="handleQualityCheck(row)">
+                <Icon name="shield" size="sm" :class="qualityCheckingProxyIds.has(row.id) ? 'animate-pulse' : ''" />
+              </button>
               <button
                 type="button"
                 class="icon-btn"
@@ -281,6 +296,7 @@
               >
                 <Icon name="edit" size="sm" />
               </button>
+              <button type="button" class="icon-btn icon-btn-danger" :title="t('common.delete')" :aria-label="t('common.delete')" @click.stop="handleDelete(row)"><Icon name="trash" size="sm" /></button>
               <button
                 type="button"
                 class="icon-btn proxies-more-btn"
@@ -1275,6 +1291,8 @@ onUnmounted(() => {
 })
 </script>
 <style scoped>
+.proxies-header { flex-wrap: wrap; }
+.proxies-header :deep(.ui-page-header-actions) { flex-wrap: wrap; }
 .proxies-mobile-filters {
   display: flex;
   flex-direction: column;

@@ -1,7 +1,11 @@
 <template>
   <AppLayout>
     <div class="dash-page">
-      <div v-if="loading" class="dash-loading">
+      <div v-if="snapshotError && !stats" class="notice notice-warning" role="alert">
+        <span>{{ t('admin.dashboard.failedToLoad') }}</span>
+        <button type="button" class="dash-panel-link" @click="loadDashboardStats">{{ t('common.refresh') }}</button>
+      </div>
+      <div v-if="loading && !stats" class="dash-loading">
         <LoadingSpinner />
       </div>
 
@@ -138,6 +142,7 @@ const {
   userTrendLoading,
   rankingLoading,
   rankingError,
+  snapshotError,
   trendData,
   modelStats,
   userTrend,

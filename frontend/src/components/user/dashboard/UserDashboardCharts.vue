@@ -4,7 +4,7 @@
  <div class="dash-chart-header">
  <div class="dash-chart-heading">
  <span class="dash-chart-title">{{ t('dashboard.tokenUsageTrend') }}</span>
- <span class="dash-chart-sub">{{ trendRangeLabel }}</span>
+ <span class="dash-chart-sub">{{ rangeLabel }}</span>
  </div>
  <SegmentedControl
  class="segmented-sm"
@@ -14,7 +14,11 @@
  />
  </div>
  <div class="dash-chart-body">
- <TokenUsageTrend :trend-data="trend" :loading="loading" bare />
+ <div v-if="error && !loading" class="empty-state" role="alert">
+ <p>{{ t('dashboard.loadFailed') }}</p>
+ <Button variant="secondary" @click="$emit('retry')">{{ t('common.refresh') }}</Button>
+ </div>
+ <TokenUsageTrend v-else :trend-data="trend" :loading="loading" bare />
  </div>
  </GlassCard>
 
@@ -22,15 +26,19 @@
  <div class="dash-chart-header">
  <div class="dash-chart-heading">
  <span class="dash-chart-title">{{ t('dashboard.modelDistribution') }}</span>
- <span class="dash-chart-sub">{{ t('dashboard.last7Days') }}</span>
+ <span class="dash-chart-sub">{{ rangeLabel }}</span>
  </div>
  </div>
- <div v-if="loading" class="dash-dist-loading"><LoadingSpinner size="md" /></div>
+ <div v-if="loading" class="dash-dist-loading" role="status" :aria-label="t('common.loading')" aria-busy="true"><Skeleton :height="180" /></div>
+ <div v-else-if="error" class="empty-state" role="alert">
+ <p>{{ t('dashboard.loadFailed') }}</p>
+ <Button variant="secondary" @click="$emit('retry')">{{ t('common.refresh') }}</Button>
+ </div>
  <div v-else-if="modelRows.length === 0" class="dash-dist-empty">{{ t('dashboard.noDataAvailable') }}</div>
  <div v-else class="dash-dist-list">
  <div v-for="row in modelRows" :key="row.model" class="dash-dist-row">
  <div class="dash-dist-row-top">
- <span class="dash-dist-name">{{ row.model }}</span>
+ <span class="dash-dist-name" :title="row.model">{{ row.model }}</span>
  <span class="dash-dist-meta">${{ formatCost(row.actual_cost) }} · {{ row.pct.toFixed(1) }}%</span>
  </div>
  <div class="progress">
@@ -45,17 +53,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
+import Button from '@/components/ui/Button.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
 import type { TrendDataPoint, ModelStat } from '@/types'
 import { formatCostFixed as formatCost } from '@/utils/format'
 
-const props = defineProps<{ loading: boolean, granularity: string, trend: TrendDataPoint[], models: ModelStat[] }>()
+const props = defineProps<{ loading: boolean, granularity: string, trend: TrendDataPoint[], models: ModelStat[], rangeLabel?: string, error?: boolean }>()
 const emit = defineEmits<{
  'update:granularity': [value: string]
  granularityChange: []
+ retry: []
 }>()
 const { t } = useI18n()
 
@@ -69,21 +79,16 @@ function onGranularityChange(value: string) {
  emit('granularityChange')
 }
 
-const trendRangeLabel = computed(() => {
- const count = props.trend?.length || 0
- return count > 0 ? `${count} · ${t('dashboard.recentUsage')}` : t('dashboard.tokenUsageTrend')
-})
-
 const modelRows = computed(() => {
  const list = props.models ?? []
  if (!list.length) return []
- const maxCost = Math.max(...list.map((m) => m.actual_cost), 0.0001)
+ const totalCost = list.reduce((total, model) => total + model.actual_cost, 0)
  return [...list]
  .sort((a, b) => b.actual_cost - a.actual_cost)
  .map((m) => ({
  model: m.model,
  actual_cost: m.actual_cost,
- pct: maxCost > 0 ? Math.min(100, (m.actual_cost / maxCost) * 100) : 0
+ pct: totalCost > 0 ? (m.actual_cost / totalCost) * 100 : 0
  }))
 })
 </script>

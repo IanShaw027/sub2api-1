@@ -162,6 +162,8 @@ function mountView() {
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
+        GroupSortModal: true,
+        GroupCompositeRoutesModal: true,
         VueDraggable: true
       }
     }
@@ -220,6 +222,38 @@ describe('GroupsView duplicate action', () => {
     expect(duplicateGroup).toHaveBeenCalledWith(42)
     expect(showSuccess).toHaveBeenCalledWith('admin.groups.duplicateSuccess')
     expect(listGroups).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('keeps sort, rate, RPM and delete actions directly available without a more menu', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    for (const label of ['admin.groups.sortOrder', 'admin.groups.rateMultipliers', 'admin.groups.rpmOverrides', 'common.delete']) {
+      expect(wrapper.get(`button[aria-label="${label}"]`).isVisible()).toBe(true)
+    }
+    expect(wrapper.find('button[aria-label="common.more"]').exists()).toBe(false)
+
+    await wrapper.get('button[aria-label="admin.groups.sortOrder"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'GroupSortModal' }).props('show')).toBe(true)
+    await wrapper.get('button[aria-label="admin.groups.rateMultipliers"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'GroupRateMultipliersModal' }).props('show')).toBe(true)
+    await wrapper.get('button[aria-label="admin.groups.rpmOverrides"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'GroupRPMOverridesModal' }).props('show')).toBe(true)
+    await wrapper.get('button[aria-label="common.delete"]').trigger('click')
+    expect(wrapper.findComponent({ name: 'ConfirmDialog' }).props('show')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps the composite route action directly available only for composite groups', async () => {
+    listGroups.mockResolvedValueOnce({ items: [{ ...sourceGroup, platform: 'composite' }], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const action = wrapper.get('button[aria-label="admin.groups.compositeRoutes.action"]')
+    expect(action.isVisible()).toBe(true)
+    await action.trigger('click')
+    expect(wrapper.findComponent({ name: 'GroupCompositeRoutesModal' }).props('show')).toBe(true)
     wrapper.unmount()
   })
 

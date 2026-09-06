@@ -40,23 +40,6 @@ function makeMonitor(overrides: Partial<ChannelMonitor> = {}): ChannelMonitor {
   }
 }
 
-// MonitorActionsCell delegates to the shared ActionsCell primitive: an
-// edit icon-btn plus a "more" icon-btn that opens a teleported dropdown.
-// The duplicate action lives in that dropdown as a `dropdown-item` entry
-// rather than its own labeled button (see components/common/cells/ActionsCell.vue).
-async function openMenu(wrapper: ReturnType<typeof mount>) {
-  await wrapper.get('[aria-label="common.moreActions"]').trigger('click')
-}
-
-function duplicateItem() {
-  // Order matches the `items` computed in MonitorActionsCell.vue:
-  // [viewDetails, runNow, duplicate, delete].
-  const items = document.querySelectorAll('.dropdown-item')
-  const match = items[2]
-  if (!match) throw new Error('duplicate dropdown item not found')
-  return match as HTMLButtonElement
-}
-
 describe('MonitorActionsCell duplicate action', () => {
   it('emits the selected monitor when duplicate is clicked', async () => {
     const row = makeMonitor()
@@ -65,9 +48,7 @@ describe('MonitorActionsCell duplicate action', () => {
       attachTo: document.body,
     })
 
-    await openMenu(wrapper)
-    duplicateItem().click()
-    await wrapper.vm.$nextTick()
+    await wrapper.get('[data-testid="monitor-duplicate"]').trigger('click')
 
     expect(wrapper.emitted('duplicate')).toEqual([[row]])
 
@@ -80,11 +61,13 @@ describe('MonitorActionsCell duplicate action', () => {
       attachTo: document.body,
     })
 
-    await openMenu(wrapper)
-    const button = duplicateItem()
+    const button = wrapper.get<HTMLButtonElement>('[data-testid="monitor-duplicate"]')
 
-    expect(button.disabled).toBe(true)
-    expect(button.textContent).toContain('admin.channelMonitor.duplicating')
+    expect(button.element.disabled).toBe(true)
+    expect(button.attributes('title')).toBe('admin.channelMonitor.duplicating')
+    expect(button.attributes('aria-busy')).toBe('true')
+    await button.trigger('click')
+    expect(wrapper.emitted('duplicate')).toBeUndefined()
 
     wrapper.unmount()
   })
@@ -99,12 +82,49 @@ describe('MonitorActionsCell duplicate action', () => {
       attachTo: document.body,
     })
 
-    await openMenu(wrapper)
-    const button = duplicateItem()
+    const button = wrapper.get<HTMLButtonElement>('[data-testid="monitor-duplicate"]')
 
-    expect(button.disabled).toBe(true)
-    expect(button.textContent).toContain('admin.channelMonitor.duplicateKeyUnavailable')
+    expect(button.element.disabled).toBe(true)
+    expect(button.attributes('title')).toBe('admin.channelMonitor.duplicateKeyUnavailable')
+    await button.trigger('click')
+    expect(wrapper.emitted('duplicate')).toBeUndefined()
 
+    wrapper.unmount()
+  })
+
+  it('keeps original actions directly available and retains the added detail action', async () => {
+    const row = makeMonitor()
+    const wrapper = mount(MonitorActionsCell, {
+      props: { row, running: false, duplicating: false }, attachTo: document.body,
+    })
+
+    for (const [label, event] of [
+      ['admin.channelMonitor.runNow', 'run'],
+      ['common.edit', 'edit'],
+      ['common.delete', 'delete'],
+    ]) {
+      await wrapper.get(`[aria-label="${label}"]`).trigger('click')
+      expect(wrapper.emitted(event)).toEqual([[row]])
+    }
+    await wrapper.get('[aria-label="common.moreActions"]').trigger('click')
+    const items = document.querySelectorAll<HTMLButtonElement>('.dropdown-item')
+    expect(items).toHaveLength(1)
+    expect(items[0].textContent).toContain('admin.channelMonitor.viewDetails')
+    items[0].click()
+    expect(wrapper.emitted('detail')).toEqual([[row]])
+    wrapper.unmount()
+  })
+
+  it('preserves run loading feedback and prevents another run while busy', async () => {
+    const wrapper = mount(MonitorActionsCell, {
+      props: { row: makeMonitor(), running: true, duplicating: false },
+    })
+    const button = wrapper.get<HTMLButtonElement>('[aria-label="admin.channelMonitor.runNow"]')
+    expect(button.element.disabled).toBe(true)
+    expect(button.attributes('aria-busy')).toBe('true')
+    expect(button.find('.animate-spin').exists()).toBe(true)
+    await button.trigger('click')
+    expect(wrapper.emitted('run')).toBeUndefined()
     wrapper.unmount()
   })
 })

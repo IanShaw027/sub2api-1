@@ -7,7 +7,13 @@
         </div>
         <Button variant="secondary" :disabled="loading" @click="refreshAll">{{ t('common.refresh') }}</Button>
       </div>
-      <div v-if="loading && !stats" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
+      <div v-if="loading && !stats" class="dash-loading" role="status" :aria-label="t('common.loading')" aria-busy="true">
+        <Skeleton :height="219" />
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <Skeleton v-for="index in 4" :key="index" :height="140" />
+        </div>
+        <Skeleton :height="280" />
+      </div>
       <template v-else-if="stats">
         <!-- ============================= 1 · Hero ============================= -->
         <section class="glass-card dash-hero">
@@ -37,7 +43,7 @@
                 :end-date="endDate"
                 @update:startDate="startDate = $event"
                 @update:endDate="endDate = $event"
-                @change="loadCharts"
+                @change="onDateRangeChange"
               />
               <button type="button" class="dash-refresh-btn" :disabled="loadingCharts" @click="refreshAll">
                 <Icon name="refresh" size="sm" :class="{ 'animate-spin': loadingCharts }" />
@@ -46,7 +52,10 @@
             </div>
 
             <div class="dash-hero-stats">
-              <div
+              <component
+                :is="authStore.isSimpleMode ? 'div' : 'button'"
+                :type="authStore.isSimpleMode ? undefined : 'button'"
+                :aria-label="authStore.isSimpleMode ? undefined : t('dashboard.balance')"
                 class="dash-hero-mini glass-inset"
                 :class="{ 'dash-hero-mini-clickable': !authStore.isSimpleMode }"
                 @click="!authStore.isSimpleMode && (showBalanceHistory = true)"
@@ -61,7 +70,7 @@
                   <span class="dash-mini-value">{{ stats.total_api_keys }}</span>
                   <span class="dash-mini-sub">{{ stats.active_api_keys }} {{ t('common.active') }}</span>
                 </template>
-              </div>
+              </component>
               <div class="dash-hero-mini glass-inset">
                 <span class="dash-mini-label">{{ t('dashboard.liveRpm') }}</span>
                 <span class="dash-mini-value">{{ liveRpm?.user_rpm_used ?? 0 }}</span>
@@ -90,11 +99,14 @@
           :loading="loadingCharts"
           :trend="trendData"
           :models="modelStats"
+          :error="chartsLoadFailed"
+          :range-label="rangeLabel"
           @granularityChange="loadCharts"
+          @retry="loadCharts"
         />
 
         <div class="dash-row-split">
-          <UserDashboardRecentUsage :data="recentUsage" :loading="loadingUsage" />
+          <UserDashboardRecentUsage :data="recentUsage" :loading="loadingUsage" :error="usageLoadFailed" :range-label="rangeLabel" @retry="loadRecent" />
           <UserDashboardQuickActions />
         </div>
 
@@ -119,7 +131,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Button from '@/components/ui/Button.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'
 import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardRecentUsage.vue'
@@ -139,6 +151,10 @@ const statsLoadFailed = ref(false)
 let statsRequestId = 0
 const loadingUsage = ref(false)
 const loadingCharts = ref(false)
+const chartsLoadFailed = ref(false)
+const usageLoadFailed = ref(false)
+let chartRequestId = 0
+let usageRequestId = 0
 const trendData = ref<TrendDataPoint[]>([])
 const modelStats = ref<ModelStat[]>([])
 const recentUsage = ref<UsageLog[]>([])
@@ -149,6 +165,7 @@ const showBalanceHistory = ref(false)
 const startDate = ref(formatDateLocalInput(new Date(Date.now() - 6 * 86400000)))
 const endDate = ref(formatDateLocalInput(new Date()))
 const granularity = ref('day')
+const rangeLabel = computed(() => `${startDate.value} - ${endDate.value}`)
 
 const loadStats = async () => {
   const requestId = ++statsRequestId
@@ -170,7 +187,11 @@ const loadStats = async () => {
 }
 
 const loadCharts = async () => {
+  const requestId = ++chartRequestId
   loadingCharts.value = true
+  chartsLoadFailed.value = false
+  trendData.value = []
+  modelStats.value = []
   try {
     const res = await Promise.all([
       usageAPI.getDashboardTrend({
@@ -183,24 +204,33 @@ const loadCharts = async () => {
         end_date: endDate.value,
       }),
     ])
+    if (requestId !== chartRequestId) return
     trendData.value = res[0].trend || []
     modelStats.value = res[1].models || []
   } catch (error) {
+    if (requestId !== chartRequestId) return
+    chartsLoadFailed.value = true
     console.error('Failed to load charts:', error)
   } finally {
-    loadingCharts.value = false
+    if (requestId === chartRequestId) loadingCharts.value = false
   }
 }
 
 const loadRecent = async () => {
+  const requestId = ++usageRequestId
   loadingUsage.value = true
+  usageLoadFailed.value = false
+  recentUsage.value = []
   try {
     const res = await usageAPI.getByDateRange(startDate.value, endDate.value)
+    if (requestId !== usageRequestId) return
     recentUsage.value = res.items.slice(0, 5)
   } catch (error) {
+    if (requestId !== usageRequestId) return
+    usageLoadFailed.value = true
     console.error('Failed to load recent usage:', error)
   } finally {
-    loadingUsage.value = false
+    if (requestId === usageRequestId) loadingUsage.value = false
   }
 }
 
@@ -230,11 +260,20 @@ const refreshAll = () => {
   loadLiveRpm()
 }
 
+const onDateRangeChange = () => {
+  void loadCharts()
+  void loadRecent()
+}
+
 onMounted(() => {
   refreshAll()
 })
 
-onBeforeUnmount(() => { statsRequestId++ })
+onBeforeUnmount(() => {
+  statsRequestId++
+  chartRequestId++
+  usageRequestId++
+})
 
 // ---------------------------------------------------------------- formatters
 const toFiniteNumber = (value: unknown): number => {
@@ -298,6 +337,11 @@ const heroDescription = computed(() => {
 .dash-page {
   display: flex;
   flex-direction: column;
+  gap: 16px;
+}
+
+.dash-loading {
+  display: grid;
   gap: 16px;
 }
 

@@ -2,10 +2,14 @@
  <GlassCard padding="md" class="dash-list-card">
  <div class="card-header dash-list-header">
  <span class="card-title">{{ t('dashboard.recentUsage') }}</span>
- <span class="card-subtitle">{{ t('dashboard.last7Days') }}</span>
+ <span class="card-subtitle">{{ rangeLabel }}</span>
  </div>
- <div v-if="loading" class="dash-list-loading">
- <LoadingSpinner size="lg" />
+ <div v-if="loading" class="dash-list-loading" role="status" :aria-label="t('common.loading')" aria-busy="true">
+ <Skeleton v-for="index in 5" :key="index" :height="48" />
+ </div>
+ <div v-else-if="error" class="empty-state" role="alert">
+ <p>{{ t('dashboard.loadFailed') }}</p>
+ <Button variant="secondary" @click="$emit('retry')">{{ t('common.refresh') }}</Button>
  </div>
  <div v-else-if="data.length === 0" class="dash-list-empty">
  <EmptyState :title="t('dashboard.noUsageRecords')" :description="t('dashboard.startUsingApi')" />
@@ -30,17 +34,18 @@
  </div>
  </div>
 
+ </div>
  <router-link to="/usage" class="dash-usage-viewall">
  {{ t('dashboard.viewAllUsage') }}
  <Icon name="arrowRight" size="sm" />
  </router-link>
- </div>
  </GlassCard>
 </template>
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import Skeleton from '@/components/common/Skeleton.vue'
+import Button from '@/components/ui/Button.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import GlassCard from '@/components/ui/GlassCard.vue'
@@ -51,7 +56,10 @@ import type { UsageLog } from '@/types'
 defineProps<{
  data: UsageLog[]
  loading: boolean
+ error?: boolean
+ rangeLabel?: string
 }>()
+defineEmits<{ retry: [] }>()
 const { t } = useI18n()
 const formatCost = (c: number) => c.toFixed(4)
 </script>
@@ -67,6 +75,10 @@ const formatCost = (c: number) => c.toFixed(4)
 .dash-list-loading,
 .dash-list-empty {
  padding: 24px 20px;
+}
+.dash-list-loading {
+ display: grid;
+ gap: 8px;
 }
 .dash-usage-rows {
  display: flex;

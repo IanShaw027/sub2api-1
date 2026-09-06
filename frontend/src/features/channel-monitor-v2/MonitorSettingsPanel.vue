@@ -61,6 +61,7 @@
  <SegmentedControl
  v-model="refreshIntervalOption"
  :options="refreshIntervalOptions"
+ :aria-label="t('channelMonitorV2.settings.refreshAria')"
  size="sm"
  />
  </SettingRow>

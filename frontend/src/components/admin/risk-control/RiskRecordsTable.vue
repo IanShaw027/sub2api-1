@@ -26,7 +26,8 @@
         <Select v-model="filters.group_id" class="w-[160px]" :options="groupFilterOptions" @change="emit('reload-first-page')" />
         <Select v-model="filters.endpoint" class="w-[180px]" :options="endpointOptions" @change="emit('reload-first-page')" />
         <input v-model.trim="filters.search" type="search" class="input w-[200px]" :placeholder="t('admin.riskControl.filters.search')" @keyup.enter="emit('reload-first-page')" />
-        <DateRangePicker v-model:start-date="filters.from" v-model:end-date="filters.to" @change="emit('reload-first-page')" />
+        <input v-model="filters.from" type="datetime-local" class="input w-[200px]" :title="t('admin.riskControl.filters.from')" :aria-label="t('admin.riskControl.filters.from')" @change="emit('reload-first-page')" />
+        <input v-model="filters.to" type="datetime-local" class="input w-[200px]" :title="t('admin.riskControl.filters.to')" :aria-label="t('admin.riskControl.filters.to')" @change="emit('reload-first-page')" />
       </div>
     </div>
 
@@ -162,7 +163,6 @@ import GlassCard from '@/components/ui/GlassCard.vue'
 import Icon from '@/components/icons/Icon.vue'
 import Select from '@/components/common/Select.vue'
 import Pagination from '@/components/common/Pagination.vue'
-import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import type { ContentModerationLog } from '@/api/admin/riskControl'
 import type { SelectOption } from '@/types'
 import { formatRelativeTime } from '@/utils/format'

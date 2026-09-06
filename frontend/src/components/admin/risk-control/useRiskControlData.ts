@@ -16,10 +16,9 @@ import {
   computeApiKeyHealthSummary,
   computeModelFilterSummary,
   computeModelFilterTooltip,
-  normalizeFromDate,
+  normalizeDateTimeLocal,
   normalizeKeywordBlockingMode,
   normalizeModelFilter,
-  normalizeToDate,
   riskThresholdDefaults,
   riskThresholdsFromConfig,
 } from './riskControlUtils'
@@ -203,8 +202,8 @@ export function useRiskControlData() {
         group_id: filters.group_id || undefined,
         endpoint: filters.endpoint || undefined,
         search: filters.search || undefined,
-        from: normalizeFromDate(filters.from),
-        to: normalizeToDate(filters.to),
+        from: normalizeDateTimeLocal(filters.from),
+        to: normalizeDateTimeLocal(filters.to),
       }
       const result = await adminAPI.riskControl.listLogs(params)
       logs.value = result.items

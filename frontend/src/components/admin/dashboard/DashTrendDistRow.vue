@@ -21,10 +21,10 @@
           </button>
         </div>
       </header>
-      <div v-if="trendBars.length" class="dash-bars">
-        <div v-for="bar in trendBars" :key="bar.key" class="dash-bar-col">
+      <div v-if="trendBars.length" ref="barsRef" class="dash-bars">
+        <div v-for="(bar, index) in trendBars" :key="bar.key" class="dash-bar-col">
           <div class="dash-bar" :title="bar.title" :style="{ height: bar.height, background: bar.fill }"></div>
-          <span class="dash-bar-label">{{ bar.label }}</span>
+          <span class="dash-bar-label" :class="{ 'is-skipped': !visibleTicks.has(index) }">{{ bar.label }}</span>
         </div>
       </div>
       <div v-else class="empty-state dash-empty">
@@ -103,6 +103,8 @@
  * bars are computed by the view; this component only renders them.
  */
 import { useI18n } from 'vue-i18n'
+import { computed, ref } from 'vue'
+import { useElementSize } from '@vueuse/core'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { GroupPlatform } from '@/types'
@@ -125,13 +127,27 @@ interface DistRow {
   userId?: number
 }
 
-defineProps<{
+const props = defineProps<{
   trendBars: TrendBar[]
   trendSubtitle: string
   trendMetricOptions: { value: 'requests' | 'tokens' | 'cost'; label: string }[]
   distRowsLoading: boolean
   distRows: DistRow[]
 }>()
+
+const barsRef = ref<HTMLElement | null>(null)
+const { width: barsWidth } = useElementSize(barsRef)
+const visibleTicks = computed(() => {
+  const count = props.trendBars.length
+  const maxTicks = Math.max(2, Math.floor(barsWidth.value / 48))
+  const step = Math.max(1, Math.ceil((count - 1) / (maxTicks - 1)))
+  const visible = new Set([0, count - 1])
+  for (let index = step; index < count - 1; index += step) {
+    // Keep room for the final timestamp instead of placing two adjacent labels.
+    if (count - 1 - index >= step) visible.add(index)
+  }
+  return visible
+})
 
 defineEmits<{
   userRowClick: [userId: number]
@@ -237,6 +253,18 @@ const { t } = useI18n()
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.dash-bar-label.is-skipped {
+  visibility: hidden;
+}
+
+.dash-bar-col:first-child .dash-bar-label {
+  align-self: flex-start;
+}
+
+.dash-bar-col:last-child .dash-bar-label {
+  align-self: flex-end;
 }
 
 /* ---------------------------- model distribution ---------------------------- */

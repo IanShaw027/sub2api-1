@@ -16,7 +16,6 @@
       <span class="summary-chip-value num">{{ chip.count }}</span>
     </button>
   </div>
-  <div class="acct-filter-row">
     <AccountBulkActionsBar
       :selected-ids="selIds"
       :total-results="pagination.total"
@@ -33,6 +32,7 @@
       @select-all-results="handleSelectAllResults"
       @toggle-schedulable="handleBulkToggleSchedulable"
     />
+  <div class="acct-filter-row">
     <!-- eslint-disable vue/no-mutating-props -- `params` is a composable ref shared with the
          parent by design; the bindings below set the ref's own fields, not the prop binding
          itself (mirrors the pre-split direct `params.search = ...` mutation). -->

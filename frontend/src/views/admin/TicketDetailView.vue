@@ -42,16 +42,16 @@
               <button
                 v-for="template in replyTemplates"
                 :key="template.id"
-                ref="templateTriggerRef"
                 type="button"
-                class="filter-pill template-pill"
+                class="template-option"
                 :title="template.content"
-                @click="applyTemplate(template.content)"
+                @click="applyTemplate(template.content, $event)"
               >
-                <span class="filter-pill-value">{{ template.title }}</span>
+                <span class="template-option-title text-[13px] font-semibold">{{ template.title }}</span>
+                <span class="template-option-preview text-xs">{{ template.content }}</span>
               </button>
               <span v-if="replyTemplates.length === 0" class="template-empty text-xs">{{ t('tickets.templates.empty') }}</span>
-              <button type="button" class="filter-pill template-pill" @click="openTemplateDialog">
+              <button ref="templateTriggerRef" type="button" class="filter-pill template-pill" @click="openTemplateDialog">
                 <span class="filter-pill-label">{{ t('tickets.templates.manage') }}</span>
               </button>
             </div>
@@ -253,10 +253,11 @@ function handleUploadError() {
   appStore.showError(t('tickets.uploadFailed'))
 }
 
-function applyTemplate(content: string) {
+function applyTemplate(content: string, event: MouseEvent) {
+  const trigger = event.currentTarget
   replyDraft.value = content
   nextTick(() => {
-    templateTriggerRef.value?.focus()
+    if (trigger instanceof HTMLButtonElement && trigger.isConnected) trigger.focus()
   })
 }
 
@@ -412,7 +413,7 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
 .template-rail {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -421,9 +422,40 @@ watch(ticketID, (nextTicketID, previousTicketID) => {
   overflow: hidden;
 }
 
-.template-pill .filter-pill-value {
+.template-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 220px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-field);
+  background: var(--surface);
+  text-align: left;
+}
+
+.template-option:hover {
+  background: var(--surface-2);
+}
+
+.template-option-title {
+  max-width: 100%;
+  color: var(--foreground);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.template-option-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  line-height: 1.5;
+  min-height: 3em;
 }
 
 .template-empty {

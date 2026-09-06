@@ -340,6 +340,8 @@
 
           <template #cell-actions="{ row }">
             <div class="flex items-center justify-end gap-1">
+              <button v-if="row.status === 'active'" type="button" class="icon-btn" :disabled="resettingQuota && resettingSubscription?.id === row.id" :title="t('admin.subscriptions.resetQuota')" :aria-label="t('admin.subscriptions.resetQuota')" @click.stop="handleResetQuota(row)"><Icon name="refresh" size="sm" /></button>
+              <button v-if="row.status === 'active'" type="button" class="icon-btn icon-btn-danger" :title="t('admin.subscriptions.revoke')" :aria-label="t('admin.subscriptions.revoke')" @click.stop="handleRevoke(row)"><Icon name="ban" size="sm" /></button>
               <button
                 v-if="row.status === 'active' || row.status === 'expired'"
                 type="button"
