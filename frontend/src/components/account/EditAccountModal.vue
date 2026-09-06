@@ -26,327 +26,61 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
-      <!-- Kiro API Key fields -->
-      <div
-        v-if="account.platform === 'kiro' && account.type === 'apikey'"
-        class="space-y-4 rounded-lg border border-accent-200 bg-accent-50/60 p-4"
-      >
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div class="md:col-span-2">
-            <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
-            <input
-              v-model="editApiKey"
-              type="password"
-              class="input font-mono"
-              autocomplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              data-bwignore="true"
-              :placeholder="t('admin.accounts.kiro.apiKeyPlaceholder')"
-            />
-            <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-if="account.platform === 'kiro' && account.type === 'oauth'"
-        class="space-y-4 rounded-lg border border-accent-200 bg-accent-50/60 p-4"
-      >
-        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.kiro.profileArnLabel') }}</label>
-            <p class="input-hint">{{ t('admin.accounts.kiro.runtimeManagedHint') }}</p>
-          </div>
-          <button
-            type="button"
-            class="btn btn-secondary"
-            :disabled="discoveringKiroProfiles"
-            @click="discoverKiroProfilesForEdit"
-          >
-            {{ discoveringKiroProfiles ? t('admin.accounts.oauth.generating') : t('admin.accounts.kiro.discoverProfiles') }}
-          </button>
-        </div>
-        <select
-          v-if="kiroProfileSelectOptions.length > 0"
-          v-model="selectedKiroProfileArnChoice"
-          class="input"
-        >
-          <option :value="KIRO_PROFILE_CHOICE_KEEP">{{ t('admin.accounts.leaveEmptyToKeep') }}</option>
-          <option :value="KIRO_PROFILE_CHOICE_AUTO">{{ t('admin.accounts.kiro.profileStateAuto') }}</option>
-          <option
-            v-for="profile in kiroProfileSelectOptions"
-            :key="profile.arn"
-            :value="profile.arn"
-          >
-            {{ profile.name }}
-          </option>
-        </select>
-        <div class="flex flex-wrap items-center gap-2 text-xs">
-          <span
-            class="inline-flex rounded px-1.5 py-0.5 font-medium"
-            :class="kiroProfileStatusBadgeClass"
-          >
-            {{ kiroProfileStatusLabel }}
-          </span>
-          <span
-            v-if="kiroProfilePendingHint"
-            class="text-accent-700"
-          >
-            {{ kiroProfilePendingHint }}
-          </span>
-        </div>
-        <p v-if="currentKiroProfileArn" class="text-xs text-muted">
-          {{ t('admin.accounts.kiro.profileArnLabel') }}: {{ currentKiroProfileArn }}
-        </p>
-        <KiroDiagnosticChips
-          :credentials="account.credentials || {}"
-          :extra="account.extra || {}"
-          :include-profile-mode="false"
-          chip-class="inline-flex rounded bg-surface/80 px-2 py-1 text-xs text-accent-800"
-        />
-      </div>
-
-      <div
-        v-if="account.platform === 'kiro'"
-        class="border-t border-line pt-4"
-      >
-        <ModelRestrictionEditor
-          v-model:mode="modelRestrictionMode"
-          v-model:allowed-models="allowedModels"
-          v-model:model-mappings="modelMappings"
-          platform="kiro"
-          :account-id="account?.id"
-          preset-button-class="rounded-lg px-3 py-2 text-sm font-medium transition-colors"
-          :presets="presetMappings"
-        />
-      </div>
-
-      <!-- API Key fields (only for apikey type) -->
-      <div v-if="account.type === 'apikey' && account.platform !== 'kiro'" class="space-y-4">
-        <div v-if="!isCNApiKeyAccount || editApiProtocol !== 'adaptive'">
-          <label class="input-label">{{ t('admin.accounts.baseUrl') }}</label>
-          <input
-            v-model="editBaseUrl"
-            type="text"
-            class="input"
-            :placeholder="
-              account.platform === 'openai'
-                ? 'https://api.openai.com'
-                : account.platform === 'gemini'
-                  ? 'https://generativelanguage.googleapis.com'
-                  : account.platform === 'antigravity'
-                    ? 'https://cloudcode-pa.googleapis.com'
-                    : account.platform === 'grok'
-                      ? 'https://api.x.ai/v1'
-                      : 'https://api.anthropic.com'
-            "
-          />
-          <p v-if="baseUrlHint" class="input-hint">{{ baseUrlHint }}</p>
-          <GrokBaseUrlPresets
-            v-if="account.platform === 'grok'"
-            class="mt-2"
-            @select="editBaseUrl = $event"
-          />
-          <CnBaseUrlPresets
-            v-if="isCNApiKeyAccount"
-            class="mt-2"
-            :platform="cnPresetPlatform"
-            :mode="editAccountMode"
-            :protocol="editApiProtocol"
-            :current-url="editBaseUrl"
-            @select="onCnPresetSelect"
-          />
-        </div>
-        <div v-else>
-          <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.endpoints') }}</label>
-          <div class="mt-2 space-y-3">
-            <div v-for="item in editAdaptiveProtocolOptions" :key="item.value">
-              <label class="mb-1 block text-xs font-medium text-muted">
-                {{ t(`admin.accounts.cnProviders.apiProtocol.${item.labelKey}`) }}
-              </label>
-              <input v-model="editAdaptiveBaseUrls[item.value]" type="text" class="input" />
-            </div>
-          </div>
-          <p v-if="!cnSupportsNativeResponses(account.platform)" class="input-hint">
-            {{ t('admin.accounts.cnProviders.apiProtocol.responsesFallbackDesc') }}
-          </p>
-        </div>
-        <!-- Account Mode Selection (CN providers) -->
-        <div v-if="isCNApiKeyAccount">
-          <label class="input-label">{{ t('admin.accounts.cnProviders.accountMode.title') }}</label>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <button
-              v-for="opt in cnAccountModeOptions"
-              :key="opt.value"
-              type="button"
-              :class="[
- 'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
- editAccountMode === opt.value
- ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] font-medium text-accent'
- : 'border-line text-foreground hover:border-line'
- ]"
-              @click="editAccountMode = opt.value"
-            >
-              {{ t(`admin.accounts.cnProviders.accountMode.${opt.labelKey}`) }}
-            </button>
-          </div>
-          <p class="input-hint">{{ t(`admin.accounts.cnProviders.accountMode.${editAccountMode}Desc`) }}</p>
-        </div>
-        <!-- API Protocol Selection (CN providers) -->
-        <div v-if="isCNApiKeyAccount">
-          <label class="input-label">{{ t('admin.accounts.cnProviders.apiProtocol.title') }}</label>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <button
-              v-for="opt in cnProtocolOptions"
-              :key="opt.value"
-              type="button"
-              :class="[
- 'rounded-lg border-2 px-3 py-1.5 text-xs transition-all',
- editApiProtocol === opt.value
- ? 'border-accent bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] font-medium text-accent'
- : 'border-line text-foreground hover:border-line'
- ]"
-              @click="editApiProtocol = opt.value"
-            >
-              {{ t(`admin.accounts.cnProviders.apiProtocol.${opt.labelKey}`) }}
-            </button>
-          </div>
-          <p class="input-hint">{{ t(`admin.accounts.cnProviders.apiProtocol.${cnProtocolDescKey}Desc`) }}</p>
-        </div>
-        <!-- Zhipu 团队版 Coding Plan：组织/项目 ID（可选，填写后用量查询走团队版端点） -->
-        <div v-if="account.platform === 'zhipu' && editAccountMode === 'coding'">
-          <div class="flex items-center">
-            <label class="input-label">{{ t('admin.accounts.cnProviders.zhipuTeam.title') }}</label>
-            <HelpTooltip trigger="click" width-class="w-80">
-              <p class="mb-1 font-medium">{{ t('admin.accounts.cnProviders.zhipuTeam.help.title') }}</p>
-              <ol class="list-decimal space-y-1 pl-4">
-                <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step1') }}</li>
-                <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step2') }}</li>
-                <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step3') }}</li>
-                <li>{{ t('admin.accounts.cnProviders.zhipuTeam.help.step4') }}</li>
-              </ol>
-              <p class="mt-2 break-all rounded bg-black/20 p-1.5 font-mono text-[11px] leading-relaxed">
-                {{ t('admin.accounts.cnProviders.zhipuTeam.help.example') }}
-              </p>
-            </HelpTooltip>
-          </div>
-          <div class="mt-2 grid gap-4 sm:grid-cols-2">
-            <div>
-              <label class="input-label">{{ t('admin.accounts.cnProviders.zhipuTeam.organization') }}</label>
-              <input v-model="editZhipuOrganization" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.zhipuTeam.organizationPlaceholder')" />
-            </div>
-            <div>
-              <label class="input-label">{{ t('admin.accounts.cnProviders.zhipuTeam.project') }}</label>
-              <input v-model="editZhipuProject" type="text" class="input" :placeholder="t('admin.accounts.cnProviders.zhipuTeam.projectPlaceholder')" />
-            </div>
-          </div>
-          <p class="input-hint mt-2">{{ t('admin.accounts.cnProviders.zhipuTeam.hint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.apiKey') }}</label>
-          <input
-            v-model="editApiKey"
-            type="password"
-            class="input font-mono"
-            autocomplete="new-password"
-            data-1p-ignore
-            data-lpignore="true"
-            data-bwignore="true"
-            :placeholder="
-              account.platform === 'openai'
-                ? 'sk-proj-...'
-                : account.platform === 'gemini'
-                  ? 'AIza...'
-                  : account.platform === 'antigravity'
-                    ? 'sk-...'
-                    : account.platform === 'grok'
-                      ? 'xai-...'
-                      : 'sk-ant-...'
-            "
-          />
-          <p class="input-hint">{{ t('admin.accounts.leaveEmptyToKeep') }}</p>
-        </div>
-
-        <!-- Model Restriction Section (不适用于 Antigravity) -->
-        <div v-if="account.platform !== 'antigravity'" class="border-t border-line pt-4">
-          <ModelRestrictionEditor
-            v-model:mode="modelRestrictionMode"
-            v-model:allowed-models="allowedModels"
-            v-model:model-mappings="modelMappings"
-            :platform="account?.platform || 'anthropic'"
-            :account-id="account?.id"
-            :disabled-by-passthrough="isOpenAIModelRestrictionDisabled"
-            :show-icons="true"
-            :presets="presetMappings"
-          />
-        </div>
-
-        <!-- Pool Mode Section -->
-        <PoolModeSection
-          v-model:pool-mode-enabled="poolModeEnabled"
-          v-model:pool-mode-retry-count="poolModeRetryCount"
-          v-model:pool-mode-retry-status-codes-input="poolModeRetryStatusCodesInput"
-        />
-
-        <!-- Custom Error Codes Section -->
-        <CustomErrorCodesSection
-          v-model:custom-error-codes-enabled="customErrorCodesEnabled"
-          v-model:selected-error-codes="selectedErrorCodes"
-          v-model:custom-error-code-input="customErrorCodeInput"
-        />
-
-      </div>
-
-      <!-- Grok OAuth client-tool prompt cache opt-in -->
-      <div
-        v-if="account.platform === 'grok' && account.type === 'oauth'"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.grokClientToolCache.title') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.grokClientToolCache.hint') }}
-            </p>
-          </div>
-          <Toggle
-            v-model="grokClientToolCacheEnabled"
-            data-testid="grok-client-tool-cache-toggle"
-            :aria-label="t('admin.accounts.grokClientToolCache.title')"
-          />
-        </div>
-      </div>
-
-      <!-- Grok OAuth Custom Upstream URL (仅改写转发端点，OAuth 授权/刷新不受影响) -->
-      <GrokCustomBaseUrlSection
-        v-if="account.platform === 'grok' && account.type === 'oauth'"
-        v-model:grokOAuthCustomBaseUrlEnabled="grokOAuthCustomBaseUrlEnabled"
-        v-model:grokOAuthBaseUrl="grokOAuthBaseUrl"
+      <!-- Kiro section (extracted) -->
+      <EditKiroSection
+        v-model:edit-api-key="editApiKey"
+        v-model:selected-kiro-profile-arn-choice="selectedKiroProfileArnChoice"
+        v-model:model-restriction-mode="modelRestrictionMode"
+        v-model:allowed-models="allowedModels"
+        v-model:model-mappings="modelMappings"
+        :account="account"
+        :discovering-kiro-profiles="discoveringKiroProfiles"
+        :discover-kiro-profiles-for-edit="discoverKiroProfilesForEdit"
+        :kiro-profile-select-options="kiroProfileSelectOptions"
+        :kiro-profile-choice-keep="KIRO_PROFILE_CHOICE_KEEP"
+        :kiro-profile-choice-auto="KIRO_PROFILE_CHOICE_AUTO"
+        :kiro-profile-status-badge-class="kiroProfileStatusBadgeClass"
+        :kiro-profile-status-label="kiroProfileStatusLabel"
+        :kiro-profile-pending-hint="kiroProfilePendingHint"
+        :current-kiro-profile-arn="currentKiroProfileArn"
+        :preset-mappings="presetMappings"
       />
 
-      <!-- Header Override Section (eligible API-key platforms + grok OAuth) -->
-      <HeaderOverrideSection
-        v-if="headerOverrideCapable"
-        v-model:headerOverrideEnabled="headerOverrideEnabled"
-        v-model:headerOverrideRows="headerOverrideRows"
+      <!-- API Key / OAuth fields section (extracted) -->
+      <EditApiKeyOAuthFieldsSection
+        v-model:edit-api-protocol="editApiProtocol"
+        v-model:edit-base-url="editBaseUrl"
+        v-model:edit-account-mode="editAccountMode"
+        v-model:edit-adaptive-base-urls="editAdaptiveBaseUrls"
+        v-model:edit-zhipu-organization="editZhipuOrganization"
+        v-model:edit-zhipu-project="editZhipuProject"
+        v-model:edit-api-key="editApiKey"
+        v-model:model-restriction-mode="modelRestrictionMode"
+        v-model:allowed-models="allowedModels"
+        v-model:model-mappings="modelMappings"
+        v-model:pool-mode-enabled="poolModeEnabled"
+        v-model:pool-mode-retry-count="poolModeRetryCount"
+        v-model:pool-mode-retry-status-codes-input="poolModeRetryStatusCodesInput"
+        v-model:custom-error-codes-enabled="customErrorCodesEnabled"
+        v-model:selected-error-codes="selectedErrorCodes"
+        v-model:grok-client-tool-cache-enabled="grokClientToolCacheEnabled"
+        v-model:grok-o-auth-custom-base-url-enabled="grokOAuthCustomBaseUrlEnabled"
+        v-model:grok-o-auth-base-url="grokOAuthBaseUrl"
+        v-model:header-override-enabled="headerOverrideEnabled"
+        v-model:header-override-rows="headerOverrideRows"
+        :account="account"
+        :is-c-n-api-key-account="isCNApiKeyAccount"
+        :base-url-hint="baseUrlHint"
+        :edit-adaptive-protocol-options="editAdaptiveProtocolOptions"
+        :cn-preset-platform="cnPresetPlatform"
+        :on-cn-preset-select="onCnPresetSelect"
+        :cn-supports-native-responses="cnSupportsNativeResponses"
+        :cn-account-mode-options="cnAccountModeOptions"
+        :cn-protocol-options="cnProtocolOptions"
+        :cn-protocol-desc-key="cnProtocolDescKey"
+        :is-open-a-i-model-restriction-disabled="isOpenAIModelRestrictionDisabled"
+        :preset-mappings="presetMappings"
       />
-
-      <!-- OpenAI/Grok OAuth Model Mapping (OAuth 类型没有 apikey 容器，需要独立的模型映射区域) -->
-      <div
-        v-if="(account.platform === 'openai' || account.platform === 'grok') && account.type === 'oauth'"
-        class="border-t border-line pt-4"
-      >
-        <ModelRestrictionEditor
-          v-model:mode="modelRestrictionMode"
-          v-model:allowed-models="allowedModels"
-          v-model:model-mappings="modelMappings"
-          :platform="account?.platform || 'anthropic'"
-          :account-id="account?.id"
-          :disabled-by-passthrough="isOpenAIModelRestrictionDisabled"
-          :presets="presetMappings"
-        />
-      </div>
 
       <!-- Upstream fields (only for upstream type) -->
       <div v-if="account.type === 'upstream'" class="space-y-4">
@@ -425,153 +159,24 @@
       </div>
 
       <!-- Bedrock fields (for bedrock type, both SigV4 and API Key modes) -->
-      <div v-if="account.type === 'bedrock'" class="space-y-4">
-        <!-- SigV4 fields -->
-        <template v-if="!isBedrockAPIKeyMode">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.bedrockAccessKeyId') }}</label>
-            <input
-              v-model="editBedrockAccessKeyId"
-              type="text"
-              class="input font-mono"
-              placeholder="AKIA..."
-            />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.bedrockSecretAccessKey') }}</label>
-            <input
-              v-model="editBedrockSecretAccessKey"
-              type="password"
-              class="input font-mono"
-              :placeholder="t('admin.accounts.bedrockSecretKeyLeaveEmpty')"
-            />
-            <p class="input-hint">{{ t('admin.accounts.bedrockSecretKeyLeaveEmpty') }}</p>
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.bedrockSessionToken') }}</label>
-            <input
-              v-model="editBedrockSessionToken"
-              type="password"
-              class="input font-mono"
-              :placeholder="t('admin.accounts.bedrockSecretKeyLeaveEmpty')"
-            />
-            <p class="input-hint">{{ t('admin.accounts.bedrockSessionTokenHint') }}</p>
-          </div>
-        </template>
-
-        <!-- API Key field -->
-        <div v-if="isBedrockAPIKeyMode">
-          <label class="input-label">{{ t('admin.accounts.bedrockApiKeyInput') }}</label>
-          <input
-            v-model="editBedrockApiKeyValue"
-            type="password"
-            class="input font-mono"
-            :placeholder="t('admin.accounts.bedrockApiKeyLeaveEmpty')"
-          />
-          <p class="input-hint">{{ t('admin.accounts.bedrockApiKeyLeaveEmpty') }}</p>
-        </div>
-
-        <!-- Shared: Region -->
-        <div>
-          <label class="input-label">{{ t('admin.accounts.bedrockRegion') }}</label>
-          <input
-            v-model="editBedrockRegion"
-            type="text"
-            class="input"
-            placeholder="us-east-1"
-          />
-          <p class="input-hint">{{ t('admin.accounts.bedrockRegionHint') }}</p>
-        </div>
-
-        <!-- Shared: Force Global -->
-        <div>
-          <label class="flex items-center gap-2 cursor-pointer">
-            <input
-              v-model="editBedrockForceGlobal"
-              type="checkbox"
-              class="rounded border-line text-accent focus:ring-accent"
-            />
-            <span class="text-sm text-foreground">{{ t('admin.accounts.bedrockForceGlobal') }}</span>
-          </label>
-          <p class="input-hint mt-1">{{ t('admin.accounts.bedrockForceGlobalHint') }}</p>
-        </div>
-
-        <!-- Model Restriction for Bedrock -->
-        <div class="border-t border-line pt-4">
-          <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
-
-          <!-- Mode Toggle -->
-          <div class="mb-4 flex gap-2">
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'whitelist'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'whitelist'
- ? 'bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              {{ t('admin.accounts.modelWhitelist') }}
-            </button>
-            <button
-              type="button"
-              @click="modelRestrictionMode = 'mapping'"
-              :class="[
- 'flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-all',
- modelRestrictionMode === 'mapping'
- ? 'bg-[color-mix(in_oklch,var(--accent)_16%,transparent)] text-accent'
- : 'bg-surface-2 text-muted hover:bg-surface-3'
- ]"
-            >
-              {{ t('admin.accounts.modelMapping') }}
-            </button>
-          </div>
-
-          <!-- Whitelist Mode -->
-          <div v-if="modelRestrictionMode === 'whitelist'">
-            <ModelWhitelistSelector v-model="allowedModels" platform="anthropic" />
-            <p class="text-xs text-muted">
-              {{ t('admin.accounts.selectedModels', { count: allowedModels.length }) }}
-              <span v-if="allowedModels.length === 0 && modelMappings.length === 0">{{ t('admin.accounts.supportsAllModels') }}</span>
-            </p>
-          </div>
-
-          <!-- Mapping Mode -->
-          <div v-else class="space-y-3">
-            <div v-for="(mapping, index) in modelMappings" :key="getModelMappingKey(mapping)" class="flex items-center gap-2">
-              <input v-model="mapping.from" type="text" class="input flex-1" :placeholder="t('admin.accounts.fromModel')" />
-              <span class="text-muted">→</span>
-              <input v-model="mapping.to" type="text" class="input flex-1" :placeholder="t('admin.accounts.toModel')" />
-              <button type="button" @click="modelMappings.splice(index, 1)" class="text-danger-text hover:text-danger-text">
-                <Icon name="trash" size="sm" />
-              </button>
-            </div>
-            <button type="button" @click="modelMappings.push({ from: '', to: '' })" class="btn btn-secondary text-sm">
-              + {{ t('admin.accounts.addMapping') }}
-            </button>
-            <!-- Bedrock Preset Mappings -->
-            <div class="flex flex-wrap gap-2">
-              <button
-                v-for="preset in bedrockPresets"
-                :key="preset.from"
-                type="button"
-                @click="modelMappings.push({ from: preset.from, to: preset.to })"
-                :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
-              >
-                + {{ preset.label }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Pool Mode Section for Bedrock -->
-        <PoolModeSection
-          v-model:pool-mode-enabled="poolModeEnabled"
-          v-model:pool-mode-retry-count="poolModeRetryCount"
-          v-model:pool-mode-retry-status-codes-input="poolModeRetryStatusCodesInput"
-        />
-      </div>
+      <EditBedrockCredentialsSection
+        v-if="account.type === 'bedrock'"
+        v-model:edit-bedrock-access-key-id="editBedrockAccessKeyId"
+        v-model:edit-bedrock-secret-access-key="editBedrockSecretAccessKey"
+        v-model:edit-bedrock-session-token="editBedrockSessionToken"
+        v-model:edit-bedrock-api-key-value="editBedrockApiKeyValue"
+        v-model:edit-bedrock-region="editBedrockRegion"
+        v-model:edit-bedrock-force-global="editBedrockForceGlobal"
+        v-model:model-restriction-mode="modelRestrictionMode"
+        v-model:allowed-models="allowedModels"
+        v-model:model-mappings="modelMappings"
+        v-model:pool-mode-enabled="poolModeEnabled"
+        v-model:pool-mode-retry-count="poolModeRetryCount"
+        v-model:pool-mode-retry-status-codes-input="poolModeRetryStatusCodesInput"
+        :is-bedrock-api-key-mode="isBedrockAPIKeyMode"
+        :bedrock-presets="bedrockPresets"
+        :get-model-mapping-key="getModelMappingKey"
+      />
 
       <div
         v-if="account.platform === 'antigravity' && account.type === 'oauth'"
@@ -589,105 +194,10 @@
       </div>
 
       <!-- Antigravity model restriction (applies to all antigravity types) -->
-      <!-- Antigravity 只支持模型映射模式，不支持白名单模式 -->
-      <div v-if="account.platform === 'antigravity'" class="border-t border-line pt-4">
-        <label class="input-label">{{ t('admin.accounts.modelRestriction') }}</label>
-
-        <!-- Mapping Mode Only (no toggle for Antigravity) -->
-        <div>
-          <div class="mb-3 rounded-lg bg-[color-mix(in_oklch,var(--accent)_10%,transparent)] p-3">
-            <p class="text-xs text-accent">{{ t('admin.accounts.mapRequestModels') }}</p>
-          </div>
-
-          <div class="mb-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              @click="syncAntigravityUpstreamModels"
-              :disabled="isSyncingAntigravityUpstream || !account?.id"
-              class="rounded-lg border border-success px-3 py-1.5 text-sm text-success-text hover:bg-[color-mix(in_oklch,var(--success)_16%,transparent)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {{ isSyncingAntigravityUpstream ? t('admin.accounts.syncUpstreamModelsLoading') : t('admin.accounts.syncUpstreamModels') }}
-            </button>
-          </div>
-
-          <div v-if="antigravityModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
-              v-for="(mapping, index) in antigravityModelMappings"
-              :key="getAntigravityModelMappingKey(mapping)"
-              class="space-y-1"
-            >
-              <div class="flex items-center gap-2">
-                <input
-                  v-model="mapping.from"
-                  type="text"
-                  :class="[
- 'input flex-1',
- !isValidWildcardPattern(mapping.from) ? 'border-danger-text' : '',
- mapping.to.includes('*') ? '' : ''
- ]"
-                  :placeholder="t('admin.accounts.requestModel')"
-                />
-                <svg class="h-4 w-4 flex-shrink-0 text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                </svg>
-                <input
-                  v-model="mapping.to"
-                  type="text"
-                  :class="[
- 'input flex-1',
- mapping.to.includes('*') ? 'border-danger-text' : ''
- ]"
-                  :placeholder="t('admin.accounts.actualModel')"
-                />
-                <button
-                  type="button"
-                  @click="removeAntigravityModelMapping(index)"
-                  class="rounded-lg p-2 text-danger-text transition-colors hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-danger-text"
-                >
-                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <!-- 校验错误提示 -->
-              <p v-if="!isValidWildcardPattern(mapping.from)" class="text-xs text-danger-text">
-                {{ t('admin.accounts.wildcardOnlyAtEnd') }}
-              </p>
-              <p v-if="mapping.to.includes('*')" class="text-xs text-danger-text">
-                {{ t('admin.accounts.targetNoWildcard') }}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            @click="addAntigravityModelMapping"
-            class="mb-3 w-full rounded-lg border-2 border-dashed border-line px-4 py-2 text-muted transition-colors hover:border-line hover:text-foreground"
-          >
-            <svg class="mr-1 inline h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-            </svg>
-            {{ t('admin.accounts.addMapping') }}
-          </button>
-
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="preset in antigravityPresetMappings"
-              :key="preset.label"
-              type="button"
-              @click="addAntigravityPresetMapping(preset.from, preset.to)"
-              :class="['rounded-lg px-3 py-1 text-xs transition-colors', preset.color]"
-            >
-              + {{ preset.label }}
-            </button>
-          </div>
-        </div>
-      </div>
+      <EditAntigravityModelMappingSection
+        v-model:antigravity-model-mappings="antigravityModelMappings"
+        :account="account"
+      />
 
       <TempUnschedulableRulesSection
         v-model:tempUnschedEnabled="tempUnschedEnabled"
@@ -700,673 +210,53 @@
       />
 
 
-      <div
-        v-if="supportsAccountSchedulingThresholdOverride"
-        class="border-t border-line pt-4"
-        data-testid="account-scheduling-threshold-section"
-      >
-        <div class="mb-3 flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.accountSchedulingThresholdOverride') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.accountSchedulingThresholdOverrideHint') }}
-            </p>
-          </div>
-          <input
-            v-model="accountSchedulingThresholdOverrideEnabled"
-            data-testid="account-scheduling-threshold-override-enabled"
-            type="checkbox"
-            class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
-          />
-        </div>
-        <div v-if="accountSchedulingThresholdOverrideEnabled">
-          <label class="input-label">{{ t('admin.accounts.accountSchedulingThresholdOverrideValue') }}</label>
-          <input
-            v-model.number="accountSchedulingThresholdOverrideValue"
-            data-testid="account-scheduling-threshold-override-value"
-            type="number"
-            min="1"
-            max="100"
-            class="input"
-          />
-          <p class="input-hint">{{ t('admin.accounts.accountSchedulingThresholdOverrideDisabledHint') }}</p>
-        </div>
-      </div>
-
-      <InterceptWarmupRequestsSection
-        :show="account?.platform === 'anthropic' || account?.platform === 'antigravity'"
-        v-model:interceptWarmupRequests="interceptWarmupRequests"
-      />
-
-      <div v-if="!isSparkShadow">
-        <div class="mb-1 flex items-center gap-2">
-          <label class="input-label mb-0">{{ t('admin.accounts.proxy') }}</label>
-          <ProxyAdBanner />
-        </div>
-        <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
-      </div>
-
-      <div class="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <div>
-          <label class="input-label">{{ t('admin.accounts.concurrency') }}</label>
-          <input v-model.number="form.concurrency" type="number" min="1" class="input"
-            @input="form.concurrency = Math.max(1, form.concurrency || 1)" />
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.loadFactor') }}</label>
-          <input v-model.number="form.load_factor" type="number" min="1"
-            class="input" :placeholder="String(form.concurrency || 1)"
-            @input="form.load_factor = (form.load_factor &amp;&amp; form.load_factor >= 1) ? form.load_factor : null" />
-          <p class="input-hint">{{ t('admin.accounts.loadFactorHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.priority') }}</label>
-          <input
-            v-model.number="form.priority"
-            type="number"
-            min="1"
-            class="input"
-            data-tour="account-form-priority"
-          />
-          <p class="input-hint">{{ t('admin.accounts.priorityHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
-          <input
-            v-model.number="form.rate_multiplier"
-            type="number"
-            min="0"
-            step="0.001"
-            class="input disabled:cursor-not-allowed disabled:opacity-60"
-            data-testid="account-rate-multiplier"
-            :disabled="upstreamBillingRateSyncEnabled"
-          />
-          <p class="input-hint">
-            {{
-              t(
-                upstreamBillingRateSyncEnabled
-                  ? 'admin.accounts.upstreamBilling.syncRateManagedHint'
-                  : 'admin.accounts.billingRateMultiplierHint'
-              )
-            }}
-          </p>
-          <div
-            v-if="account?.type === 'apikey'"
-            class="mt-3 flex items-center justify-between gap-3"
-          >
-            <div class="min-w-0">
-              <p class="text-xs font-medium text-foreground">
-                {{ t('admin.accounts.upstreamBilling.syncRate') }}
-              </p>
-              <p class="mt-1 text-xs text-muted">
-                {{ t('admin.accounts.upstreamBilling.syncRateHint') }}
-              </p>
-            </div>
-            <Toggle
-              :model-value="upstreamBillingRateSyncEnabled"
-              data-testid="upstream-billing-rate-sync"
-              :aria-label="t('admin.accounts.upstreamBilling.syncRate')"
-              @update:model-value="handleUpstreamBillingRateSyncChange"
-            />
-          </div>
-        </div>
-      </div>
-      <div class="border-t border-line pt-4">
-        <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
-        <input v-model="expiresAtInput" type="datetime-local" class="input" />
-        <p class="input-hint">
-          {{ t('admin.accounts.expiresAtHint') }}
-          {{ t('admin.accounts.expiresAtTimezoneHint', { timezone: browserTimeZone }) }}
-        </p>
-      </div>
-
-      <!-- OpenAI 自动透传开关（OAuth/API Key） -->
-      <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.oauthPassthrough') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.oauthPassthroughDesc') }}
-            </p>
-          </div>
-          <InlineToggleSwitch v-model="openaiPassthroughEnabled" />
-        </div>
-      </div>
-
-      <!-- OpenAI Codex namespace 工具摊平（兼容开关，仅 OAuth） -->
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.flattenNamespaces') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.flattenNamespacesDesc') }}
-            </p>
-          </div>
-          <InlineToggleSwitch v-model="openaiFlattenNamespacesEnabled" data-testid="edit-openai-flatten-namespaces-toggle" />
-        </div>
-      </div>
-
-      <!-- OpenAI Codex hosted image_generation bridge policy -->
-      <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
-        class="border-t border-line pt-4"
-      >
-        <div class="overflow-hidden rounded-lg border border-[color-mix(in_oklch,var(--accent)_20%,transparent)] bg-[color-mix(in_oklch,var(--accent)_8%,transparent)] shadow-sm">
-          <div class="flex items-start gap-3 px-4 py-3">
-            <div class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface text-accent shadow-sm ring-1 ring-[color-mix(in_oklch,var(--accent)_20%,transparent)]">
-              <Icon name="sparkles" size="sm" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <label class="input-label mb-0">{{ t('admin.accounts.openai.codexImageTool') }}</label>
-                <span
-                  class="rounded-full px-2 py-0.5 text-[11px] font-medium"
-                  :class="codexImageToolBadgeClass"
-                >
-                  {{ codexImageToolBadgeLabel }}
-                </span>
-              </div>
-              <p class="mt-1 text-xs leading-5 text-muted">
-                {{ t('admin.accounts.openai.codexImageToolDesc') }}
-              </p>
-            </div>
-          </div>
-          <div class="border-t border-[color-mix(in_oklch,var(--accent)_20%,transparent)] bg-surface/70 p-2">
-            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <button
-                v-for="option in codexImageToolOptions"
-                :key="option.value"
-                type="button"
-                :data-testid="`codex-image-tool-${option.value}`"
-                @click="codexImageToolMode = option.value"
-                :class="[
- 'group flex min-h-[62px] items-start gap-2 rounded-md border px-3 py-2 text-left transition-all',
- codexImageToolMode === option.value
- ? option.selectedCardClass
- : 'border-transparent bg-transparent text-muted hover:border-line hover:bg-surface-2'
- ]"
-              >
-                <span
-                  :class="[
- 'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors',
- codexImageToolMode === option.value
- ? option.selectedDotClass
- : 'border-line text-transparent group-hover:border-line'
- ]"
-                >
-                  <Icon name="check" size="xs" :stroke-width="2" />
-                </span>
-                <span class="min-w-0">
-                  <span class="block text-sm font-medium">{{ option.label }}</span>
-                  <span class="mt-0.5 block text-xs leading-4 text-muted">{{ option.description }}</span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
-      <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.wsMode') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.wsModeDesc') }}
-            </p>
-            <p class="mt-1 text-xs text-muted">
-              {{ t(openAIWSModeConcurrencyHintKey) }}
-            </p>
-          </div>
-          <div class="w-52">
-            <Select v-model="openaiResponsesWebSocketV2Mode" data-testid="edit-openai-ws-mode-select" :options="openAIWSModeOptions" />
-          </div>
-        </div>
-      </div>
-
-      <!-- OpenAI APIKey Responses API support mode -->
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'apikey'"
-        class="space-y-4 border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.responsesMode') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.responsesModeDesc') }}
-            </p>
-          </div>
-          <div class="w-56">
-            <Select
-              v-model="openAIResponsesMode"
-              :options="openAIResponsesModeOptions"
-              :disabled="!openAITextGenerationCapabilityEnabled"
-              data-testid="openai-responses-mode-select"
-            />
-          </div>
-        </div>
-        <div
-          v-if="openAITextGenerationCapabilityEnabled"
-          class="rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted"
-        >
-          <span class="font-medium">{{ t(openAIResponsesStatusKey) }}</span>
-        </div>
-        <div
-          v-else
-          class="rounded-lg bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] px-3 py-2 text-xs text-warning-text"
-          data-testid="openai-responses-mode-not-applicable"
-        >
-          {{ t('admin.accounts.openai.responsesModeTextDisabledHint') }}
-        </div>
-        <div>
-          <label class="input-label mb-2 block">{{ t('admin.accounts.openai.endpointCapabilities') }}</label>
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <label
-              v-for="option in openAIEndpointCapabilityOptions"
-              :key="option.value"
-              class="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm"
-            >
-              <input
-                type="checkbox"
-                class="rounded border-line text-accent focus:ring-accent"
-                :data-testid="`openai-endpoint-capability-${option.value}`"
-                :checked="openAIEndpointCapabilities.includes(option.value)"
-                @change="toggleOpenAIEndpointCapability(option.value, $event)"
-              />
-              <span class="text-foreground">{{ option.label }}</span>
-            </label>
-          </div>
-          <p class="input-hint">{{ t('admin.accounts.openai.endpointCapabilitiesDesc') }}</p>
-        </div>
-      </div>
-
-      <div
-        v-if="account?.type === 'apikey'"
-        class="flex items-center justify-between gap-4 border-t border-line pt-4"
-      >
-        <div>
-          <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.autoProbe') }}</label>
-          <p class="mt-1 text-xs text-muted">
-            {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
-          </p>
-        </div>
-        <Toggle
-          :model-value="upstreamBillingAutoProbeEnabled"
-          data-testid="upstream-billing-auto-probe"
-          :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
-          @update:model-value="handleUpstreamBillingAutoProbeChange"
-        />
-      </div>
-
-      <OllamaCloudUsageSettings
-        v-if="account?.ollama_cloud_usage?.eligible"
+      <EditSchedulingSection
+        v-model:account-scheduling-threshold-override-enabled="accountSchedulingThresholdOverrideEnabled"
+        v-model:account-scheduling-threshold-override-value="accountSchedulingThresholdOverrideValue"
+        v-model:intercept-warmup-requests="interceptWarmupRequests"
         :account="account"
-        @updated="handleOllamaCloudUsageUpdated"
+        :proxies="proxies"
+        :form="form"
+        :is-spark-shadow="isSparkShadow"
+        :supports-account-scheduling-threshold-override="supportsAccountSchedulingThresholdOverride"
+        :upstream-billing-rate-sync-enabled="upstreamBillingRateSyncEnabled"
+        :handle-upstream-billing-rate-sync-change="handleUpstreamBillingRateSyncChange"
+        :browser-time-zone="browserTimeZone"
       />
 
-      <!-- Anthropic API Key 自动透传开关 -->
-      <div
-        v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.anthropic.apiKeyPassthrough') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.anthropic.apiKeyPassthroughDesc') }}
-            </p>
-          </div>
-          <InlineToggleSwitch v-model="anthropicPassthroughEnabled" />
-        </div>
-      </div>
-
-      <div
-        v-if="account?.platform === 'anthropic' && account?.type === 'apikey'"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.anthropic.apiKeyAuthScheme') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.anthropic.apiKeyAuthSchemeDesc') }}
-            </p>
-          </div>
-          <select v-model="anthropicAPIKeyAuthScheme" class="input w-52 text-sm">
-            <option value="x_api_key">{{ t('admin.accounts.anthropic.apiKeyAuthSchemeXApiKey') }}</option>
-            <option value="authorization_bearer">{{ t('admin.accounts.anthropic.apiKeyAuthSchemeBearer') }}</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- Anthropic API Key: Web Search Emulation (hidden when global disabled) -->
-      <div
-        v-if="account?.platform === 'anthropic' && account?.type === 'apikey' && webSearchGlobalEnabled"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.anthropic.webSearchEmulation') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.anthropic.webSearchEmulationDesc') }}
-            </p>
-          </div>
-          <select v-model="webSearchEmulationMode" class="input w-24 text-sm">
-            <option value="default">{{ t('admin.accounts.anthropic.webSearchDefault') }}</option>
-            <option value="enabled">{{ t('admin.accounts.anthropic.webSearchEnabled') }}</option>
-            <option value="disabled">{{ t('admin.accounts.anthropic.webSearchDisabled') }}</option>
-          </select>
-        </div>
-      </div>
-
-      <!-- 配额控制 (Anthropic apikey/bedrock: 配额限制 + 亲和) -->
-      <QuotaLimitCardSection
-        v-if="account?.platform === 'anthropic' && (account?.type === 'apikey' || account?.type === 'bedrock')"
-        :hint="t('admin.accounts.quotaControl.hint')"
-        :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
-        v-model:editQuotaLimit="editQuotaLimit"
-        v-model:editQuotaDailyLimit="editQuotaDailyLimit"
-        v-model:editQuotaWeeklyLimit="editQuotaWeeklyLimit"
-        v-model:editDailyResetMode="editDailyResetMode"
-        v-model:editDailyResetHour="editDailyResetHour"
-        v-model:editWeeklyResetMode="editWeeklyResetMode"
-        v-model:editWeeklyResetDay="editWeeklyResetDay"
-        v-model:editWeeklyResetHour="editWeeklyResetHour"
-        v-model:editResetTimezone="editResetTimezone"
-        v-model:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
-        v-model:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
-        v-model:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType"
-        v-model:quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled"
-        v-model:quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold"
-        v-model:quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType"
-        v-model:quotaNotifyTotalEnabled="quotaNotifyState.total.enabled"
-        v-model:quotaNotifyTotalThreshold="quotaNotifyState.total.threshold"
-        v-model:quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType"
-      />
-      <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
-      <QuotaLimitCardSection
-        v-else-if="account?.type === 'apikey' || account?.type === 'bedrock'"
-        :hint="t('admin.accounts.quotaLimitHint')"
-        :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
-        v-model:editQuotaLimit="editQuotaLimit"
-        v-model:editQuotaDailyLimit="editQuotaDailyLimit"
-        v-model:editQuotaWeeklyLimit="editQuotaWeeklyLimit"
-        v-model:editDailyResetMode="editDailyResetMode"
-        v-model:editDailyResetHour="editDailyResetHour"
-        v-model:editWeeklyResetMode="editWeeklyResetMode"
-        v-model:editWeeklyResetDay="editWeeklyResetDay"
-        v-model:editWeeklyResetHour="editWeeklyResetHour"
-        v-model:editResetTimezone="editResetTimezone"
-        v-model:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
-        v-model:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
-        v-model:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType"
-        v-model:quotaNotifyWeeklyEnabled="quotaNotifyState.weekly.enabled"
-        v-model:quotaNotifyWeeklyThreshold="quotaNotifyState.weekly.threshold"
-        v-model:quotaNotifyWeeklyThresholdType="quotaNotifyState.weekly.thresholdType"
-        v-model:quotaNotifyTotalEnabled="quotaNotifyState.total.enabled"
-        v-model:quotaNotifyTotalThreshold="quotaNotifyState.total.threshold"
-        v-model:quotaNotifyTotalThresholdType="quotaNotifyState.total.thresholdType"
-      />
-
-      <!-- OpenAI API 长上下文计费开关 -->
-      <div
-        v-if="account?.platform === 'openai' && !isSparkShadow && !hideAccountLongContextBilling && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.longContextBilling') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.longContextBillingDesc') }}
-            </p>
-          </div>
-          <InlineToggleSwitch
-            v-model="openAILongContextBillingEnabled"
-            data-testid="openai-long-context-billing-toggle"
-            switch-role
-          />
-        </div>
-      </div>
-
-      <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token')"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.codexCLIOnly') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.codexCLIOnlyDesc') }}
-            </p>
-          </div>
-          <InlineToggleSwitch v-model="codexCLIOnlyEnabled" />
-        </div>
-        <div
-          v-if="codexCLIOnlyEnabled"
-          class="mt-4 flex items-center justify-between border-l-2 border-line pl-4"
-        >
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.codexCLIOnlyAppServer') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.codexCLIOnlyAppServerDesc') }}
-            </p>
-          </div>
-          <InlineToggleSwitch v-model="codexCLIOnlyAppServerEnabled" />
-        </div>
-      </div>
-
-      <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
-            </p>
-          </div>
-          <div class="w-52 flex-shrink-0">
-            <Select v-model="codexFingerprintMode" data-testid="edit-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
-          </div>
-        </div>
-      </div>
-
-      <!-- OpenAI 订阅档位手动覆盖（Plus/Pro/Free），仅 OAuth 非影子账号 -->
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth' && !isSparkShadow"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.planType') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.planTypeDesc') }}
-            </p>
-          </div>
-          <div class="w-44 flex-shrink-0">
-            <Select v-model="editPlanType" :options="planTypeOptions" />
-          </div>
-        </div>
-      </div>
-
-      <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
-        class="border-t border-line pt-4 space-y-4"
-      >
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.compactMode') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.openai.compactModeDesc') }}
-            </p>
-          </div>
-          <div class="w-44">
-            <Select v-model="openAICompactMode" :options="openAICompactModeOptions" />
-          </div>
-        </div>
-        <div class="rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted">
-          <span class="font-medium">{{ t(openAICompactStatusKey) }}</span>
-          <span
-            v-if="account?.extra?.openai_compact_checked_at"
-            class="ml-2 text-muted"
-          >
-            {{ t('admin.accounts.openai.compactLastChecked') }}:
-            {{ formatDateTime(new Date(String(account.extra.openai_compact_checked_at))) }}
-          </span>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.openai.compactModelMapping') }}</label>
-          <p class="input-hint">{{ t('admin.accounts.openai.compactModelMappingDesc') }}</p>
-          <div v-if="openAICompactModelMappings.length > 0" class="mb-3 space-y-2">
-            <div
-              v-for="(mapping, index) in openAICompactModelMappings"
-              :key="getOpenAICompactModelMappingKey(mapping)"
-              class="flex items-center gap-2"
-            >
-              <input
-                v-model="mapping.from"
-                type="text"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.fromModel')"
-              />
-              <span class="text-muted">→</span>
-              <input
-                v-model="mapping.to"
-                type="text"
-                class="input flex-1"
-                :placeholder="t('admin.accounts.toModel')"
-              />
-              <button type="button" @click="removeOpenAICompactModelMapping(index)" class="text-danger-text hover:text-danger-text">
-                <Icon name="trash" size="sm" />
-              </button>
-            </div>
-          </div>
-          <button type="button" @click="addOpenAICompactModelMapping" class="btn btn-secondary text-sm">
-            + {{ t('admin.accounts.addMapping') }}
-          </button>
-        </div>
-      </div>
-
-      <div>
-        <div class="flex items-center justify-between">
-          <div>
-            <label class="input-label mb-0">{{
-              t('admin.accounts.autoPauseOnExpired')
-            }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.autoPauseOnExpiredDesc') }}
-            </p>
-          </div>
-          <InlineToggleSwitch v-model="autoPauseOnExpired" />
-        </div>
-      </div>
-
-      <div
-        v-if="account?.platform === 'openai'"
-        class="border-t border-line pt-4 space-y-4"
-      >
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="input-label mb-0">{{ t('admin.accounts.autoPause5hDisabled') }}</label>
-            <InlineToggleSwitch v-model="autoPause5hDisabled" data-testid="auto-pause-5h-disabled" />
-          </div>
-          <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.autoPause5hThreshold') }}</label>
-          <input
-            v-model.number="autoPause5hThreshold"
-            type="number"
-            min="0"
-            max="100"
-            step="0.1"
-            class="input"
-            :disabled="autoPause5hDisabled"
-            data-testid="auto-pause-5h-threshold"
-          />
-          <p class="input-hint">{{ t('admin.accounts.autoPauseThresholdHint') }}</p>
-        </div>
-        <div class="space-y-2">
-          <div class="flex items-center justify-between">
-            <label class="input-label mb-0">{{ t('admin.accounts.autoPause7dDisabled') }}</label>
-            <InlineToggleSwitch v-model="autoPause7dDisabled" data-testid="auto-pause-7d-disabled" />
-          </div>
-          <p class="input-hint">{{ t('admin.accounts.autoPauseDisabledHint') }}</p>
-        </div>
-        <div>
-          <label class="input-label">{{ t('admin.accounts.autoPause7dThreshold') }}</label>
-          <input
-            v-model.number="autoPause7dThreshold"
-            type="number"
-            min="0"
-            max="100"
-            step="0.1"
-            class="input"
-            :disabled="autoPause7dDisabled"
-            data-testid="auto-pause-7d-threshold"
-          />
-          <p class="input-hint">{{ t('admin.accounts.autoPauseThresholdHint') }}</p>
-        </div>
-      </div>
-
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth' && !isSparkShadow"
-        class="space-y-4 border-t border-line pt-4"
-        data-testid="auto-reset-credit-settings"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.autoResetCredit.title') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.autoResetCredit.hint') }}
-            </p>
-          </div>
-          <InlineToggleSwitch v-model="autoResetCreditEnabled" data-testid="auto-reset-credit-enabled" />
-        </div>
-        <div class="grid gap-4 sm:grid-cols-2">
-          <div>
-            <label class="input-label">{{ t('admin.accounts.autoResetCredit.threshold5h') }}</label>
-            <input
-              v-model.number="autoResetCredit5hThreshold"
-              type="number"
-              min="0.1"
-              max="100"
-              step="0.1"
-              class="input"
-              :disabled="!autoResetCreditEnabled"
-              data-testid="auto-reset-credit-5h-threshold"
-            />
-          </div>
-          <div>
-            <label class="input-label">{{ t('admin.accounts.autoResetCredit.threshold7d') }}</label>
-            <input
-              v-model.number="autoResetCredit7dThreshold"
-              type="number"
-              min="0.1"
-              max="100"
-              step="0.1"
-              class="input"
-              :disabled="!autoResetCreditEnabled"
-              data-testid="auto-reset-credit-7d-threshold"
-            />
-          </div>
-        </div>
-        <p class="input-hint">{{ t('admin.accounts.autoResetCredit.thresholdHint') }}</p>
-      </div>
-
-      <!-- 配额控制 (Anthropic OAuth/SetupToken: 亲和 + 窗口费用 + 会话 + RPM 等) -->
-      <QuotaControlPanel
-        v-if="account?.platform === 'anthropic' && (account?.type === 'oauth' || account?.type === 'setup-token')"
+      <EditAdvancedOptionsSection
+        v-model:openai-passthrough-enabled="openaiPassthroughEnabled"
+        v-model:openai-flatten-namespaces-enabled="openaiFlattenNamespacesEnabled"
+        v-model:codex-image-tool-mode="codexImageToolMode"
+        v-model:openai-responses-web-socket-v2-mode="openaiResponsesWebSocketV2Mode"
+        v-model:open-a-i-responses-mode="openAIResponsesMode"
+        v-model:anthropic-passthrough-enabled="anthropicPassthroughEnabled"
+        v-model:anthropic-a-p-i-key-auth-scheme="anthropicAPIKeyAuthScheme"
+        v-model:web-search-emulation-mode="webSearchEmulationMode"
+        v-model:edit-quota-limit="editQuotaLimit"
+        v-model:edit-quota-daily-limit="editQuotaDailyLimit"
+        v-model:edit-quota-weekly-limit="editQuotaWeeklyLimit"
+        v-model:edit-daily-reset-mode="editDailyResetMode"
+        v-model:edit-daily-reset-hour="editDailyResetHour"
+        v-model:edit-weekly-reset-mode="editWeeklyResetMode"
+        v-model:edit-weekly-reset-day="editWeeklyResetDay"
+        v-model:edit-weekly-reset-hour="editWeeklyResetHour"
+        v-model:edit-reset-timezone="editResetTimezone"
+        v-model:open-a-i-long-context-billing-enabled="openAILongContextBillingEnabled"
+        v-model:codex-c-l-i-only-enabled="codexCLIOnlyEnabled"
+        v-model:codex-c-l-i-only-app-server-enabled="codexCLIOnlyAppServerEnabled"
+        v-model:codex-fingerprint-mode="codexFingerprintMode"
+        v-model:edit-plan-type="editPlanType"
+        v-model:open-a-i-compact-mode="openAICompactMode"
+        v-model:open-a-i-compact-model-mappings="openAICompactModelMappings"
+        v-model:auto-pause-on-expired="autoPauseOnExpired"
+        v-model:auto-pause5h-disabled="autoPause5hDisabled"
+        v-model:auto-pause5h-threshold="autoPause5hThreshold"
+        v-model:auto-pause7d-disabled="autoPause7dDisabled"
+        v-model:auto-pause7d-threshold="autoPause7dThreshold"
+        v-model:auto-reset-credit-enabled="autoResetCreditEnabled"
+        v-model:auto-reset-credit5h-threshold="autoResetCredit5hThreshold"
+        v-model:auto-reset-credit7d-threshold="autoResetCredit7dThreshold"
         v-model:window-cost-enabled="windowCostEnabled"
         v-model:window-cost-limit="windowCostLimit"
         v-model:window-cost-sticky-reserve="windowCostStickyReserve"
@@ -1383,119 +273,47 @@
         v-model:cache-t-t-l-override-target="cacheTTLOverrideTarget"
         v-model:custom-base-url-enabled="customBaseUrlEnabled"
         v-model:custom-base-url="customBaseUrl"
-      />
-
-      <TlsFingerprintPanel
-        v-if="supportsTLSFingerprint(account?.platform)"
         v-model:tls-fingerprint-enabled="tlsFingerprintEnabled"
         v-model:tls-fingerprint-profile-id="tlsFingerprintProfileId"
         v-model:tls-fingerprint-router-id="tlsFingerprintRouterId"
         v-model:tls-fingerprint-default-o-s="tlsFingerprintDefaultOS"
         v-model:tls-fingerprint-binding-rows="tlsFingerprintBindingRows"
+        v-model:device-learning-enabled="deviceLearningEnabled"
+        v-model:device-t-l-s-profile-selection="deviceTLSProfileSelection"
+        v-model:mixed-scheduling="mixedScheduling"
+        v-model:allow-overages="allowOverages"
+        :account="account"
+        :is-spark-shadow="isSparkShadow"
+        :hide-account-long-context-billing="hideAccountLongContextBilling"
+        :web-search-global-enabled="webSearchGlobalEnabled"
+        :quota-notify-global-enabled="quotaNotifyGlobalEnabled"
+        :quota-notify-state="quotaNotifyState"
+        :form="form"
+        :codex-image-tool-badge-class="codexImageToolBadgeClass"
+        :codex-image-tool-badge-label="codexImageToolBadgeLabel"
+        :codex-image-tool-options="codexImageToolOptions"
+        :open-a-i-w-s-mode-concurrency-hint-key="openAIWSModeConcurrencyHintKey"
+        :open-a-i-w-s-mode-options="openAIWSModeOptions"
+        :open-a-i-responses-mode-options="openAIResponsesModeOptions"
+        :open-a-i-text-generation-capability-enabled="openAITextGenerationCapabilityEnabled"
+        :open-a-i-responses-status-key="openAIResponsesStatusKey"
+        :open-a-i-endpoint-capability-options="openAIEndpointCapabilityOptions"
+        :open-a-i-endpoint-capabilities="openAIEndpointCapabilities"
+        :toggle-open-a-i-endpoint-capability="toggleOpenAIEndpointCapability"
+        :upstream-billing-auto-probe-enabled="upstreamBillingAutoProbeEnabled"
+        :handle-upstream-billing-auto-probe-change="handleUpstreamBillingAutoProbeChange"
+        :handle-ollama-cloud-usage-updated="handleOllamaCloudUsageUpdated"
+        :codex-fingerprint-mode-options="codexFingerprintModeOptions"
+        :plan-type-options="planTypeOptions"
+        :open-a-i-compact-mode-options="openAICompactModeOptions"
+        :open-a-i-compact-status-key="openAICompactStatusKey"
+        :supports-t-l-s-fingerprint="supportsTLSFingerprint"
         :tls-fingerprint-profiles="tlsFingerprintProfiles"
         :tls-fingerprint-routers="tlsFingerprintRouters"
+        :device-t-l-s-catalog-options="deviceTLSCatalogOptions"
+        :format-device-t-l-s-profile-label="formatDeviceTLSProfileLabel"
+        :status-options="statusOptions"
       />
-
-      <div
-        v-if="!isSparkShadow"
-        class="border-t border-line pt-4"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.deviceLearning.label') }}</label>
-            <p class="mt-1 text-xs text-muted">
-              {{ t('admin.accounts.deviceLearning.hint') }}
-            </p>
-          </div>
-          <Toggle
-            v-model="deviceLearningEnabled"
-            data-testid="device-learning-toggle"
-            :aria-label="t('admin.accounts.deviceLearning.label')"
-          />
-        </div>
-        <div v-if="deviceLearningEnabled" class="mt-3 space-y-1">
-          <label class="input-label" for="device-tls-profile-select">
-            {{ t('admin.accounts.deviceLearning.tlsProfileLabel') }}
-          </label>
-          <select
-            id="device-tls-profile-select"
-            v-model="deviceTLSProfileSelection"
-            class="input"
-            data-testid="device-tls-profile-select"
-          >
-            <option value="">{{ t('admin.accounts.deviceLearning.tlsProfileAutomatic') }}</option>
-            <option v-for="option in deviceTLSCatalogOptions" :key="option.id" :value="String(option.id)">
-              {{ formatDeviceTLSProfileLabel(option) }}
-            </option>
-          </select>
-          <p class="input-hint">{{ t('admin.accounts.deviceLearning.tlsProfileHint') }}</p>
-        </div>
-      </div>
-
-      <div class="border-t border-line pt-4">
-        <div>
-          <label class="input-label">{{ t('common.status') }}</label>
-          <Select v-model="form.status" :options="statusOptions" />
-        </div>
-
-        <!-- Mixed Scheduling (only for antigravity accounts, read-only in edit mode) -->
-        <div v-if="account?.platform === 'antigravity'" class="flex items-center gap-2">
-          <label class="flex cursor-not-allowed items-center gap-2 opacity-60">
-            <input
-              type="checkbox"
-              v-model="mixedScheduling"
-              disabled
-              class="h-4 w-4 cursor-not-allowed rounded border-line text-accent focus:ring-accent"
-            />
-            <span class="text-sm font-medium text-foreground">
-              {{ t('admin.accounts.mixedScheduling') }}
-            </span>
-          </label>
-          <div class="group relative">
-            <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-surface-3 text-xs text-muted hover:bg-surface-3"
-            >
-              ?
-            </span>
-            <!-- Tooltip（向下显示避免被弹窗裁剪） -->
-            <div
-              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded bg-[var(--code-bg)] px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
-            >
-              {{ t('admin.accounts.mixedSchedulingTooltip') }}
-              <div
-                class="absolute bottom-full left-3 border-4 border-transparent border-b-[var(--code-bg)]"
-              ></div>
-            </div>
-          </div>
-        </div>
-        <div v-if="account?.platform === 'antigravity'" class="mt-3 flex items-center gap-2">
-          <label class="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              v-model="allowOverages"
-              class="h-4 w-4 rounded border-line text-accent focus:ring-accent"
-            />
-            <span class="text-sm font-medium text-foreground">
-              {{ t('admin.accounts.allowOverages') }}
-            </span>
-          </label>
-          <div class="group relative">
-            <span
-              class="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-surface-3 text-xs text-muted hover:bg-surface-3"
-            >
-              ?
-            </span>
-            <div
-              class="pointer-events-none absolute left-0 top-full z-[100] mt-1.5 w-72 rounded bg-[var(--code-bg)] px-3 py-2 text-xs text-white opacity-0 transition-opacity group-hover:opacity-100"
-            >
-              {{ t('admin.accounts.allowOveragesTooltip') }}
-              <div
-                class="absolute bottom-full left-3 border-4 border-transparent border-b-[var(--code-bg)]"
-              ></div>
-            </div>
-          </div>
-        </div>
-      </div>
 
       <!-- Group Selection - 仅标准模式显示 -->
       <GroupSelector
@@ -1566,14 +384,23 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import { useEditAccountMixedChannel } from './edit/useEditAccountMixedChannel'
+import { useEditAccountSubmit } from './edit/useEditAccountSubmit'
+import { useEditAccountSync } from './edit/useEditAccountSync'
+import { useEditAccountOpenAIOptions, type CodexFingerprintMode, type CodexImageToolMode } from './edit/useEditAccountOpenAIOptions'
+import { useEditAccountTlsFingerprint } from './edit/useEditAccountTlsFingerprint'
+import EditBedrockCredentialsSection from './edit/EditBedrockCredentialsSection.vue'
+import EditAdvancedOptionsSection from './edit/EditAdvancedOptionsSection.vue'
+import EditApiKeyOAuthFieldsSection from './edit/EditApiKeyOAuthFieldsSection.vue'
+import EditAntigravityModelMappingSection from './edit/EditAntigravityModelMappingSection.vue'
+import EditKiroSection from './edit/EditKiroSection.vue'
+import EditSchedulingSection from './edit/EditSchedulingSection.vue'
 import type { KiroDiscoveredProfile } from '@/api/admin/accounts'
-import type { DeviceTLSCatalogOption } from '@/api/admin/tlsFingerprintProfile'
 import { useQuotaNotifyState } from '@/composables/useQuotaNotifyState'
 import type {
   Account,
   Proxy,
   AdminGroup,
-  CheckMixedChannelResponse,
   OpenAICompactMode,
   OpenAIResponsesMode,
   OpenAIEndpointCapability,
@@ -1581,77 +408,29 @@ import type {
 } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import Select from '@/components/common/Select.vue'
-import HelpTooltip from '@/components/common/HelpTooltip.vue'
-import Toggle from '@/components/common/Toggle.vue'
-import Icon from '@/components/icons/Icon.vue'
-import InlineToggleSwitch from '@/components/account/shared/InlineToggleSwitch.vue'
-import QuotaControlPanel from '@/components/account/shared/QuotaControlPanel.vue'
-import TlsFingerprintPanel from '@/components/account/shared/TlsFingerprintPanel.vue'
-import PoolModeSection from '@/components/account/shared/PoolModeSection.vue'
-import CustomErrorCodesSection from '@/components/account/shared/CustomErrorCodesSection.vue'
-import QuotaLimitCardSection from '@/components/account/shared/QuotaLimitCardSection.vue'
-import HeaderOverrideSection from '@/components/account/shared/HeaderOverrideSection.vue'
-import GrokCustomBaseUrlSection from '@/components/account/shared/GrokCustomBaseUrlSection.vue'
 import { useTempUnschedRules } from '@/components/account/shared/useTempUnschedRules'
 import TempUnschedulableRulesSection from '@/components/account/shared/TempUnschedulableRulesSection.vue'
-import InterceptWarmupRequestsSection from '@/components/account/shared/InterceptWarmupRequestsSection.vue'
-import ProxySelector from '@/components/common/ProxySelector.vue'
-import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
-import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import ModelRestrictionEditor from '@/components/account/ModelRestrictionEditor.vue'
-import KiroDiagnosticChips from '@/components/account/KiroDiagnosticChips.vue'
-import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
-import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
-import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
-  applyAntigravityProjectID,
-  applyHeaderOverride,
-  applyInterceptWarmup,
-  applyPlanType,
-  buildPlanTypeOptions,
-  readPlanType,
-  isCustomGrokBaseUrl,
-  isHeaderOverrideCapable,
-  splitHeaderOverridesObject,
-  validateHeaderOverrideRows,
   cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
   defaultCNBaseUrl,
-  HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY,
-  HEADER_OVERRIDES_CREDENTIAL_KEY,
   type CnAccountMode,
   type CnApiProtocol,
   type CnNativeApiProtocol,
   type HeaderOverrideRow
 } from '@/components/account/credentialsBuilder'
-import {
-  formatDateTime,
-  formatDateTimeLocalInput,
-  getBrowserTimeZone,
-  parseDateTimeLocalInput
-} from '@/utils/format'
+import { getBrowserTimeZone } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
-import {
-  OPENAI_WS_MODE_CTX_POOL,
-  OPENAI_WS_MODE_OFF,
-  OPENAI_WS_MODE_PASSTHROUGH,
-  OPENAI_WS_MODE_HTTP_BRIDGE,
-  isOpenAIWSModeEnabled,
-  resolveOpenAIWSModeConcurrencyHintKey,
-  type OpenAIWSMode,
-  resolveOpenAIWSModeFromExtra
-} from '@/utils/openaiWsMode'
+import { OPENAI_WS_MODE_OFF, type OpenAIWSMode } from '@/utils/openaiWsMode'
 import {
   getPresetMappingsByPlatform,
   buildModelMappingObject,
-  splitModelMappingObject,
-  isValidWildcardPattern
+  splitModelMappingObject
 } from '@/composables/useModelWhitelist'
-import { stripKiroRuntimeExtra } from '@/composables/useKiroOAuth'
 
 interface Props {
   show: boolean
@@ -1692,7 +471,6 @@ const baseUrlHint = computed(() => {
   return t('admin.accounts.baseUrlHint')
 })
 
-const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
 const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
 
 // Model mapping type
@@ -1933,13 +711,8 @@ function formatPoolModeRetryStatusCodes(value: unknown): string {
 }
 const customErrorCodesEnabled = ref(false)
 const selectedErrorCodes = ref<number[]>([])
-const customErrorCodeInput = ref<number | null>(null)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
-
-const headerOverrideCapable = computed(
-  () => !!props.account && isHeaderOverrideCapable(props.account.platform, props.account.type)
-)
 
 // Grok OAuth 自定义上游地址（仅转发端点；OAuth 授权/令牌刷新不受影响）
 const grokOAuthCustomBaseUrlEnabled = ref(false)
@@ -1965,7 +738,6 @@ const antigravityProjectId = ref('')
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
 const antigravityWhitelistModels = ref<string[]>([])
 const antigravityModelMappings = ref<ModelMapping[]>([])
-const isSyncingAntigravityUpstream = ref(false)
 const {
   tempUnschedEnabled,
   tempUnschedRules,
@@ -1983,16 +755,6 @@ const supportsAccountSchedulingThresholdOverride = computed(() =>
   supportsAccountSchedulingThresholdOverridePlatform(props.account?.platform)
 )
 const getModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-model-mapping')
-const getOpenAICompactModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-openai-compact-model-mapping')
-const getAntigravityModelMappingKey = createStableObjectKeyResolver<ModelMapping>('edit-antigravity-model-mapping')
-
-const showMixedChannelWarning = ref(false)
-const mixedChannelWarningDetails = ref<{ groupName: string; currentPlatform: string; otherPlatform: string } | null>(
-  null
-)
-const mixedChannelWarningRawMessage = ref('')
-const mixedChannelWarningAction = ref<(() => Promise<void>) | null>(null)
-const antigravityMixedChannelConfirmed = ref(false)
 
 // Quota control state (Anthropic OAuth/SetupToken only)
 const windowCostEnabled = ref(false)
@@ -2006,98 +768,26 @@ const baseRpm = ref<number | null>(null)
 const rpmStrategy = ref<'tiered' | 'sticky_exempt'>('tiered')
 const rpmStickyBuffer = ref<number | null>(null)
 const userMsgQueueMode = ref('')
-const tlsFingerprintEnabled = ref(false)
-const tlsFingerprintProfileId = ref<number | null>(null)
-const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
-const tlsFingerprintRouters = ref<{ id: number; name: string }[]>([])
-const tlsFingerprintRouterId = ref<number | null>(null)
-const tlsFingerprintDefaultOS = ref('')
-const tlsFingerprintBindingRows = ref<{ os: string; client: string; protocol: string; profileId: number }[]>([])
-const deviceLearningEnabled = ref(false)
-const deviceTLSProfileId = ref<number | null>(null)
-const deviceTLSCatalogOptions = ref<DeviceTLSCatalogOption[]>([])
-const deviceTLSProfileSelection = computed({
-  get: () => (deviceTLSProfileId.value == null ? '' : String(deviceTLSProfileId.value)),
-  set: (value: string) => {
-    const id = Number(value)
-    deviceTLSProfileId.value = Number.isInteger(id) && id > 0 ? id : null
-  }
-})
-
-function formatDeviceTLSProfileLabel(option: DeviceTLSCatalogOption) {
-  const label = t('admin.accounts.deviceLearning.tlsProfileOption', {
-    name: option.name,
-    family: option.client_family,
-    os: option.os_family,
-    transport: option.transport,
-    software: option.software_label
-  })
-  return option.description ? `${label} - ${option.description}` : label
-}
-
-function readDeviceTLSProfileId(value: unknown): number | null {
-  const id = Number(value)
-  return Number.isInteger(id) && id > 0 ? id : null
-}
-
-function supportsTLSFingerprint(platform?: string | null) {
-  return ['anthropic', 'openai', 'gemini', 'antigravity', 'grok', 'kiro'].includes(platform || '')
-}
-
-function applyTLSFingerprintToExtra(extra: Record<string, unknown>) {
-  if (tlsFingerprintEnabled.value) {
-    extra.enable_tls_fingerprint = true
-    if (tlsFingerprintProfileId.value) {
-      extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
-    } else {
-      delete extra.tls_fingerprint_profile_id
-    }
-    if (tlsFingerprintRouterId.value) {
-      extra.tls_fingerprint_router_id = tlsFingerprintRouterId.value
-    } else {
-      delete extra.tls_fingerprint_router_id
-    }
-    if (tlsFingerprintDefaultOS.value) {
-      extra.tls_fingerprint_default_os = tlsFingerprintDefaultOS.value
-    } else {
-      delete extra.tls_fingerprint_default_os
-    }
-    const bindings = tlsFingerprintBindingsFromRows()
-    if (bindings) {
-      extra.tls_fingerprint_bindings = bindings
-    } else {
-      delete extra.tls_fingerprint_bindings
-    }
-    return
-  }
-  delete extra.enable_tls_fingerprint
-  delete extra.tls_fingerprint_profile_id
-  delete extra.tls_fingerprint_router_id
-  delete extra.tls_fingerprint_default_os
-  delete extra.tls_fingerprint_bindings
-}
-
-function tlsFingerprintBindingsFromRows(): Record<string, number> | undefined {
-  const out: Record<string, number> = {}
-  for (const row of tlsFingerprintBindingRows.value) {
-    const parts = [row.os, row.client].filter((part) => part.trim())
-    let key = parts.join('/').toLowerCase()
-    if (row.protocol.trim()) {
-      key = key ? `${key}@${row.protocol.trim().toLowerCase()}` : row.protocol.trim().toLowerCase()
-    }
-    if (!key || !row.profileId) continue
-    out[key] = row.profileId
-  }
-  return Object.keys(out).length ? out : undefined
-}
-
-function tlsFingerprintRowsFromBindings(bindings?: Record<string, number> | null) {
-  tlsFingerprintBindingRows.value = Object.entries(bindings || {}).map(([key, profileId]) => {
-    const [left, protocol = ''] = key.split('@')
-    const [os = '', client = ''] = left.split('/')
-    return { os, client, protocol, profileId }
-  })
-}
+const {
+  tlsFingerprintEnabled,
+  tlsFingerprintProfileId,
+  tlsFingerprintProfiles,
+  tlsFingerprintRouters,
+  tlsFingerprintRouterId,
+  tlsFingerprintDefaultOS,
+  tlsFingerprintBindingRows,
+  deviceLearningEnabled,
+  deviceTLSProfileId,
+  deviceTLSCatalogOptions,
+  deviceTLSProfileSelection,
+  formatDeviceTLSProfileLabel,
+  readDeviceTLSProfileId,
+  supportsTLSFingerprint,
+  applyTLSFingerprintToExtra,
+  tlsFingerprintRowsFromBindings,
+  loadTLSProfiles,
+  loadCompleteDeviceTLSProfiles
+} = useEditAccountTlsFingerprint({ t })
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
@@ -2118,9 +808,7 @@ const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
-type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const codexFingerprintMode = ref<CodexFingerprintMode>('off')
-type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
@@ -2151,228 +839,38 @@ const editWeeklyResetMode = ref<'rolling' | 'fixed' | null>(null)
 const editWeeklyResetDay = ref<number | null>(null)
 const editWeeklyResetHour = ref<number | null>(null)
 const editResetTimezone = ref<string | null>(null)
-const codexFingerprintModeOptions = computed(() => [
-  { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
-  { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
-  { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
-  { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
-])
+const {
+  codexFingerprintModeOptions,
+  openAIWSModeOptions,
+  openaiResponsesWebSocketV2Mode,
+  openAIWSModeConcurrencyHintKey,
+  codexImageToolOptions,
+  codexImageToolBadgeLabel,
+  codexImageToolBadgeClass,
+  openAICompactModeOptions,
+  planTypeOptions,
+  openAIResponsesModeOptions,
+  openAIEndpointCapabilityOptions,
+  openAITextGenerationCapabilityEnabled,
+  readOpenAIEndpointCapabilities,
+  toggleOpenAIEndpointCapability,
+  applyOpenAIEndpointCapabilities,
+  normalizeOpenAIResponsesMode,
+  isOpenAIModelRestrictionDisabled,
+  openAIResponsesStatusKey,
+  openAICompactStatusKey
+} = useEditAccountOpenAIOptions({
+  t,
+  props,
+  codexImageToolMode,
+  openaiAPIKeyResponsesWebSocketV2Mode,
+  openaiOAuthResponsesWebSocketV2Mode,
+  openAIEndpointCapabilities,
+  openAIResponsesMode,
+  editPlanType,
+  openaiPassthroughEnabled
+})
 
-const openAIWSModeOptions = computed(() => [
-  { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
-  { value: OPENAI_WS_MODE_CTX_POOL, label: t('admin.accounts.openai.wsModeCtxPool') },
-  { value: OPENAI_WS_MODE_PASSTHROUGH, label: t('admin.accounts.openai.wsModePassthrough') },
-  { value: OPENAI_WS_MODE_HTTP_BRIDGE, label: t('admin.accounts.openai.wsModeHttpBridge') }
-])
-const openaiResponsesWebSocketV2Mode = computed({
-  get: () => {
-    if (props.account?.type === 'apikey') {
-      return openaiAPIKeyResponsesWebSocketV2Mode.value
-    }
-    return openaiOAuthResponsesWebSocketV2Mode.value
-  },
-  set: (mode: OpenAIWSMode) => {
-    if (props.account?.type === 'apikey') {
-      openaiAPIKeyResponsesWebSocketV2Mode.value = mode
-      return
-    }
-    openaiOAuthResponsesWebSocketV2Mode.value = mode
-  }
-})
-const openAIWSModeConcurrencyHintKey = computed(() =>
-  resolveOpenAIWSModeConcurrencyHintKey(openaiResponsesWebSocketV2Mode.value)
-)
-const codexImageToolOptions = computed<Array<{
-  value: CodexImageToolMode
-  label: string
-  description: string
-  selectedCardClass: string
-  selectedDotClass: string
-}>>(() => [
-  {
-    value: 'inherit',
-    label: t('admin.accounts.openai.codexImageToolInherit'),
-    description: t('admin.accounts.openai.codexImageToolInheritDesc'),
-    selectedCardClass: 'border-[color-mix(in_oklch,var(--accent)_45%,transparent)] bg-[color-mix(in_oklch,var(--accent)_12%,transparent)] text-accent shadow-sm ring-1 ring-[color-mix(in_oklch,var(--accent)_25%,transparent)]',
-    selectedDotClass: 'border-accent bg-accent text-white'
-  },
-  {
-    value: 'enabled',
-    label: t('admin.accounts.openai.codexImageToolEnabled'),
-    description: t('admin.accounts.openai.codexImageToolEnabledDesc'),
-    selectedCardClass: 'border-success bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text shadow-sm ring-1 ring-[color-mix(in_oklch,var(--success)_30%,transparent)]',
-    selectedDotClass: 'border-success bg-[var(--success)] text-white'
-  },
-  {
-    value: 'disabled',
-    label: t('admin.accounts.openai.codexImageToolDisabled'),
-    description: t('admin.accounts.openai.codexImageToolDisabledDesc'),
-    selectedCardClass: 'border-warning bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text shadow-sm ring-1 ring-[color-mix(in_oklch,var(--warning)_30%,transparent)]',
-    selectedDotClass: 'border-warning bg-[var(--warning)] text-white'
-  },
-  {
-    value: 'block',
-    label: t('admin.accounts.openai.codexImageToolBlock'),
-    description: t('admin.accounts.openai.codexImageToolBlockDesc'),
-    selectedCardClass: 'border-danger-text bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text shadow-sm ring-1 ring-[color-mix(in_oklch,var(--danger)_30%,transparent)]',
-    selectedDotClass: 'border-danger-text bg-[var(--danger)] text-white'
-  }
-])
-const codexImageToolBadgeLabel = computed(() => {
-  switch (codexImageToolMode.value) {
-    case 'enabled':
-      return t('admin.accounts.openai.codexImageToolBadgeEnabled')
-    case 'disabled':
-      return t('admin.accounts.openai.codexImageToolBadgeDisabled')
-    case 'block':
-      return t('admin.accounts.openai.codexImageToolBadgeBlock')
-    default:
-      return t('admin.accounts.openai.codexImageToolBadgeInherit')
-  }
-})
-const codexImageToolBadgeClass = computed(() => {
-  switch (codexImageToolMode.value) {
-    case 'enabled':
-      return 'bg-[color-mix(in_oklch,var(--success)_16%,transparent)] text-success-text'
-    case 'disabled':
-      return 'bg-[color-mix(in_oklch,var(--warning)_18%,transparent)] text-warning-text'
-    case 'block':
-      return 'bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-danger-text'
-    default:
-      return 'bg-surface-3 text-muted'
-  }
-})
-const openAICompactModeOptions = computed(() => [
-  { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
-  { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
-  { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
-])
-// OpenAI 订阅档位手动覆盖选项(清空 + Plus/Pro/Free;别名/自定义值友好显示且保留 canonical)
-const planTypeOptions = computed(() =>
-  buildPlanTypeOptions(editPlanType.value, t('admin.accounts.openai.planTypeClear'))
-)
-const openAIResponsesModeOptions = computed(() => [
-  { value: 'auto', label: t('admin.accounts.openai.responsesModeAuto') },
-  { value: 'force_responses', label: t('admin.accounts.openai.responsesModeForceResponses') },
-  { value: 'force_chat_completions', label: t('admin.accounts.openai.responsesModeForceChatCompletions') }
-])
-const openAITextEndpointCapabilityLabel = computed(() => {
-  if (openAIResponsesMode.value === 'force_responses') {
-    return t('admin.accounts.openai.capabilityResponses')
-  }
-  if (openAIResponsesMode.value === 'force_chat_completions') {
-    return t('admin.accounts.openai.capabilityChatCompletions')
-  }
-  const extra = props.account?.extra as Record<string, unknown> | undefined
-  if (extra?.openai_responses_supported === true) {
-    return t('admin.accounts.openai.capabilityResponsesAuto')
-  }
-  if (extra?.openai_responses_supported === false) {
-    return t('admin.accounts.openai.capabilityChatCompletionsAuto')
-  }
-  return t('admin.accounts.openai.capabilityTextAuto')
-})
-const openAIEndpointCapabilityOptions = computed<{ value: OpenAIEndpointCapability; label: string }[]>(() => [
-  { value: 'chat_completions', label: openAITextEndpointCapabilityLabel.value },
-  { value: 'embeddings', label: t('admin.accounts.openai.capabilityEmbeddings') }
-])
-const openAITextGenerationCapabilityEnabled = computed(() =>
-  openAIEndpointCapabilities.value.includes('chat_completions')
-)
-
-const normalizeOpenAIEndpointCapabilities = (values: OpenAIEndpointCapability[]) => {
-  const allowed: OpenAIEndpointCapability[] = ['chat_completions', 'embeddings']
-  const selected = allowed.filter((value) => values.includes(value))
-  return selected.length > 0 ? selected : allowed
-}
-
-const readOpenAIEndpointCapabilities = (credentials?: Record<string, unknown>): OpenAIEndpointCapability[] => {
-  const raw = credentials?.openai_capabilities
-  if (Array.isArray(raw)) {
-    return normalizeOpenAIEndpointCapabilities(
-      raw.filter((value): value is OpenAIEndpointCapability =>
-        value === 'chat_completions' || value === 'embeddings'
-      )
-    )
-  }
-  if (raw !== null && typeof raw === 'object') {
-    const capabilityMap = raw as Record<string, unknown>
-    return normalizeOpenAIEndpointCapabilities(
-      openAIEndpointCapabilityOptions.value
-        .map((option) => option.value)
-        .filter((value) => capabilityMap[value] === true)
-    )
-  }
-  return ['chat_completions', 'embeddings']
-}
-
-const toggleOpenAIEndpointCapability = (capability: OpenAIEndpointCapability, event?: Event) => {
-  if (openAIEndpointCapabilities.value.includes(capability)) {
-    if (openAIEndpointCapabilities.value.length <= 1) {
-      const input = event?.target as HTMLInputElement | null
-      if (input) input.checked = true
-      return
-    }
-    openAIEndpointCapabilities.value = openAIEndpointCapabilities.value.filter(
-      (value) => value !== capability
-    )
-    if (!openAITextGenerationCapabilityEnabled.value) {
-      openAIResponsesMode.value = 'auto'
-    }
-    return
-  }
-  openAIEndpointCapabilities.value = normalizeOpenAIEndpointCapabilities([
-    ...openAIEndpointCapabilities.value,
-    capability
-  ])
-}
-
-const applyOpenAIEndpointCapabilities = (credentials: Record<string, unknown>) => {
-  const capabilities = normalizeOpenAIEndpointCapabilities(openAIEndpointCapabilities.value)
-  if (capabilities.length === 2) {
-    delete credentials.openai_capabilities
-    return
-  }
-  credentials.openai_capabilities = capabilities
-}
-const normalizeOpenAIResponsesMode = (mode: unknown): OpenAIResponsesMode => {
-  if (mode === 'force_responses' || mode === 'force_chat_completions') {
-    return mode
-  }
-  return 'auto'
-}
-const isOpenAIModelRestrictionDisabled = computed(() =>
-  props.account?.platform === 'openai' && openaiPassthroughEnabled.value
-)
-const openAIResponsesStatusKey = computed(() => {
-  if (openAIResponsesMode.value === 'force_responses') {
-    return 'admin.accounts.openai.responsesStatusForcedResponses'
-  }
-  if (openAIResponsesMode.value === 'force_chat_completions') {
-    return 'admin.accounts.openai.responsesStatusForcedChatCompletions'
-  }
-  const extra = props.account?.extra as Record<string, unknown> | undefined
-  if (extra?.openai_responses_supported === true) {
-    return 'admin.accounts.openai.responsesStatusAutoSupported'
-  }
-  if (extra?.openai_responses_supported === false) {
-    return 'admin.accounts.openai.responsesStatusAutoUnsupported'
-  }
-  return 'admin.accounts.openai.responsesStatusAutoUnknown'
-})
-const openAICompactStatusKey = computed(() => {
-  const extra = props.account?.extra as Record<string, unknown> | undefined
-  if (!props.account || props.account.platform !== 'openai') return ''
-  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
-  if (mode === 'force_on') return 'admin.accounts.openai.compactSupported'
-  if (mode === 'force_off') return 'admin.accounts.openai.compactUnsupported'
-  if (typeof extra?.openai_compact_supported === 'boolean') {
-    return extra.openai_compact_supported
-      ? 'admin.accounts.openai.compactSupported'
-      : 'admin.accounts.openai.compactUnsupported'
-  }
-  return 'admin.accounts.openai.compactAuto'
-})
 
 // Computed: current preset mappings based on platform
 const presetMappings = computed(() => getPresetMappingsByPlatform(props.account?.platform || 'anthropic'))
@@ -2394,13 +892,6 @@ const defaultBaseUrl = computed(() => {
   return 'https://api.anthropic.com'
 })
 
-const mixedChannelWarningMessageText = computed(() => {
-  if (mixedChannelWarningDetails.value) {
-    return t('admin.accounts.mixedChannelWarning', mixedChannelWarningDetails.value)
-  }
-  return mixedChannelWarningRawMessage.value
-})
-
 const form = reactive({
   name: '',
   notes: '',
@@ -2413,6 +904,20 @@ const form = reactive({
   group_ids: [] as number[],
   expires_at: null as number | null
 })
+
+const {
+  showMixedChannelWarning,
+  mixedChannelWarningDetails,
+  mixedChannelWarningRawMessage,
+  mixedChannelWarningAction,
+  antigravityMixedChannelConfirmed,
+  handleClose,
+  ensureAntigravityMixedChannelConfirmed,
+  submitUpdateAccount,
+  handleMixedChannelConfirm,
+  handleMixedChannelCancel,
+  mixedChannelWarningMessageText
+} = useEditAccountMixedChannel({ props, form, appStore, t, emit, submitting })
 
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
   upstreamBillingRateSyncEnabled.value = enabled
@@ -2437,13 +942,6 @@ const statusOptions = computed(() => {
     options.push({ value: 'error', label: t('admin.accounts.status.error') })
   }
   return options
-})
-
-const expiresAtInput = computed({
-  get: () => formatDateTimeLocal(form.expires_at),
-  set: (value: string) => {
-    form.expires_at = parseDateTimeLocal(value)
-  }
 })
 
 // Watchers
@@ -2496,467 +994,41 @@ const applyOpenAIModelMappingCredentials = (credentials: Record<string, unknown>
   }
 }
 
-const syncFormFromAccount = (newAccount: Account | null) => {
-  if (!newAccount) {
-    return
-  }
-  // 进入回填窗口：抑制 CN 模式/协议 watcher 联动重置 base_url（见 syncingForm 注释）。
-  syncingForm.value = true
-  void nextTick(() => {
-    syncingForm.value = false
-  })
-  antigravityMixedChannelConfirmed.value = false
-  showMixedChannelWarning.value = false
-  mixedChannelWarningDetails.value = null
-  mixedChannelWarningRawMessage.value = ''
-  mixedChannelWarningAction.value = null
-  form.name = newAccount.name
-  form.notes = newAccount.notes || ''
-  form.proxy_id = newAccount.proxy_id
-  form.concurrency = newAccount.concurrency
-  form.load_factor = newAccount.load_factor ?? null
-  form.priority = newAccount.priority
-  form.rate_multiplier = newAccount.rate_multiplier ?? 1
-  form.status = (newAccount.status === 'active' || newAccount.status === 'inactive' || newAccount.status === 'error')
-    ? newAccount.status
-    : 'active'
-  form.group_ids = newAccount.group_ids || []
-  form.expires_at = newAccount.expires_at ?? null
-
-  // Load intercept warmup requests setting (applies to all account types)
-  const credentials = newAccount.credentials as Record<string, unknown> | undefined
-  interceptWarmupRequests.value = credentials?.intercept_warmup_requests === true
-  autoPauseOnExpired.value = newAccount.auto_pause_on_expired === true
-  editVertexProjectId.value = ''
-  editVertexClientEmail.value = ''
-  editVertexLocation.value = 'us-central1'
-  antigravityProjectId.value =
-    newAccount.platform === 'antigravity' &&
-    newAccount.type === 'oauth' &&
-    typeof credentials?.antigravity_project_id === 'string'
-      ? credentials.antigravity_project_id.trim()
-      : ''
-
-  // Load mixed scheduling setting (only for antigravity accounts)
-  mixedScheduling.value = false
-  allowOverages.value = false
-	const extra = newAccount.extra as Record<string, unknown> | undefined
-	deviceLearningEnabled.value = extra?.device_learning_enabled === true
-  deviceTLSProfileId.value = readDeviceTLSProfileId(extra?.device_tls_profile_id)
-	mixedScheduling.value = extra?.mixed_scheduling === true
-	allowOverages.value = extra?.allow_overages === true
-	autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
-	autoPause7dThreshold.value = typeof extra?.auto_pause_7d_threshold === 'number' ? extra.auto_pause_7d_threshold * 100 : null
-	autoPause5hDisabled.value = extra?.auto_pause_5h_disabled === true
-	autoPause7dDisabled.value = extra?.auto_pause_7d_disabled === true
-	autoResetCreditEnabled.value = extra?.auto_reset_credit_enabled === true
-	autoResetCredit5hThreshold.value =
-		typeof extra?.auto_reset_credit_5h_threshold === 'number' ? extra.auto_reset_credit_5h_threshold * 100 : 100
-	autoResetCredit7dThreshold.value =
-		typeof extra?.auto_reset_credit_7d_threshold === 'number' ? extra.auto_reset_credit_7d_threshold * 100 : 100
-	upstreamBillingAutoProbeEnabled.value = extra?.upstream_billing_probe_enabled === true
-  upstreamBillingRateSyncEnabled.value =
-    upstreamBillingAutoProbeEnabled.value && extra?.upstream_billing_rate_sync_enabled === true
-
-  // Load OpenAI passthrough toggle (OpenAI OAuth/SetupToken/API Key)
-  openaiPassthroughEnabled.value = false
-  openaiFlattenNamespacesEnabled.value = false
-  openAILongContextBillingEnabled.value = false
-  editPlanType.value = ''
-  openAICompactMode.value = 'auto'
-  openAIResponsesMode.value = 'auto'
-  openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
-  openAICompactModelMappings.value = []
-  openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
-  openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
-  codexCLIOnlyEnabled.value = false
-  codexCLIOnlyAppServerEnabled.value = false
-  codexFingerprintMode.value = 'off'
-  codexImageToolMode.value = 'inherit'
-  anthropicPassthroughEnabled.value = false
-  anthropicAPIKeyAuthScheme.value = 'x_api_key'
-  webSearchEmulationMode.value = 'default'
-  if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
-    openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
-    openaiFlattenNamespacesEnabled.value =
-      newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
-    const longContextBillingValue = extra?.openai_long_context_billing_enabled
-    openAILongContextBillingEnabled.value = longContextBillingValue === true
-    // plan_type 手动覆盖仅 OAuth 有实际调度语义(IsOpenAIChatGPTSubscription 要求 oauth),故只对 oauth 回填
-    editPlanType.value = newAccount.type === 'oauth'
-      ? readPlanType(newAccount.credentials as Record<string, unknown> | undefined)
-      : ''
-    openAICompactMode.value = (extra?.openai_compact_mode as OpenAICompactMode) || 'auto'
-    if (newAccount.type === 'apikey') {
-      openAIResponsesMode.value = normalizeOpenAIResponsesMode(extra?.openai_responses_mode)
-      openAIEndpointCapabilities.value = readOpenAIEndpointCapabilities(
-        newAccount.credentials as Record<string, unknown> | undefined
-      )
-      if (!openAITextGenerationCapabilityEnabled.value) {
-        openAIResponsesMode.value = 'auto'
-      }
-    }
-    const codexImageGenerationBridgeValue = typeof extra?.codex_image_generation_bridge === 'boolean'
-      ? extra.codex_image_generation_bridge
-      : extra?.codex_image_generation_bridge_enabled
-    if (extra?.codex_image_generation_explicit_tool_policy === 'strip') {
-      codexImageToolMode.value = 'block'
-    } else if (codexImageGenerationBridgeValue === true) {
-      codexImageToolMode.value = 'enabled'
-    } else if (codexImageGenerationBridgeValue === false) {
-      codexImageToolMode.value = 'disabled'
-    }
-    openaiOAuthResponsesWebSocketV2Mode.value = resolveOpenAIWSModeFromExtra(extra, {
-      modeKey: 'openai_oauth_responses_websockets_v2_mode',
-      enabledKey: 'openai_oauth_responses_websockets_v2_enabled',
-      fallbackEnabledKeys: ['responses_websockets_v2_enabled', 'openai_ws_enabled'],
-      defaultMode: OPENAI_WS_MODE_OFF
-    })
-    openaiAPIKeyResponsesWebSocketV2Mode.value = resolveOpenAIWSModeFromExtra(extra, {
-      modeKey: 'openai_apikey_responses_websockets_v2_mode',
-      enabledKey: 'openai_apikey_responses_websockets_v2_enabled',
-      fallbackEnabledKeys: ['responses_websockets_v2_enabled', 'openai_ws_enabled'],
-      defaultMode: OPENAI_WS_MODE_OFF
-    })
-    if (newAccount.type === 'oauth' || newAccount.type === 'setup-token') {
-      codexCLIOnlyEnabled.value = extra?.codex_cli_only === true
-      codexCLIOnlyAppServerEnabled.value =
-        extra?.codex_cli_only_allow_app_server === true
-    }
-    if (newAccount.type === 'oauth') {
-      const fpMode = extra?.codex_fingerprint_mode as string | undefined
-      // 缺省/非法值按 off 呈现，与后端 GetCodexFingerprintMode 的 opt-in 语义一致（#5610）
-      codexFingerprintMode.value = (['off', 'device', 'session', 'full'].includes(fpMode || '')
-        ? fpMode as CodexFingerprintMode
-        : 'off')
-    }
-    const credentials = newAccount.credentials as Record<string, unknown> | undefined
-    const compactMappings = credentials?.compact_model_mapping as Record<string, string> | undefined
-    if (compactMappings && typeof compactMappings === 'object') {
-      openAICompactModelMappings.value = Object.entries(compactMappings).map(([from, to]) => ({ from, to }))
-    }
-  }
-  if (newAccount.platform === 'anthropic' && newAccount.type === 'apikey') {
-    anthropicPassthroughEnabled.value = extra?.anthropic_passthrough === true
-    anthropicAPIKeyAuthScheme.value = extra?.anthropic_apikey_auth_scheme === 'authorization_bearer'
-      ? 'authorization_bearer'
-      : 'x_api_key'
-    // 三态：string "default"/"enabled"/"disabled"，向后兼容旧 bool
-    const wsVal = extra?.web_search_emulation
-    if (wsVal === 'enabled' || wsVal === 'disabled') {
-      webSearchEmulationMode.value = wsVal
-    } else if (wsVal === true) {
-      webSearchEmulationMode.value = 'enabled'
-    } else {
-      webSearchEmulationMode.value = 'default'
-    }
-  }
-
-  // Load quota limit for apikey/bedrock accounts (bedrock quota is also loaded in its own branch above)
-  if (newAccount.type === 'apikey' || newAccount.type === 'bedrock') {
-    const quotaVal = extra?.quota_limit as number | undefined
-    editQuotaLimit.value = (quotaVal && quotaVal > 0) ? quotaVal : null
-    const dailyVal = extra?.quota_daily_limit as number | undefined
-    editQuotaDailyLimit.value = (dailyVal && dailyVal > 0) ? dailyVal : null
-    const weeklyVal = extra?.quota_weekly_limit as number | undefined
-    editQuotaWeeklyLimit.value = (weeklyVal && weeklyVal > 0) ? weeklyVal : null
-    // Load quota reset mode config
-    editDailyResetMode.value = (extra?.quota_daily_reset_mode as 'rolling' | 'fixed') || null
-    editDailyResetHour.value = (extra?.quota_daily_reset_hour as number) ?? null
-    editWeeklyResetMode.value = (extra?.quota_weekly_reset_mode as 'rolling' | 'fixed') || null
-    editWeeklyResetDay.value = (extra?.quota_weekly_reset_day as number) ?? null
-    editWeeklyResetHour.value = (extra?.quota_weekly_reset_hour as number) ?? null
-    editResetTimezone.value = (extra?.quota_reset_timezone as string) || null
-    // Load quota notify config
-    loadQuotaNotifyFromExtra(extra)
-  } else {
-    editQuotaLimit.value = null
-    editQuotaDailyLimit.value = null
-    editQuotaWeeklyLimit.value = null
-    editDailyResetMode.value = null
-    editDailyResetHour.value = null
-    editWeeklyResetMode.value = null
-    editWeeklyResetDay.value = null
-    editWeeklyResetHour.value = null
-    editResetTimezone.value = null
-    resetQuotaNotify()
-  }
-
-  // Load antigravity model mapping (Antigravity 只支持映射模式)
-  if (newAccount.platform === 'antigravity') {
-    const credentials = newAccount.credentials as Record<string, unknown> | undefined
-
-    // Antigravity 始终使用映射模式
-    antigravityModelRestrictionMode.value = 'mapping'
-    antigravityWhitelistModels.value = []
-
-    // 从 model_mapping 读取映射配置
-    const rawAgMapping = credentials?.model_mapping as Record<string, string> | undefined
-    if (rawAgMapping && typeof rawAgMapping === 'object') {
-      const entries = Object.entries(rawAgMapping)
-      // 无论是白名单样式(key===value)还是真正的映射，都统一转换为映射列表
-      antigravityModelMappings.value = entries.map(([from, to]) => ({ from, to }))
-    } else {
-      // 兼容旧数据：从 model_whitelist 读取，转换为映射格式
-      const rawWhitelist = credentials?.model_whitelist
-      if (Array.isArray(rawWhitelist) && rawWhitelist.length > 0) {
-        antigravityModelMappings.value = rawWhitelist
-          .map((v) => String(v).trim())
-          .filter((v) => v.length > 0)
-          .map((m) => ({ from: m, to: m }))
-      } else {
-        antigravityModelMappings.value = []
-      }
-    }
-  } else {
-    antigravityModelRestrictionMode.value = 'mapping'
-    antigravityWhitelistModels.value = []
-    antigravityModelMappings.value = []
-  }
-
-  // Load quota control settings (Anthropic OAuth/SetupToken only)
-  loadQuotaControlSettings(newAccount)
-
-  loadTempUnschedRules(credentials)
-  loadAccountSchedulingThresholdOverride(newAccount.platform, credentials)
-
-  // Load header override state for eligible account platforms/types
-  headerOverrideEnabled.value = false
-  headerOverrideRows.value = []
-  if (newAccount.credentials && isHeaderOverrideCapable(newAccount.platform, newAccount.type)) {
-    const overrideCreds = newAccount.credentials as Record<string, unknown>
-    headerOverrideEnabled.value = overrideCreds[HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY] === true
-    headerOverrideRows.value = splitHeaderOverridesObject(
-      overrideCreds[HEADER_OVERRIDES_CREDENTIAL_KEY]
-    )
-  }
-
-  // Load Grok OAuth custom upstream URL state（存储的官方地址视同未定制）
-  grokOAuthCustomBaseUrlEnabled.value = false
-  grokOAuthBaseUrl.value = ''
-  const grokClientToolCacheSetting =
-    newAccount.platform === 'grok' && newAccount.type === 'oauth'
-      ? newAccount.extra?.[GROK_CLIENT_TOOL_CACHE_EXTRA_KEY]
-      : undefined
-  grokClientToolCacheEnabled.value =
-    newAccount.platform === 'grok' &&
-    newAccount.type === 'oauth' &&
-    (grokClientToolCacheSetting === undefined || grokClientToolCacheSetting === true)
-  if (newAccount.platform === 'grok' && newAccount.type === 'oauth' && newAccount.credentials) {
-    const grokCreds = newAccount.credentials as Record<string, unknown>
-    if (isCustomGrokBaseUrl(grokCreds.base_url)) {
-      grokOAuthCustomBaseUrlEnabled.value = true
-      grokOAuthBaseUrl.value = (grokCreds.base_url as string).trim()
-    }
-  }
-
-  // Initialize API Key fields for apikey type
-  if (newAccount.platform === 'kiro') {
-    loadModelRestrictionFromMapping(
-      ((newAccount.credentials || {}) as Record<string, unknown>).model_mapping as Record<string, unknown> | undefined
-    )
-    discoveredKiroProfiles.value = []
-    selectedKiroProfileArnChoice.value = KIRO_PROFILE_CHOICE_KEEP
-  }
-
-  if (newAccount.platform === 'kiro' && newAccount.type === 'apikey' && newAccount.credentials) {
-    editBaseUrl.value = ''
-    poolModeEnabled.value = false
-    poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
-    poolModeRetryStatusCodesInput.value = ''
-    customErrorCodesEnabled.value = false
-    selectedErrorCodes.value = []
-  } else if (newAccount.type === 'apikey' && newAccount.credentials) {
-    const credentials = newAccount.credentials as Record<string, unknown>
-    // 国产供应商：读取 account_mode 与 api_protocol 作为可编辑初始值
-    // （编辑弹窗允许修正两者，用于修复早期存错默认值的账号）。
-    if (newAccount.platform === 'kimi' || newAccount.platform === 'zhipu' || newAccount.platform === 'deepseek') {
-      editAccountMode.value = credentials.account_mode === 'coding' ? 'coding' : 'payg'
-      const storedProtocol = credentials.api_protocol
-      editApiProtocol.value =
-        storedProtocol === 'adaptive' ||
-        storedProtocol === 'chat_completions' ||
-        storedProtocol === 'anthropic' ||
-        storedProtocol === 'responses'
-          ? storedProtocol
-          : 'chat_completions'
-      if (!cnSupportsNativeResponses(newAccount.platform) && editApiProtocol.value === 'responses') {
-        editApiProtocol.value = 'chat_completions'
-      }
-      const adaptiveDefaults = defaultCNAdaptiveBaseUrls(newAccount.platform, editAccountMode.value)
-      const storedBaseUrls = (credentials.api_base_urls as Record<string, unknown> | undefined) || {}
-      const legacyBaseUrl = typeof credentials.base_url === 'string' ? credentials.base_url.trim() : ''
-      const storedChatBaseUrl = typeof storedBaseUrls.chat_completions === 'string'
-        ? storedBaseUrls.chat_completions.trim()
-        : ''
-      const storedAnthropicBaseUrl = typeof storedBaseUrls.anthropic === 'string'
-        ? storedBaseUrls.anthropic.trim()
-        : ''
-      const storedResponsesBaseUrl = typeof storedBaseUrls.responses === 'string'
-        ? storedBaseUrls.responses.trim()
-        : ''
-      const nextAdaptiveBaseUrls: Record<CnNativeApiProtocol, string> = {
-        chat_completions: storedChatBaseUrl || adaptiveDefaults.chat_completions,
-        anthropic: storedAnthropicBaseUrl || adaptiveDefaults.anthropic,
-        responses: storedResponsesBaseUrl || adaptiveDefaults.responses
-      }
-      const legacyProtocol: CnNativeApiProtocol = editApiProtocol.value === 'anthropic'
-        ? 'anthropic'
-        : editApiProtocol.value === 'responses'
-          ? 'responses'
-          : 'chat_completions'
-      const storedLegacyBaseUrl = legacyProtocol === 'anthropic'
-        ? storedAnthropicBaseUrl
-        : legacyProtocol === 'responses'
-          ? storedResponsesBaseUrl
-          : storedChatBaseUrl
-      if (legacyBaseUrl && !storedLegacyBaseUrl) {
-        nextAdaptiveBaseUrls[legacyProtocol] = legacyBaseUrl
-      }
-      editAdaptiveBaseUrls.value = nextAdaptiveBaseUrls
-      // 智谱团队版 Coding Plan：回填组织/项目 ID
-      if (newAccount.platform === 'zhipu') {
-        editZhipuOrganization.value = typeof credentials.zhipu_organization === 'string' ? credentials.zhipu_organization : ''
-        editZhipuProject.value = typeof credentials.zhipu_project === 'string' ? credentials.zhipu_project : ''
-      }
-    }
-    const platformDefaultUrl =
-      newAccount.platform === 'openai'
-        ? 'https://api.openai.com'
-        : newAccount.platform === 'gemini'
-          ? 'https://generativelanguage.googleapis.com'
-          : newAccount.platform === 'grok'
-            ? 'https://api.x.ai/v1'
-            : newAccount.platform === 'kimi' ||
-                newAccount.platform === 'zhipu' ||
-                newAccount.platform === 'deepseek'
-              ? defaultCNBaseUrl(newAccount.platform, editAccountMode.value, editApiProtocol.value)
-              : 'https://api.anthropic.com'
-    editBaseUrl.value = isCNApiKeyAccount.value && editApiProtocol.value === 'adaptive'
-      ? editAdaptiveBaseUrls.value.chat_completions
-      : (credentials.base_url as string) || platformDefaultUrl
-
-    // Load model mappings and detect mode
-    loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
-
-    // Load pool mode
-    poolModeEnabled.value = credentials.pool_mode === true
-    poolModeRetryCount.value = normalizePoolModeRetryCount(
-      Number(credentials.pool_mode_retry_count ?? DEFAULT_POOL_MODE_RETRY_COUNT)
-    )
-    poolModeRetryStatusCodesInput.value = formatPoolModeRetryStatusCodes(credentials.pool_mode_retry_status_codes)
-
-    // Load custom error codes
-    customErrorCodesEnabled.value = credentials.custom_error_codes_enabled === true
-    const existingErrorCodes = credentials.custom_error_codes as number[] | undefined
-    if (existingErrorCodes && Array.isArray(existingErrorCodes)) {
-      selectedErrorCodes.value = [...existingErrorCodes]
-    } else {
-      selectedErrorCodes.value = []
-    }
-
-  } else if (newAccount.type === 'bedrock' && newAccount.credentials) {
-    const bedrockCreds = newAccount.credentials as Record<string, unknown>
-    const authMode = (bedrockCreds.auth_mode as string) || 'sigv4'
-    editBedrockRegion.value = (bedrockCreds.aws_region as string) || ''
-    editBedrockForceGlobal.value = (bedrockCreds.aws_force_global as string) === 'true'
-
-    if (authMode === 'apikey') {
-      editBedrockApiKeyValue.value = ''
-    } else {
-      editBedrockAccessKeyId.value = (bedrockCreds.aws_access_key_id as string) || ''
-      editBedrockSecretAccessKey.value = ''
-      editBedrockSessionToken.value = ''
-    }
-
-    // Load pool mode for bedrock
-    poolModeEnabled.value = bedrockCreds.pool_mode === true
-    const retryCount = bedrockCreds.pool_mode_retry_count
-    poolModeRetryCount.value = (typeof retryCount === 'number' && retryCount >= 0) ? retryCount : DEFAULT_POOL_MODE_RETRY_COUNT
-    poolModeRetryStatusCodesInput.value = formatPoolModeRetryStatusCodes(bedrockCreds.pool_mode_retry_status_codes)
-
-    // Load quota limits for bedrock
-    const bedrockExtra = (newAccount.extra as Record<string, unknown>) || {}
-    editQuotaLimit.value = typeof bedrockExtra.quota_limit === 'number' ? bedrockExtra.quota_limit : null
-    editQuotaDailyLimit.value = typeof bedrockExtra.quota_daily_limit === 'number' ? bedrockExtra.quota_daily_limit : null
-    editQuotaWeeklyLimit.value = typeof bedrockExtra.quota_weekly_limit === 'number' ? bedrockExtra.quota_weekly_limit : null
-    // Load quota notify for bedrock
-    loadQuotaNotifyFromExtra(bedrockExtra)
-
-    // Load model mappings for bedrock
-    loadModelRestrictionFromMapping(bedrockCreds.model_mapping as Record<string, unknown> | undefined)
-  } else if (newAccount.type === 'upstream' && newAccount.credentials) {
-    const credentials = newAccount.credentials as Record<string, unknown>
-    editBaseUrl.value = (credentials.base_url as string) || ''
-  } else if (newAccount.platform === 'kiro') {
-    editBaseUrl.value = ''
-    poolModeEnabled.value = false
-    poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
-    poolModeRetryStatusCodesInput.value = ''
-    customErrorCodesEnabled.value = false
-    selectedErrorCodes.value = []
-  } else if ((newAccount.platform === 'gemini' || newAccount.platform === 'anthropic') && newAccount.type === 'service_account' && newAccount.credentials) {
-    const credentials = newAccount.credentials as Record<string, unknown>
-    editVertexProjectId.value = (credentials.project_id as string) || ''
-    editVertexClientEmail.value = (credentials.client_email as string) || ''
-    editVertexLocation.value = (credentials.location as string) || (credentials.vertex_location as string) || 'us-central1'
-
-    // Load model mappings for service_account
-    loadModelRestrictionFromMapping(credentials.model_mapping as Record<string, unknown> | undefined)
-  } else {
-    const platformDefaultUrl =
-      newAccount.platform === 'openai'
-        ? 'https://api.openai.com'
-        : newAccount.platform === 'gemini'
-          ? 'https://generativelanguage.googleapis.com'
-          : newAccount.platform === 'grok'
-            ? 'https://api.x.ai/v1'
-            : 'https://api.anthropic.com'
-    editBaseUrl.value = platformDefaultUrl
-
-    // Load model mappings for OpenAI/Grok OAuth accounts
-    if ((newAccount.platform === 'openai' || newAccount.platform === 'grok') && newAccount.credentials) {
-      const oauthCredentials = newAccount.credentials as Record<string, unknown>
-      loadModelRestrictionFromMapping(oauthCredentials.model_mapping as Record<string, unknown> | undefined)
-    } else {
-      modelRestrictionMode.value = 'whitelist'
-      modelMappings.value = []
-      allowedModels.value = []
-    }
-    poolModeEnabled.value = false
-    poolModeRetryCount.value = DEFAULT_POOL_MODE_RETRY_COUNT
-    poolModeRetryStatusCodesInput.value = ''
-    customErrorCodesEnabled.value = false
-    selectedErrorCodes.value = []
-  }
-  editApiKey.value = ''
-}
-
-async function loadTLSProfiles() {
-  try {
-    const [profiles, routers] = await Promise.all([
-      adminAPI.tlsFingerprintProfiles.list(),
-      adminAPI.tlsFingerprintRouters.list()
-    ])
-    tlsFingerprintProfiles.value = profiles.map(p => ({ id: p.id, name: p.name }))
-    tlsFingerprintRouters.value = routers.map(r => ({ id: r.id, name: r.name }))
-  } catch {
-    tlsFingerprintProfiles.value = []
-    tlsFingerprintRouters.value = []
-  }
-}
-
-async function loadCompleteDeviceTLSProfiles(platform?: string | null) {
-  if (!platform) {
-    deviceTLSCatalogOptions.value = []
-    return
-  }
-  try {
-    deviceTLSCatalogOptions.value = await adminAPI.tlsFingerprintProfiles.listComplete(platform)
-  } catch {
-    deviceTLSCatalogOptions.value = []
-  }
-}
+const {
+  syncFormFromAccount
+} = useEditAccountSync({
+  form, syncingForm, nextTick,
+  showMixedChannelWarning, mixedChannelWarningDetails, mixedChannelWarningRawMessage,
+  mixedChannelWarningAction, antigravityMixedChannelConfirmed,
+  interceptWarmupRequests, autoPauseOnExpired, editVertexProjectId, editVertexClientEmail,
+  editVertexLocation, antigravityProjectId,
+  mixedScheduling, allowOverages, deviceLearningEnabled, deviceTLSProfileId, readDeviceTLSProfileId,
+  autoPause5hThreshold, autoPause7dThreshold, autoPause5hDisabled, autoPause7dDisabled,
+  autoResetCreditEnabled, autoResetCredit5hThreshold, autoResetCredit7dThreshold,
+  upstreamBillingAutoProbeEnabled, upstreamBillingRateSyncEnabled,
+  openaiPassthroughEnabled, openaiFlattenNamespacesEnabled, openAILongContextBillingEnabled,
+  editPlanType, openAICompactMode, openAIResponsesMode, openAIEndpointCapabilities,
+  openAICompactModelMappings, openaiOAuthResponsesWebSocketV2Mode, openaiAPIKeyResponsesWebSocketV2Mode,
+  codexCLIOnlyEnabled, codexCLIOnlyAppServerEnabled, codexFingerprintMode, codexImageToolMode,
+  anthropicPassthroughEnabled, anthropicAPIKeyAuthScheme, webSearchEmulationMode,
+  openAITextGenerationCapabilityEnabled, normalizeOpenAIResponsesMode, readOpenAIEndpointCapabilities,
+  editQuotaLimit, editQuotaDailyLimit, editQuotaWeeklyLimit, editDailyResetMode, editDailyResetHour,
+  editWeeklyResetMode, editWeeklyResetDay, editWeeklyResetHour, editResetTimezone,
+  loadQuotaNotifyFromExtra, resetQuotaNotify,
+  antigravityModelRestrictionMode, antigravityWhitelistModels, antigravityModelMappings,
+  loadQuotaControlSettings, loadTempUnschedRules, loadAccountSchedulingThresholdOverride,
+  headerOverrideEnabled, headerOverrideRows,
+  grokOAuthCustomBaseUrlEnabled, grokOAuthBaseUrl, grokClientToolCacheEnabled, GROK_CLIENT_TOOL_CACHE_EXTRA_KEY,
+  loadModelRestrictionFromMapping, discoveredKiroProfiles, selectedKiroProfileArnChoice, KIRO_PROFILE_CHOICE_KEEP,
+  editBaseUrl, poolModeEnabled, poolModeRetryCount, poolModeRetryStatusCodesInput,
+  normalizePoolModeRetryCount, formatPoolModeRetryStatusCodes, DEFAULT_POOL_MODE_RETRY_COUNT,
+  customErrorCodesEnabled, selectedErrorCodes,
+  editAccountMode, editApiProtocol, editAdaptiveBaseUrls, editZhipuOrganization, editZhipuProject, isCNApiKeyAccount,
+  editBedrockRegion, editBedrockForceGlobal, editBedrockApiKeyValue, editBedrockAccessKeyId,
+  editBedrockSecretAccessKey, editBedrockSessionToken,
+  modelRestrictionMode, modelMappings, allowedModels,
+  editApiKey
+})
 
 watch(
   [() => props.show, () => props.account, () => props.account?.platform],
@@ -3003,69 +1075,6 @@ const discoverKiroProfilesForEdit = async () => {
     appStore.showError(error?.message || t('admin.accounts.kiro.discoverProfilesFailed'))
   } finally {
     discoveringKiroProfiles.value = false
-  }
-}
-
-const addAntigravityModelMapping = () => {
-  antigravityModelMappings.value.push({ from: '', to: '' })
-}
-
-const addOpenAICompactModelMapping = () => {
-  openAICompactModelMappings.value.push({ from: '', to: '' })
-}
-
-const removeOpenAICompactModelMapping = (index: number) => {
-  openAICompactModelMappings.value.splice(index, 1)
-}
-
-const removeAntigravityModelMapping = (index: number) => {
-  antigravityModelMappings.value.splice(index, 1)
-}
-
-const addAntigravityPresetMapping = (from: string, to: string) => {
-  const exists = antigravityModelMappings.value.some((m) => m.from === from)
-  if (exists) {
-    appStore.showInfo(t('admin.accounts.mappingExists', { model: from }))
-    return
-  }
-  antigravityModelMappings.value.push({ from, to })
-}
-
-const syncAntigravityUpstreamModels = async () => {
-  if (!props.account?.id || isSyncingAntigravityUpstream.value) return
-
-  isSyncingAntigravityUpstream.value = true
-  try {
-    const result = await adminAPI.accounts.syncUpstreamModels(props.account.id)
-    const upstreamModels = result.models.map((model) => model.trim()).filter(Boolean)
-    if (upstreamModels.length === 0) {
-      appStore.showInfo(t('admin.accounts.syncUpstreamModelsEmpty'))
-      return
-    }
-
-    let addedCount = 0
-    for (const model of upstreamModels) {
-      const exists = antigravityModelMappings.value.some((mapping) => mapping.from === model)
-      if (!exists) {
-        antigravityModelMappings.value.push({ from: model, to: model })
-        addedCount += 1
-      }
-    }
-
-    if (result.warnings?.some((warning) => warning.code === 'upstream_model_metadata_incomplete')) {
-      appStore.showWarning(t('admin.accounts.syncUpstreamModelsMetadataIncomplete'))
-      return
-    }
-    if (addedCount > 0) {
-      appStore.showSuccess(t('admin.accounts.syncUpstreamModelsSuccess', { count: addedCount, total: upstreamModels.length }))
-    } else {
-      appStore.showInfo(t('admin.accounts.syncUpstreamModelsNoChanges', { count: upstreamModels.length }))
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : t('admin.accounts.syncUpstreamModelsFailed')
-    appStore.showError(t('admin.accounts.syncUpstreamModelsError', { message }))
-  } finally {
-    isSyncingAntigravityUpstream.value = false
   }
 }
 
@@ -3270,920 +1279,123 @@ function toPositiveNumber(value: unknown) {
   return Math.trunc(num)
 }
 
-const needsMixedChannelCheck = () => props.account?.platform === 'antigravity' || props.account?.platform === 'anthropic'
-
-const buildMixedChannelDetails = (resp?: CheckMixedChannelResponse) => {
-  const details = resp?.details
-  if (!details) {
-    return null
-  }
-  return {
-    groupName: details.group_name || 'Unknown',
-    currentPlatform: details.current_platform || 'Unknown',
-    otherPlatform: details.other_platform || 'Unknown'
-  }
-}
-
-const clearMixedChannelDialog = () => {
-  showMixedChannelWarning.value = false
-  mixedChannelWarningDetails.value = null
-  mixedChannelWarningRawMessage.value = ''
-  mixedChannelWarningAction.value = null
-}
-
-const openMixedChannelDialog = (opts: {
-  response?: CheckMixedChannelResponse
-  message?: string
-  onConfirm: () => Promise<void>
-}) => {
-  mixedChannelWarningDetails.value = buildMixedChannelDetails(opts.response)
-  mixedChannelWarningRawMessage.value =
-    opts.message || opts.response?.message || t('admin.accounts.failedToUpdate')
-  mixedChannelWarningAction.value = opts.onConfirm
-  showMixedChannelWarning.value = true
-}
-
-const withAntigravityConfirmFlag = (payload: Record<string, unknown>) => {
-  if (needsMixedChannelCheck() && antigravityMixedChannelConfirmed.value) {
-    return {
-      ...payload,
-      confirm_mixed_channel_risk: true
-    }
-  }
-  const cloned = { ...payload }
-  delete cloned.confirm_mixed_channel_risk
-  return cloned
-}
-
-const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<void>): Promise<boolean> => {
-  if (!needsMixedChannelCheck()) {
-    return true
-  }
-  if (antigravityMixedChannelConfirmed.value) {
-    return true
-  }
-  if (!props.account) {
-    return false
-  }
-
-  try {
-    const result = await adminAPI.accounts.checkMixedChannelRisk({
-      platform: props.account.platform,
-      group_ids: form.group_ids,
-      account_id: props.account.id
-    })
-    if (!result.has_risk) {
-      return true
-    }
-    openMixedChannelDialog({
-      response: result,
-      onConfirm: async () => {
-        antigravityMixedChannelConfirmed.value = true
-        await onConfirm()
-      }
-    })
-    return false
-  } catch (error: any) {
-    appStore.showError(error.message || t('admin.accounts.failedToUpdate'))
-    return false
-  }
-}
-
-const formatDateTimeLocal = formatDateTimeLocalInput
-const parseDateTimeLocal = parseDateTimeLocalInput
-
 // Methods
-const handleClose = () => {
-  antigravityMixedChannelConfirmed.value = false
-  clearMixedChannelDialog()
-  emit('close')
-}
+const {
+  handleSubmit
+} = useEditAccountSubmit({
+  props,
+  form,
+  appStore,
+  t,
+  ensureAntigravityMixedChannelConfirmed,
+  submitUpdateAccount,
+  autoResetCreditEnabled,
+  autoResetCredit5hThreshold,
+  autoResetCredit7dThreshold,
+  autoPauseOnExpired,
+  upstreamBillingAutoProbeEnabled,
+  upstreamBillingRateSyncEnabled,
+  tempUnschedEnabled,
+  applyTempUnschedConfig,
+  applyKiroModelRestrictionPatch,
+  selectedKiroProfileArnChoice,
+  KIRO_PROFILE_CHOICE_AUTO,
+  KIRO_PROFILE_CHOICE_KEEP,
+  editApiKey,
+  editBaseUrl,
+  defaultBaseUrl,
+  openaiPassthroughEnabled,
+  isCNApiKeyAccount,
+  editAccountMode,
+  editApiProtocol,
+  cnPresetPlatform,
+  editAdaptiveProtocolOptions,
+  editAdaptiveBaseUrls,
+  editZhipuOrganization,
+  editZhipuProject,
+  buildModelRestrictionMapping,
+  applyOpenAIEndpointCapabilities,
+  openAICompactModelMappings,
+  poolModeEnabled,
+  poolModeRetryCount,
+  poolModeRetryStatusCodesInput,
+  normalizePoolModeRetryCount,
+  parsePoolModeRetryStatusCodes,
+  customErrorCodesEnabled,
+  selectedErrorCodes,
+  headerOverrideEnabled,
+  headerOverrideRows,
+  interceptWarmupRequests,
+  applyAccountSchedulingThresholdOverridePatch,
+  editVertexProjectId,
+  editVertexClientEmail,
+  editVertexLocation,
+  editBedrockRegion,
+  editBedrockForceGlobal,
+  isBedrockAPIKeyMode,
+  editBedrockApiKeyValue,
+  editBedrockAccessKeyId,
+  editBedrockSecretAccessKey,
+  editBedrockSessionToken,
+  isSparkShadow,
+  applyOpenAIModelMappingCredentials,
+  grokOAuthCustomBaseUrlEnabled,
+  grokOAuthBaseUrl,
+  GROK_CLIENT_TOOL_CACHE_EXTRA_KEY,
+  grokClientToolCacheEnabled,
+  editPlanType,
+  antigravityProjectId,
+  antigravityModelMappings,
+  mixedScheduling,
+  allowOverages,
+  windowCostEnabled,
+  windowCostLimit,
+  windowCostStickyReserve,
+  sessionLimitEnabled,
+  maxSessions,
+  sessionIdleTimeout,
+  rpmLimitEnabled,
+  baseRpm,
+  rpmStrategy,
+  rpmStickyBuffer,
+  userMsgQueueMode,
+  sessionIdMaskingEnabled,
+  cacheTTLOverrideEnabled,
+  cacheTTLOverrideTarget,
+  customBaseUrlEnabled,
+  customBaseUrl,
+  anthropicPassthroughEnabled,
+  anthropicAPIKeyAuthScheme,
+  webSearchEmulationMode,
+  openaiOAuthResponsesWebSocketV2Mode,
+  openaiAPIKeyResponsesWebSocketV2Mode,
+  openaiFlattenNamespacesEnabled,
+  openAILongContextBillingEnabled,
+  openAICompactMode,
+  openAITextGenerationCapabilityEnabled,
+  openAIResponsesMode,
+  autoPause5hThreshold,
+  autoPause7dThreshold,
+  autoPause5hDisabled,
+  autoPause7dDisabled,
+  codexImageToolMode,
+  codexCLIOnlyEnabled,
+  codexCLIOnlyAppServerEnabled,
+  codexFingerprintMode,
+  editQuotaLimit,
+  editQuotaDailyLimit,
+  editQuotaWeeklyLimit,
+  editDailyResetMode,
+  editDailyResetHour,
+  editWeeklyResetMode,
+  editWeeklyResetDay,
+  editWeeklyResetHour,
+  editResetTimezone,
+  writeQuotaNotifyToExtra,
+  supportsTLSFingerprint,
+  applyTLSFingerprintToExtra,
+  deviceLearningEnabled,
+  deviceTLSProfileId
+})
 
-const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
-  submitting.value = true
-  try {
-    const updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
-    appStore.showSuccess(t('admin.accounts.accountUpdated'))
-    emit('updated', updatedAccount)
-    handleClose()
-  } catch (error: any) {
-    if (error.status === 409 && error.error === 'mixed_channel_warning' && needsMixedChannelCheck()) {
-      openMixedChannelDialog({
-        message: error.message,
-        onConfirm: async () => {
-          antigravityMixedChannelConfirmed.value = true
-          await submitUpdateAccount(accountID, updatePayload)
-        }
-      })
-      return
-    }
-    appStore.showError(error.message || t('admin.accounts.failedToUpdate'))
-  } finally {
-    submitting.value = false
-  }
-}
-
-const handleSubmit = async () => {
-  if (!props.account) return
-  const accountID = props.account.id
-
-  if (form.status !== 'active' && form.status !== 'inactive' && form.status !== 'error') {
-    appStore.showError(t('admin.accounts.pleaseSelectStatus'))
-    return
-  }
-	if (autoResetCreditEnabled.value) {
-		const thresholds = [autoResetCredit5hThreshold.value, autoResetCredit7dThreshold.value]
-		if (thresholds.some((value) => !Number.isFinite(value) || value < 0.1 || value > 100)) {
-			appStore.showError(t('admin.accounts.autoResetCredit.thresholdInvalid'))
-			return
-		}
-	}
-
-  const updatePayload: Record<string, unknown> = { ...form }
-  try {
-    // 后端期望 proxy_id: 0 表示清除代理，而不是 null
-    if (updatePayload.proxy_id === null) {
-      updatePayload.proxy_id = 0
-    }
-    if (form.expires_at === null) {
-      updatePayload.expires_at = 0
-    }
-    // load_factor: 空值/NaN/0/负数 时发送 0（后端约定 <= 0 = 清除）
-    const lf = form.load_factor
-    if (lf == null || Number.isNaN(lf) || lf <= 0) {
-      updatePayload.load_factor = 0
-    }
-    updatePayload.auto_pause_on_expired = autoPauseOnExpired.value
-    if (props.account.type === 'apikey') {
-      updatePayload.upstream_billing_probe_enabled = upstreamBillingAutoProbeEnabled.value
-      updatePayload.upstream_billing_rate_sync_enabled = upstreamBillingRateSyncEnabled.value
-      if (upstreamBillingRateSyncEnabled.value) {
-        delete updatePayload.rate_multiplier
-      }
-    }
-    if (props.account.platform === 'kiro' && props.account.type === 'oauth') {
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = {}
-
-      if (tempUnschedEnabled.value) {
-        if (!applyTempUnschedConfig(newCredentials)) {
-          return
-        }
-      } else if (currentCredentials.temp_unschedulable_enabled === true) {
-        newCredentials.temp_unschedulable_enabled = false
-        newCredentials.temp_unschedulable_rules = []
-      }
-
-      applyKiroModelRestrictionPatch(newCredentials, currentCredentials)
-
-      if (selectedKiroProfileArnChoice.value === KIRO_PROFILE_CHOICE_AUTO) {
-        newCredentials.profile_arn = ''
-      } else if (selectedKiroProfileArnChoice.value !== KIRO_PROFILE_CHOICE_KEEP) {
-        newCredentials.profile_arn = selectedKiroProfileArnChoice.value
-      }
-
-      if (Object.keys(newCredentials).length > 0) {
-        updatePayload.credentials = newCredentials
-      }
-
-      const currentExtra = (props.account.extra || {}) as Record<string, unknown>
-      updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
-    } else if (props.account.platform === 'kiro' && props.account.type === 'apikey') {
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = {}
-
-      if (editApiKey.value.trim()) {
-        newCredentials.api_key = editApiKey.value.trim()
-      }
-
-      applyKiroModelRestrictionPatch(newCredentials, currentCredentials)
-
-      if (tempUnschedEnabled.value) {
-        if (!applyTempUnschedConfig(newCredentials)) {
-          return
-        }
-      } else if (currentCredentials.temp_unschedulable_enabled === true) {
-        newCredentials.temp_unschedulable_enabled = false
-        newCredentials.temp_unschedulable_rules = []
-      }
-
-      if (Object.keys(newCredentials).length > 0) {
-        updatePayload.credentials = newCredentials
-      }
-    } else if (props.account.type === 'apikey') {
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newBaseUrl = editBaseUrl.value.trim() || defaultBaseUrl.value
-      const shouldApplyModelMapping = !(props.account.platform === 'openai' && openaiPassthroughEnabled.value)
-
-      // Always update credentials for apikey type to handle model mapping changes
-      const newCredentials: Record<string, unknown> = {
-        ...currentCredentials,
-        base_url: newBaseUrl
-      }
-
-      // 国产供应商：模式与协议写入凭据（决定额度/余额探测与转发端点/格式）。
-      if (isCNApiKeyAccount.value) {
-        newCredentials.account_mode = editAccountMode.value
-        newCredentials.api_protocol = editApiProtocol.value
-        if (editApiProtocol.value === 'adaptive') {
-          const defaults = defaultCNAdaptiveBaseUrls(cnPresetPlatform.value, editAccountMode.value)
-          const protocolBaseUrls: Record<string, string> = {}
-          for (const item of editAdaptiveProtocolOptions.value) {
-            protocolBaseUrls[item.value] = (editAdaptiveBaseUrls.value[item.value] || defaults[item.value]).trim()
-          }
-          newCredentials.api_base_urls = protocolBaseUrls
-          newCredentials.base_url = protocolBaseUrls.chat_completions
-        } else {
-          delete newCredentials.api_base_urls
-        }
-        // 智谱团队版 Coding Plan：组织/项目 ID 写入凭据（非空才写，清空即移除回落个人版路径）
-        if (props.account.platform === 'zhipu') {
-          const org = editZhipuOrganization.value.trim()
-          const project = editZhipuProject.value.trim()
-          if (org) {
-            newCredentials.zhipu_organization = org
-            if (project) newCredentials.zhipu_project = project
-            else delete newCredentials.zhipu_project
-          } else {
-            delete newCredentials.zhipu_organization
-            delete newCredentials.zhipu_project
-          }
-        }
-      }
-
-      // Handle API key
-      // 后端响应已脱敏：currentCredentials 不会再包含 api_key 原文。
-      // 用户填入新值则覆盖；留空时优先看 credentials_status.has_api_key；
-      // 若后端尚未升级（无 credentials_status），回退读旧结构 currentCredentials.api_key。
-      // 两者都无才报错。
-      const hasExistingApiKey =
-        props.account.credentials_status?.has_api_key ?? Boolean(currentCredentials.api_key)
-      if (editApiKey.value.trim()) {
-        newCredentials.api_key = editApiKey.value.trim()
-      } else if (!hasExistingApiKey) {
-        appStore.showError(t('admin.accounts.apiKeyIsRequired'))
-        return
-      }
-
-      // Add model mapping if configured（OpenAI 开启自动透传时保留现有映射，不再编辑）
-      if (shouldApplyModelMapping) {
-        const modelMapping = buildModelRestrictionMapping()
-        if (modelMapping) {
-          newCredentials.model_mapping = modelMapping
-        } else {
-          delete newCredentials.model_mapping
-        }
-      } else if (currentCredentials.model_mapping) {
-        newCredentials.model_mapping = currentCredentials.model_mapping
-      }
-      if (props.account.platform === 'openai') {
-        applyOpenAIEndpointCapabilities(newCredentials)
-        const compactModelMapping = buildModelMappingObject('mapping', [], openAICompactModelMappings.value)
-        if (compactModelMapping) {
-          newCredentials.compact_model_mapping = compactModelMapping
-        } else {
-          delete newCredentials.compact_model_mapping
-        }
-      }
-
-      // Add pool mode if enabled
-      if (poolModeEnabled.value) {
-        newCredentials.pool_mode = true
-        newCredentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
-        const parsedRetryStatusCodes = parsePoolModeRetryStatusCodes(poolModeRetryStatusCodesInput.value)
-        if (parsedRetryStatusCodes.length > 0) {
-          newCredentials.pool_mode_retry_status_codes = parsedRetryStatusCodes
-        } else {
-          delete newCredentials.pool_mode_retry_status_codes
-        }
-      } else {
-        delete newCredentials.pool_mode
-        delete newCredentials.pool_mode_retry_count
-        delete newCredentials.pool_mode_retry_status_codes
-      }
-
-      // Add custom error codes if enabled
-      if (customErrorCodesEnabled.value) {
-        newCredentials.custom_error_codes_enabled = true
-        newCredentials.custom_error_codes = [...selectedErrorCodes.value]
-      } else {
-        delete newCredentials.custom_error_codes_enabled
-        delete newCredentials.custom_error_codes
-      }
-
-      // Add header override if enabled for this API-key platform
-      if (isHeaderOverrideCapable(props.account.platform, 'apikey')) {
-        if (headerOverrideEnabled.value) {
-          const headerError = validateHeaderOverrideRows(headerOverrideRows.value)
-          if (headerError) {
-            appStore.showError(t(`admin.accounts.headerOverride.${headerError}`))
-            return
-          }
-        }
-        applyHeaderOverride(newCredentials, headerOverrideEnabled.value, headerOverrideRows.value, 'edit')
-      }
-
-      // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
-      }
-
-      updatePayload.credentials = newCredentials
-    } else if (props.account.type === 'upstream') {
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
-
-      newCredentials.base_url = editBaseUrl.value.trim()
-
-      if (editApiKey.value.trim()) {
-        newCredentials.api_key = editApiKey.value.trim()
-      }
-
-      // Add intercept warmup requests setting
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-
-      applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
-      }
-
-      updatePayload.credentials = newCredentials
-    } else if ((props.account.platform === 'gemini' || props.account.platform === 'anthropic') && props.account.type === 'service_account') {
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
-
-      if (!editVertexProjectId.value.trim()) {
-        appStore.showError(t('admin.accounts.vertexSaJsonMissingProjectId'))
-        return
-      }
-      if (!editVertexClientEmail.value.trim()) {
-        appStore.showError(t('admin.accounts.vertexSaJsonMissingClientEmail'))
-        return
-      }
-      if (!editVertexLocation.value.trim()) {
-        appStore.showError(t('admin.accounts.vertexLocationRequired'))
-        return
-      }
-
-      // SA JSON 已脱敏不再随 credentials 返回，存在性优先读 credentials_status。
-      // 若后端尚未升级（无 credentials_status），回退读旧结构 service_account_json / service_account。
-      const credentialsStatus = props.account.credentials_status
-      const hasExistingServiceAccountJson = credentialsStatus
-        ? Boolean(
-            credentialsStatus.has_service_account_json || credentialsStatus.has_service_account
-          )
-        : Boolean(currentCredentials.service_account_json || currentCredentials.service_account)
-      if (!hasExistingServiceAccountJson) {
-        appStore.showError(t('admin.accounts.vertexSaJsonRequired'))
-        return
-      }
-      newCredentials.project_id = editVertexProjectId.value.trim()
-      newCredentials.client_email = editVertexClientEmail.value.trim()
-      newCredentials.location = editVertexLocation.value.trim()
-      newCredentials.tier_id = 'vertex'
-
-      // Add model mapping if configured
-      const modelMapping = buildModelRestrictionMapping()
-      if (modelMapping) {
-        newCredentials.model_mapping = modelMapping
-      } else {
-        delete newCredentials.model_mapping
-      }
-
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
-      }
-
-      updatePayload.credentials = newCredentials
-    } else if (props.account.type === 'bedrock') {
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
-
-      newCredentials.aws_region = editBedrockRegion.value.trim()
-      if (editBedrockForceGlobal.value) {
-        newCredentials.aws_force_global = 'true'
-      } else {
-        delete newCredentials.aws_force_global
-      }
-
-      if (isBedrockAPIKeyMode.value) {
-        // API Key mode: only update api_key if user provided new value
-        if (editBedrockApiKeyValue.value.trim()) {
-          newCredentials.api_key = editBedrockApiKeyValue.value.trim()
-        }
-      } else {
-        // SigV4 mode
-        newCredentials.aws_access_key_id = editBedrockAccessKeyId.value.trim()
-        if (editBedrockSecretAccessKey.value.trim()) {
-          newCredentials.aws_secret_access_key = editBedrockSecretAccessKey.value.trim()
-        }
-        if (editBedrockSessionToken.value.trim()) {
-          newCredentials.aws_session_token = editBedrockSessionToken.value.trim()
-        }
-      }
-
-      // Pool mode
-      if (poolModeEnabled.value) {
-        newCredentials.pool_mode = true
-        newCredentials.pool_mode_retry_count = normalizePoolModeRetryCount(poolModeRetryCount.value)
-        const parsedRetryStatusCodes = parsePoolModeRetryStatusCodes(poolModeRetryStatusCodesInput.value)
-        if (parsedRetryStatusCodes.length > 0) {
-          newCredentials.pool_mode_retry_status_codes = parsedRetryStatusCodes
-        } else {
-          delete newCredentials.pool_mode_retry_status_codes
-        }
-      } else {
-        delete newCredentials.pool_mode
-        delete newCredentials.pool_mode_retry_count
-        delete newCredentials.pool_mode_retry_status_codes
-      }
-
-      // Model mapping
-      const modelMapping = buildModelRestrictionMapping()
-      if (modelMapping) {
-        newCredentials.model_mapping = modelMapping
-      } else {
-        delete newCredentials.model_mapping
-      }
-
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
-      }
-
-      updatePayload.credentials = newCredentials
-    } else {
-      // For oauth/setup-token types, only update intercept_warmup_requests if changed
-      const currentCredentials = (props.account.credentials as Record<string, unknown>) || {}
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
-
-      applyInterceptWarmup(newCredentials, interceptWarmupRequests.value, 'edit')
-      applyAccountSchedulingThresholdOverridePatch(newCredentials, currentCredentials)
-      if (!applyTempUnschedConfig(newCredentials)) {
-        return
-      }
-
-      updatePayload.credentials = newCredentials
-    }
-
-    // OpenAI/Grok OAuth: persist model mapping to credentials
-    if ((props.account.platform === 'openai' || props.account.platform === 'grok') && props.account.type === 'oauth') {
-      const currentCredentials = isSparkShadow.value
-        ? {}
-        : (updatePayload.credentials as Record<string, unknown>) ||
-          ((props.account.credentials as Record<string, unknown>) || {})
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
-      if (props.account.platform === 'openai') {
-        applyOpenAIModelMappingCredentials(newCredentials)
-      } else {
-        const modelMapping = buildModelRestrictionMapping()
-        if (modelMapping) {
-          newCredentials.model_mapping = modelMapping
-        } else {
-          delete newCredentials.model_mapping
-        }
-      }
-
-      updatePayload.credentials = newCredentials
-    }
-
-    // Grok OAuth: 自定义上游地址 + 请求头覆写。base_url 仅改写转发端点，
-    // OAuth 授权与令牌刷新链路不读取该值；关闭开关即恢复默认官方网关。
-    if (props.account.platform === 'grok' && props.account.type === 'oauth') {
-      const currentCredentials =
-        (updatePayload.credentials as Record<string, unknown>) ||
-        ((props.account.credentials as Record<string, unknown>) || {})
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
-
-      if (grokOAuthCustomBaseUrlEnabled.value) {
-        const trimmedBaseUrl = grokOAuthBaseUrl.value.trim()
-        if (!trimmedBaseUrl) {
-          appStore.showError(t('admin.accounts.grokCustomBaseUrl.required'))
-          return
-        }
-        if (!/^https?:\/\//i.test(trimmedBaseUrl)) {
-          appStore.showError(t('admin.accounts.grokCustomBaseUrl.invalid'))
-          return
-        }
-        newCredentials.base_url = trimmedBaseUrl
-      } else {
-        delete newCredentials.base_url
-      }
-
-      if (headerOverrideEnabled.value) {
-        const headerError = validateHeaderOverrideRows(headerOverrideRows.value)
-        if (headerError) {
-          appStore.showError(t(`admin.accounts.headerOverride.${headerError}`))
-          return
-        }
-      }
-      applyHeaderOverride(newCredentials, headerOverrideEnabled.value, headerOverrideRows.value, 'edit')
-
-      updatePayload.credentials = newCredentials
-
-      const newExtra: Record<string, unknown> = {
-        ...((props.account.extra as Record<string, unknown>) || {})
-      }
-      // Persist both states so a disabled account remains opted out when the
-      // backend applies the default-enabled policy to missing values.
-      newExtra[GROK_CLIENT_TOOL_CACHE_EXTRA_KEY] = grokClientToolCacheEnabled.value
-      updatePayload.extra = newExtra
-    }
-
-    // OpenAI: 手动覆盖订阅档位 plan_type（Plus/Pro/Free）。仅 OAuth 非影子账号：
-    // 影子账号凭据由母账号管理(且后端会 sanitize),setup-token 无订阅调度语义。
-    if (props.account.platform === 'openai' && props.account.type === 'oauth' && !isSparkShadow.value) {
-      const currentCredentials = (updatePayload.credentials as Record<string, unknown>) ||
-        ((props.account.credentials as Record<string, unknown>) || {})
-      updatePayload.credentials = applyPlanType({ ...currentCredentials }, editPlanType.value)
-    }
-
-    // Antigravity: persist model mapping to credentials (applies to all antigravity types)
-    // Antigravity 只支持映射模式
-    if (props.account.platform === 'antigravity') {
-      const currentCredentials = (updatePayload.credentials as Record<string, unknown>) ||
-        ((props.account.credentials as Record<string, unknown>) || {})
-      const newCredentials: Record<string, unknown> = { ...currentCredentials }
-      if (props.account.type === 'oauth') {
-        applyAntigravityProjectID(newCredentials, antigravityProjectId.value, 'edit')
-      }
-
-      // 移除旧字段
-      delete newCredentials.model_whitelist
-      delete newCredentials.model_mapping
-
-      // 只使用映射模式
-      const antigravityModelMapping = buildModelMappingObject(
-        'mapping',
-        [],
-        antigravityModelMappings.value
-      )
-      if (antigravityModelMapping) {
-        newCredentials.model_mapping = antigravityModelMapping
-      }
-
-      updatePayload.credentials = newCredentials
-    }
-
-    // For antigravity accounts, handle mixed_scheduling and allow_overages in extra
-    if (props.account.platform === 'antigravity') {
-      const currentExtra = (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      if (mixedScheduling.value) {
-        newExtra.mixed_scheduling = true
-      } else {
-        delete newExtra.mixed_scheduling
-      }
-      if (allowOverages.value) {
-        newExtra.allow_overages = true
-      } else {
-        delete newExtra.allow_overages
-      }
-      updatePayload.extra = newExtra
-    }
-
-    // For Anthropic OAuth/SetupToken accounts, handle quota control settings in extra
-    if (props.account.platform === 'anthropic' && (props.account.type === 'oauth' || props.account.type === 'setup-token')) {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-
-      // Window cost limit settings
-      if (windowCostEnabled.value && windowCostLimit.value != null && windowCostLimit.value > 0) {
-        newExtra.window_cost_limit = windowCostLimit.value
-        newExtra.window_cost_sticky_reserve = windowCostStickyReserve.value ?? 10
-      } else {
-        delete newExtra.window_cost_limit
-        delete newExtra.window_cost_sticky_reserve
-      }
-
-      // Session limit settings
-      if (sessionLimitEnabled.value && maxSessions.value != null && maxSessions.value > 0) {
-        newExtra.max_sessions = maxSessions.value
-        newExtra.session_idle_timeout_minutes = sessionIdleTimeout.value ?? 5
-      } else {
-        delete newExtra.max_sessions
-        delete newExtra.session_idle_timeout_minutes
-      }
-
-      // RPM limit settings
-      if (rpmLimitEnabled.value) {
-        const DEFAULT_BASE_RPM = 15
-        newExtra.base_rpm = (baseRpm.value != null && baseRpm.value > 0)
-          ? baseRpm.value
-          : DEFAULT_BASE_RPM
-        newExtra.rpm_strategy = rpmStrategy.value
-        if (rpmStickyBuffer.value != null && rpmStickyBuffer.value >= 1 && rpmStickyBuffer.value <= 10000) {
-          newExtra.rpm_sticky_buffer = rpmStickyBuffer.value
-        } else {
-          delete newExtra.rpm_sticky_buffer
-        }
-      } else {
-        delete newExtra.base_rpm
-        delete newExtra.rpm_strategy
-        delete newExtra.rpm_sticky_buffer
-      }
-
-      // UMQ mode（独立于 RPM 保存）
-      if (userMsgQueueMode.value) {
-        newExtra.user_msg_queue_mode = userMsgQueueMode.value
-      } else {
-        delete newExtra.user_msg_queue_mode
-      }
-      delete newExtra.user_msg_queue_enabled  // 清理旧字段
-
-      // Session ID masking setting
-      if (sessionIdMaskingEnabled.value) {
-        newExtra.session_id_masking_enabled = true
-      } else {
-        delete newExtra.session_id_masking_enabled
-      }
-
-      // Cache TTL override setting
-      if (cacheTTLOverrideEnabled.value) {
-        newExtra.cache_ttl_override_enabled = true
-        newExtra.cache_ttl_override_target = cacheTTLOverrideTarget.value
-      } else {
-        delete newExtra.cache_ttl_override_enabled
-        delete newExtra.cache_ttl_override_target
-      }
-
-      // Custom base URL relay setting
-      if (customBaseUrlEnabled.value && customBaseUrl.value.trim()) {
-        newExtra.custom_base_url_enabled = true
-        newExtra.custom_base_url = customBaseUrl.value.trim()
-      } else {
-        delete newExtra.custom_base_url_enabled
-        delete newExtra.custom_base_url
-      }
-
-      updatePayload.extra = newExtra
-    }
-
-    // For Anthropic API Key accounts, handle passthrough mode + web search emulation in extra
-    if (props.account.platform === 'anthropic' && props.account.type === 'apikey') {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      if (anthropicPassthroughEnabled.value) {
-        newExtra.anthropic_passthrough = true
-      } else {
-        delete newExtra.anthropic_passthrough
-      }
-      if (anthropicAPIKeyAuthScheme.value === 'authorization_bearer') {
-        newExtra.anthropic_apikey_auth_scheme = 'authorization_bearer'
-      } else {
-        delete newExtra.anthropic_apikey_auth_scheme
-      }
-      if (webSearchEmulationMode.value === 'default') {
-        delete newExtra.web_search_emulation
-      } else {
-        newExtra.web_search_emulation = webSearchEmulationMode.value
-      }
-      updatePayload.extra = newExtra
-    }
-
-    // For OpenAI OAuth/SetupToken/API Key accounts, handle passthrough mode in extra
-    if (props.account.platform === 'openai' && (props.account.type === 'oauth' || props.account.type === 'setup-token' || props.account.type === 'apikey')) {
-      const currentExtra = (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      const hadCodexCLIOnlyEnabled = currentExtra.codex_cli_only === true
-      if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
-        newExtra.openai_oauth_responses_websockets_v2_mode = openaiOAuthResponsesWebSocketV2Mode.value
-        newExtra.openai_oauth_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiOAuthResponsesWebSocketV2Mode.value)
-      } else if (props.account.type === 'apikey') {
-        newExtra.openai_apikey_responses_websockets_v2_mode = openaiAPIKeyResponsesWebSocketV2Mode.value
-        newExtra.openai_apikey_responses_websockets_v2_enabled = isOpenAIWSModeEnabled(openaiAPIKeyResponsesWebSocketV2Mode.value)
-      }
-      delete newExtra.responses_websockets_v2_enabled
-      delete newExtra.openai_ws_enabled
-      if (openaiPassthroughEnabled.value) {
-        newExtra.openai_passthrough = true
-      } else {
-        delete newExtra.openai_passthrough
-        delete newExtra.openai_oauth_passthrough
-      }
-      // 缺省即保留 namespace，不写空值，避免 extra 里堆积默认项
-      if (props.account.type === 'oauth' && openaiFlattenNamespacesEnabled.value) {
-        newExtra.openai_responses_flatten_namespaces = true
-      } else {
-        delete newExtra.openai_responses_flatten_namespaces
-      }
-      if (isSparkShadow.value) {
-        delete newExtra.openai_long_context_billing_enabled
-      } else {
-        newExtra.openai_long_context_billing_enabled = openAILongContextBillingEnabled.value
-      }
-      if (openAICompactMode.value === 'auto') {
-        delete newExtra.openai_compact_mode
-      } else {
-        newExtra.openai_compact_mode = openAICompactMode.value
-      }
-		if (props.account.type === 'apikey') {
-        if (!openAITextGenerationCapabilityEnabled.value || openAIResponsesMode.value === 'auto') {
-          delete newExtra.openai_responses_mode
-        } else {
-          newExtra.openai_responses_mode = openAIResponsesMode.value
-        }
-		}
-		if (autoPause5hThreshold.value != null && autoPause5hThreshold.value > 0) {
-			newExtra.auto_pause_5h_threshold = autoPause5hThreshold.value / 100
-		} else {
-			delete newExtra.auto_pause_5h_threshold
-		}
-		if (autoPause7dThreshold.value != null && autoPause7dThreshold.value > 0) {
-			newExtra.auto_pause_7d_threshold = autoPause7dThreshold.value / 100
-		} else {
-			delete newExtra.auto_pause_7d_threshold
-		}
-		if (autoPause5hDisabled.value) {
-			newExtra.auto_pause_5h_disabled = true
-		} else {
-			delete newExtra.auto_pause_5h_disabled
-		}
-		if (autoPause7dDisabled.value) {
-			newExtra.auto_pause_7d_disabled = true
-		} else {
-			delete newExtra.auto_pause_7d_disabled
-		}
-		if (props.account.type === 'oauth' && !isSparkShadow.value) {
-			newExtra.auto_reset_credit_enabled = autoResetCreditEnabled.value
-			newExtra.auto_reset_credit_5h_threshold = autoResetCredit5hThreshold.value / 100
-			newExtra.auto_reset_credit_7d_threshold = autoResetCredit7dThreshold.value / 100
-		}
-		// 运行态只允许后端服务更新，账号编辑不得回写旧状态。
-		delete newExtra.codex_auto_reset_credit_state
-
-		delete newExtra.codex_image_generation_bridge_enabled
-      switch (codexImageToolMode.value) {
-        case 'enabled':
-        case 'disabled':
-          newExtra.codex_image_generation_bridge = codexImageToolMode.value === 'enabled'
-          delete newExtra.codex_image_generation_explicit_tool_policy
-          break
-        case 'block':
-          newExtra.codex_image_generation_explicit_tool_policy = 'strip'
-          delete newExtra.codex_image_generation_bridge
-          break
-        default:
-          delete newExtra.codex_image_generation_bridge
-          delete newExtra.codex_image_generation_explicit_tool_policy
-      }
-
-      if (props.account.type === 'oauth' || props.account.type === 'setup-token') {
-        if (codexCLIOnlyEnabled.value) {
-          newExtra.codex_cli_only = true
-        } else if (hadCodexCLIOnlyEnabled) {
-          // 关闭时显式写 false，避免 extra 为空被后端忽略导致旧值无法清除
-          newExtra.codex_cli_only = false
-        } else {
-          delete newExtra.codex_cli_only
-        }
-        // Claude Code 插件放行已迁移到全局 codex_cli_only_whitelist，编辑时清理废弃账号级快捷字段。
-        delete newExtra.codex_cli_only_allowed_clients
-        if (codexCLIOnlyEnabled.value && codexCLIOnlyAppServerEnabled.value) {
-          newExtra.codex_cli_only_allow_app_server = true
-        } else {
-          delete newExtra.codex_cli_only_allow_app_server
-        }
-      }
-
-      // 指纹收敛模式：默认 off（不写入）；device/session/full 是显式 opt-in，
-      // 必须落键，否则管理员的选择会被后端当作"未设置"而回落到 off（#5610）。
-      if (props.account.type === 'oauth') {
-        if (codexFingerprintMode.value !== 'off') {
-          newExtra.codex_fingerprint_mode = codexFingerprintMode.value
-        } else {
-          delete newExtra.codex_fingerprint_mode
-        }
-      }
-
-      updatePayload.extra = newExtra
-    }
-
-    // For apikey/bedrock accounts, handle quota_limit in extra
-    if (props.account.type === 'apikey' || props.account.type === 'bedrock') {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
-        (props.account.extra as Record<string, unknown>) || {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      // 上游倍率自动探测对全部 API-key 平台开放（sub2api 上游即可应答），
-      // Bedrock 凭证无静态 Key 不参与。
-      if (props.account.type === 'apikey') {
-        delete newExtra.upstream_billing_probe_enabled
-        delete newExtra.upstream_billing_rate_sync_enabled
-      }
-      // Total quota
-      if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
-        newExtra.quota_limit = editQuotaLimit.value
-      } else {
-        delete newExtra.quota_limit
-      }
-      // Daily quota
-      if (editQuotaDailyLimit.value != null && editQuotaDailyLimit.value > 0) {
-        newExtra.quota_daily_limit = editQuotaDailyLimit.value
-      } else {
-        delete newExtra.quota_daily_limit
-        delete newExtra.quota_daily_used
-        delete newExtra.quota_daily_start
-      }
-      // Weekly quota
-      if (editQuotaWeeklyLimit.value != null && editQuotaWeeklyLimit.value > 0) {
-        newExtra.quota_weekly_limit = editQuotaWeeklyLimit.value
-      } else {
-        delete newExtra.quota_weekly_limit
-        delete newExtra.quota_weekly_used
-        delete newExtra.quota_weekly_start
-      }
-      // Quota reset mode config
-      if (editDailyResetMode.value === 'fixed') {
-        newExtra.quota_daily_reset_mode = 'fixed'
-        newExtra.quota_daily_reset_hour = editDailyResetHour.value ?? 0
-      } else {
-        delete newExtra.quota_daily_reset_mode
-        delete newExtra.quota_daily_reset_hour
-      }
-      if (editWeeklyResetMode.value === 'fixed') {
-        newExtra.quota_weekly_reset_mode = 'fixed'
-        newExtra.quota_weekly_reset_day = editWeeklyResetDay.value ?? 1
-        newExtra.quota_weekly_reset_hour = editWeeklyResetHour.value ?? 0
-      } else {
-        delete newExtra.quota_weekly_reset_mode
-        delete newExtra.quota_weekly_reset_day
-        delete newExtra.quota_weekly_reset_hour
-      }
-      if (editDailyResetMode.value === 'fixed' || editWeeklyResetMode.value === 'fixed') {
-        newExtra.quota_reset_timezone = editResetTimezone.value || 'UTC'
-      } else {
-        delete newExtra.quota_reset_timezone
-      }
-      // Quota notify config
-      writeQuotaNotifyToExtra(newExtra, 'update')
-      updatePayload.extra = newExtra
-    }
-
-    if (props.account.platform === 'kiro') {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
-        (props.account.extra as Record<string, unknown>) ||
-        {}
-      updatePayload.extra = stripKiroRuntimeExtra(currentExtra)
-    }
-
-    if (supportsTLSFingerprint(props.account.platform)) {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
-        (props.account.extra as Record<string, unknown>) ||
-        {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      applyTLSFingerprintToExtra(newExtra)
-      updatePayload.extra = newExtra
-    }
-
-    if (!isSparkShadow.value) {
-      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
-        (props.account.extra as Record<string, unknown>) ||
-        {}
-      const newExtra: Record<string, unknown> = { ...currentExtra }
-      newExtra.device_learning_enabled = deviceLearningEnabled.value
-      if (deviceTLSProfileId.value) {
-        newExtra.device_tls_profile_id = deviceTLSProfileId.value
-      } else {
-        delete newExtra.device_tls_profile_id
-      }
-      updatePayload.extra = newExtra
-    }
-
-    const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
-      await submitUpdateAccount(accountID, updatePayload)
-    })
-    if (!canContinue) {
-      return
-    }
-
-    await submitUpdateAccount(accountID, updatePayload)
-  } catch (error: any) {
-    appStore.showError(error.message || t('admin.accounts.failedToUpdate'))
-  }
-}
-
-// Handle mixed channel warning confirmation
-const handleMixedChannelConfirm = async () => {
-  const action = mixedChannelWarningAction.value
-  if (!action) {
-    clearMixedChannelDialog()
-    return
-  }
-  clearMixedChannelDialog()
-  submitting.value = true
-  try {
-    await action()
-  } finally {
-    submitting.value = false
-  }
-}
-
-const handleMixedChannelCancel = () => {
-  clearMixedChannelDialog()
-}
 </script>
