@@ -207,7 +207,7 @@ func anthropicUserToChatMessages(raw json.RawMessage) ([]ChatMessage, error) {
 	// bridge preserves that folding.
 	var textParts []string
 	var parts []ChatContentPart
-	hasImage := false
+	hasNonText := false
 	for _, b := range blocks {
 		switch b.Type {
 		case "text":
@@ -217,20 +217,31 @@ func anthropicUserToChatMessages(raw json.RawMessage) ([]ChatMessage, error) {
 			}
 		case "image":
 			if uri := anthropicImageToDataURI(b.Source); uri != "" {
-				hasImage = true
+				hasNonText = true
 				parts = append(parts, ChatContentPart{
 					Type:     "image_url",
 					ImageURL: &ChatImageURL{URL: uri},
 				})
 			}
+		case "document":
+			part, err := anthropicDocumentToChat(b)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+			if part.Type == "text" {
+				textParts = append(textParts, part.Text)
+			} else {
+				hasNonText = true
+			}
 		}
 	}
 	if len(toolResultImageParts) > 0 {
-		hasImage = true
+		hasNonText = true
 		parts = append(parts, toolResultImageParts...)
 	}
 
-	if !hasImage {
+	if !hasNonText {
 		if len(textParts) > 0 {
 			content, _ := json.Marshal(strings.Join(textParts, "\n\n"))
 			out = append(out, ChatMessage{Role: "user", Content: content})

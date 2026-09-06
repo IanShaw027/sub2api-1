@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
 	"github.com/google/uuid"
 )
 
@@ -105,6 +106,15 @@ func TransformClaudeToGeminiWithOptions(claudeReq *ClaudeRequest, projectID, map
 	// 只有 Gemini 模型支持 dummy thought workaround
 	// Claude 模型通过 Vertex/Google API 需要有效的 thought signatures
 	allowDummyThought := strings.HasPrefix(targetModel, "gemini-")
+	if allowDummyThought && claudeReq.OutputConfig != nil {
+		thinkingType, budget := "", 0
+		if claudeReq.Thinking != nil {
+			thinkingType, budget = claudeReq.Thinking.Type, claudeReq.Thinking.BudgetTokens
+		}
+		if thinking := gemini.ClaudeThinkingConfig(targetModel, thinkingType, budget, claudeReq.OutputConfig.Effort); thinking != nil {
+			isThinkingEnabled = thinking.IncludeThoughts
+		}
+	}
 
 	// 1. 构建 contents
 	contents, messageSystemParts, strippedThinking, err := buildContents(claudeReq.Messages, toolIDToName, isThinkingEnabled, allowDummyThought)
@@ -128,6 +138,7 @@ func TransformClaudeToGeminiWithOptions(claudeReq *ClaudeRequest, projectID, map
 		// disable upstream thinking mode to avoid signature/structure validation errors.
 		reqCopy := *claudeReq
 		reqCopy.Thinking = nil
+		reqCopy.OutputConfig = nil
 		reqForConfig = &reqCopy
 	}
 	if targetModel != "" && targetModel != reqForConfig.Model {
@@ -490,6 +501,19 @@ func buildParts(content json.RawMessage, toolIDToName map[string]string, allowDu
 			}
 			parts = append(parts, part)
 
+		case "document":
+			if block.Source == nil {
+				return nil, false, fmt.Errorf("document source is required")
+			}
+			source := block.Source
+			switch {
+			case source.Type == "base64" && source.MediaType == "application/pdf" && source.Data != "":
+				parts = append(parts, GeminiPart{InlineData: &GeminiInlineData{MimeType: source.MediaType, Data: source.Data}})
+			case source.Type == "text" && (source.MediaType == "text/plain" || source.MediaType == "") && source.Data != "":
+				parts = append(parts, GeminiPart{Text: source.Data})
+			default:
+				return nil, false, fmt.Errorf("document source must be inline PDF or plain text")
+			}
 		case "image":
 			if block.Source != nil && block.Source.Type == "base64" {
 				parts = append(parts, GeminiPart{
@@ -635,8 +659,23 @@ func buildGenerationConfig(req *ClaudeRequest) *GeminiGenerationConfig {
 		config.MaxOutputTokens = req.MaxTokens
 	}
 
-	// Thinking 配置
-	if req.Thinking != nil && (req.Thinking.Type == "enabled" || req.Thinking.Type == "adaptive") {
+	// Gemini's generation family selects level vs. budget. Claude remains on
+	// Antigravity's existing budget-only path, including the Opus adaptive cap.
+	if strings.HasPrefix(strings.ToLower(req.Model), "gemini-") {
+		thinkingType, budget, effort := "", 0, ""
+		if req.Thinking != nil {
+			thinkingType, budget = req.Thinking.Type, req.Thinking.BudgetTokens
+		}
+		if req.OutputConfig != nil {
+			effort = req.OutputConfig.Effort
+		}
+		config.ThinkingConfig = gemini.ClaudeThinkingConfig(req.Model, thinkingType, budget, effort)
+		if thinking := config.ThinkingConfig; thinking != nil && thinking.ThinkingBudget != nil && *thinking.ThinkingBudget > 0 {
+			if adjusted, ok := ensureMaxTokensGreaterThanBudget(config.MaxOutputTokens, *thinking.ThinkingBudget); ok {
+				config.MaxOutputTokens = adjusted
+			}
+		}
+	} else if req.Thinking != nil && (req.Thinking.Type == "enabled" || req.Thinking.Type == "adaptive") {
 		config.ThinkingConfig = &GeminiThinkingConfig{
 			IncludeThoughts: true,
 		}
@@ -665,7 +704,7 @@ func buildGenerationConfig(req *ClaudeRequest) *GeminiGenerationConfig {
 				config.MaxOutputTokens = adjusted
 			}
 		}
-		config.ThinkingConfig.ThinkingBudget = budget
+		config.ThinkingConfig.ThinkingBudget = &budget
 	}
 
 	if config.MaxOutputTokens > maxLimit {

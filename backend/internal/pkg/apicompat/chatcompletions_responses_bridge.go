@@ -494,7 +494,7 @@ func buildChatMessagesFromItems(messages []ChatMessage, rawItems []json.RawMessa
 			pendingReasoning = ""
 			lastTurnReasoning = ""
 			continue
-		case "input_image":
+		case "input_image", "input_file":
 			content, err := chatContentFromSingleResponsesPart(itemType, item)
 			if err != nil {
 				return nil, nil, err
@@ -921,6 +921,22 @@ func responsesContentPartsToChatContent(rawParts []json.RawMessage, role string)
 				Type:     "image_url",
 				ImageURL: &ChatImageURL{URL: imageURL},
 			})
+		case "input_file":
+			if role != "user" {
+				return nil, fmt.Errorf("input_file requires a user message when bridging to chat completions")
+			}
+			converted, err := responsesFileToChat(ResponsesContentPart{
+				Filename: rawString(part["filename"]), FileData: rawString(part["file_data"]), FileID: rawString(part["file_id"]),
+			})
+			if err != nil {
+				return nil, err
+			}
+			chatParts = append(chatParts, converted)
+			if converted.Type == "text" {
+				textParts = append(textParts, converted.Text)
+			} else {
+				hasNonText = true
+			}
 		}
 	}
 
@@ -941,6 +957,14 @@ func responsesContentPartsToChatContent(rawParts []json.RawMessage, role string)
 
 func chatContentFromSingleResponsesPart(partType string, part map[string]json.RawMessage) (json.RawMessage, error) {
 	switch partType {
+	case "input_file":
+		converted, err := responsesFileToChat(ResponsesContentPart{
+			Filename: rawString(part["filename"]), FileData: rawString(part["file_data"]), FileID: rawString(part["file_id"]),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return json.Marshal([]ChatContentPart{converted})
 	case "input_image", "image_url":
 		imageURL := rawString(part["image_url"])
 		if imageURL == "" {

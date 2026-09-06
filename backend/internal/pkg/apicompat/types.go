@@ -67,8 +67,9 @@ type AnthropicContentBlock struct {
 	// so multi-turn Claude clients can round-trip it back on subsequent turns.
 	Signature string `json:"signature,omitempty"`
 
-	// type=image
+	// type=image or document
 	Source *AnthropicImageSource `json:"source,omitempty"`
+	Title  string                `json:"title,omitempty"`
 
 	// type=tool_use
 	ID    string          `json:"id,omitempty"`
@@ -103,9 +104,9 @@ func (b AnthropicContentBlock) MarshalJSON() ([]byte, error) {
 	}
 }
 
-// AnthropicImageSource describes the source data for an image content block.
+// AnthropicImageSource describes inline image or document source data.
 type AnthropicImageSource struct {
-	Type      string `json:"type"` // "base64"
+	Type      string `json:"type"` // "base64" or "text" for inline documents
 	MediaType string `json:"media_type"`
 	Data      string `json:"data"`
 }
@@ -274,8 +275,8 @@ type ResponsesInputItem struct {
 	EncryptedContent string `json:"encrypted_content,omitempty"`
 
 	// type=function_call / custom_tool_call / tool_search_call
-	CallID    string `json:"call_id,omitempty"`
-	Name      string `json:"name,omitempty"`
+	CallID string `json:"call_id,omitempty"`
+	Name   string `json:"name,omitempty"`
 	// Namespace is the Codex private namespace identity for function_call
 	// items (paired with Name). Flattened when converting history to Anthropic.
 	Namespace string `json:"namespace,omitempty"`

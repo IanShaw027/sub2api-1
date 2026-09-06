@@ -21,7 +21,9 @@ const geminiImageOutputCounterKey = "gemini_image_output_counter"
 //   - 增量式流且多图分散在不同 chunk：会低估到 1，与改动前的模型名启发式同值，
 //     不构成回退。
 type geminiImageOutputCounter struct {
-	count int
+	count             int
+	sawThoughtImage   bool
+	sawImageReference bool
 }
 
 // beginGeminiImageOutputObservation 在每次 Forward 开头重置计数器。
@@ -55,9 +57,12 @@ func observeGeminiImageOutputs(c *gin.Context, payload []byte) {
 	if counter == nil {
 		return
 	}
-	if count := countGeminiInlineImageOutputs(payload); count > counter.count {
-		counter.count = count
+	observation := inspectGeminiImageOutputs(payload)
+	if observation.count > counter.count {
+		counter.count = observation.count
 	}
+	counter.sawThoughtImage = counter.sawThoughtImage || observation.sawThoughtImage
+	counter.sawImageReference = counter.sawImageReference || observation.sawImageReference
 }
 
 func observedGeminiImageOutputs(c *gin.Context) int {
@@ -84,6 +89,11 @@ func resolveGeminiImageCount(c *gin.Context, originalModel, mappedModel string) 
 	if observed := observedGeminiImageOutputs(c); observed > 0 {
 		return observed
 	}
+	// 思考预览不是交付结果；仅有预览图时，不能用模型名再补收一张。
+	// 原生 fileData 最终结果仍保留既有模型名回退。
+	if counter := geminiImageOutputCounterFromContext(c); counter != nil && counter.sawThoughtImage && !counter.sawImageReference {
+		return 0
+	}
 	if isImageGenerationModel(originalModel) || isImageGenerationModel(mappedModel) {
 		return 1
 	}
@@ -94,20 +104,47 @@ func resolveGeminiImageCount(c *gin.Context, originalModel, mappedModel string) 
 // Gemini REST 回 camelCase 的 inlineData，官方 SDK 与部分中转会回 snake_case
 // 的 inline_data，两种都要认。
 func countGeminiInlineImageOutputs(payload []byte) int {
+	return inspectGeminiImageOutputs(payload).count
+}
+
+func inspectGeminiImageOutputs(payload []byte) geminiImageOutputCounter {
+	var observation geminiImageOutputCounter
 	if len(payload) == 0 || !gjson.ValidBytes(payload) {
-		return 0
+		return observation
 	}
-	count := 0
 	gjson.GetBytes(payload, "candidates").ForEach(func(_, candidate gjson.Result) bool {
 		candidate.Get("content.parts").ForEach(func(_, part gjson.Result) bool {
-			if geminiPartIsInlineImage(part) {
-				count++
+			inlineImage := geminiPartIsInlineImage(part)
+			imageReference := geminiPartIsImageReference(part)
+			if part.Get("thought").Bool() {
+				observation.sawThoughtImage = observation.sawThoughtImage || inlineImage || imageReference
+				return true
 			}
+			if inlineImage {
+				observation.count++
+			}
+			observation.sawImageReference = observation.sawImageReference || imageReference
 			return true
 		})
 		return true
 	})
-	return count
+	return observation
+}
+
+func geminiPartIsImageReference(part gjson.Result) bool {
+	file := part.Get("fileData")
+	if !file.Exists() {
+		file = part.Get("file_data")
+	}
+	mimeType := file.Get("mimeType")
+	if !mimeType.Exists() {
+		mimeType = file.Get("mime_type")
+	}
+	uri := file.Get("fileUri")
+	if !uri.Exists() {
+		uri = file.Get("file_uri")
+	}
+	return isGeminiInlineImageMIMEType(strings.ToLower(strings.TrimSpace(mimeType.String()))) && strings.TrimSpace(uri.String()) != ""
 }
 
 func geminiPartIsInlineImage(part gjson.Result) bool {

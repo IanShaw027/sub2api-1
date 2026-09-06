@@ -363,8 +363,8 @@ func TestBuildGenerationConfig_ThinkingDynamicBudget(t *testing.T) {
 				if !cfg.ThinkingConfig.IncludeThoughts {
 					t.Fatalf("expected includeThoughts=true")
 				}
-				if cfg.ThinkingConfig.ThinkingBudget != tt.wantBudget {
-					t.Fatalf("expected thinkingBudget=%d, got %d", tt.wantBudget, cfg.ThinkingConfig.ThinkingBudget)
+				if cfg.ThinkingConfig.ThinkingBudget == nil || *cfg.ThinkingConfig.ThinkingBudget != tt.wantBudget {
+					t.Fatalf("expected thinkingBudget=%d, got %v", tt.wantBudget, cfg.ThinkingConfig.ThinkingBudget)
 				}
 				return
 			}

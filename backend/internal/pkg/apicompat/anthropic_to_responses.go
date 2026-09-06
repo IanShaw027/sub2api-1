@@ -239,6 +239,12 @@ func anthropicUserToResponses(raw json.RawMessage) ([]ResponsesInputItem, error)
 			if b.Text != "" {
 				parts = append(parts, ResponsesContentPart{Type: "input_text", Text: b.Text})
 			}
+		case "document":
+			part, err := anthropicDocumentToResponses(b)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
 		case "image":
 			if uri := anthropicImageToDataURI(b.Source); uri != "" {
 				parts = append(parts, ResponsesContentPart{Type: "input_image", ImageURL: uri})

@@ -1,5 +1,7 @@
 package antigravity
 
+import "github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
+
 // Gemini v1internal 请求/响应类型定义
 
 // V1InternalRequest v1internal 请求包装
@@ -77,10 +79,7 @@ type GeminiImageConfig struct {
 }
 
 // GeminiThinkingConfig Gemini thinking 配置
-type GeminiThinkingConfig struct {
-	IncludeThoughts bool `json:"includeThoughts"`
-	ThinkingBudget  int  `json:"thinkingBudget,omitempty"`
-}
+type GeminiThinkingConfig = gemini.ThinkingConfig
 
 // GeminiToolDeclaration Gemini 工具声明
 type GeminiToolDeclaration struct {

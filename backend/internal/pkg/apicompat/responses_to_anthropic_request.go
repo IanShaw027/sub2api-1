@@ -500,6 +500,12 @@ func convertResponsesUserToAnthropicContent(raw json.RawMessage) (json.RawMessag
 					Source: src,
 				})
 			}
+		case "input_file":
+			block, err := responsesFileToAnthropic(p)
+			if err != nil {
+				return nil, err
+			}
+			blocks = append(blocks, block)
 		}
 	}
 

@@ -63,6 +63,17 @@ func TestCountGeminiInlineImageOutputs(t *testing.T) {
 			want:    1,
 		},
 		{
+			name: "thought preview and final image",
+			payload: geminiImageResponse(`{"thought":true,"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}},` +
+				`{"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}}`),
+			want: 1,
+		},
+		{
+			name:    "thought image only",
+			payload: geminiImageResponse(`{"thought":true,"inline_data":{"mime_type":"image/png","data":"` + geminiTestPNG + `"}}`),
+			want:    0,
+		},
+		{
 			name:    "text only",
 			payload: geminiImageResponse(`{"text":"no image here"}`),
 			want:    0,
@@ -116,6 +127,29 @@ func TestObserveGeminiImageOutputs_KeepsLargestChunk(t *testing.T) {
 	observeGeminiImageOutputs(c, []byte(`{"usageMetadata":{"promptTokenCount":9}}`))
 
 	require.Equal(t, 2, observedGeminiImageOutputs(c))
+}
+
+func TestObserveGeminiImageOutputs_ThoughtPreviewThenFinal(t *testing.T) {
+	c := newGeminiImageTestContext(t)
+	beginGeminiImageOutputObservation(c)
+	preview := `{"thought":true,"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}}`
+	final := `{"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}}`
+	observeGeminiImageOutputs(c, []byte(geminiImageResponse(preview)))
+	require.Equal(t, 0, resolveGeminiImageCount(c, "gemini-3-pro-image", "gemini-3-pro-image"))
+	for range 3 {
+		observeGeminiImageOutputs(c, []byte(geminiImageResponse(preview+","+final)))
+	}
+	observeGeminiImageOutputs(c, []byte(`{"usageMetadata":{"promptTokenCount":9}}`))
+	require.Equal(t, 1, resolveGeminiImageCount(c, "gemini-3-pro-image", "gemini-3-pro-image"))
+}
+
+func TestBeginGeminiImageOutputObservation_ResetsThoughtEvidence(t *testing.T) {
+	c := newGeminiImageTestContext(t)
+	beginGeminiImageOutputObservation(c)
+	observeGeminiImageOutputs(c, []byte(geminiImageResponse(`{"thought":true,"inlineData":{"mimeType":"image/png","data":"`+geminiTestPNG+`"}}`)))
+	require.Equal(t, 0, resolveGeminiImageCount(c, "gemini-3-pro-image", "gemini-3-pro-image"))
+	beginGeminiImageOutputObservation(c)
+	require.Equal(t, 1, resolveGeminiImageCount(c, "gemini-3-pro-image", "gemini-3-pro-image"))
 }
 
 // failover 会拿同一个 gin.Context 重跑 Forward，计数器必须按次重置，
@@ -181,24 +215,64 @@ func TestResolveGeminiImageCount(t *testing.T) {
 	})
 }
 
+func TestResolveGeminiImageCount_ThoughtImages(t *testing.T) {
+	preview := `{"thought":true,"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}}`
+	for _, tc := range []struct {
+		name string
+		part string
+		want int
+	}{
+		{name: "pure thought does not trigger requested model fallback"},
+		{name: "final text is not a delivered image", part: `{"text":"could not create an image"}`},
+		{name: "thought file reference is not a delivered image", part: `{"thought":true,"fileData":{"mimeType":"image/png","fileUri":"gs://bucket/preview.png"}}`},
+		{name: "empty final reference is not an image", part: `{"fileData":{"mimeType":"image/png","fileUri":""}}`},
+		{name: "non image reference is not an image", part: `{"fileData":{"mimeType":"audio/mpeg","fileUri":"gs://bucket/audio.mp3"}}`},
+		{name: "native final reference preserves fallback", part: `{"fileData":{"mimeType":"image/png","fileUri":"gs://bucket/final.png"}}`, want: 1},
+		{name: "native snake case reference preserves fallback", part: `{"file_data":{"mime_type":"image/png","file_uri":"gs://bucket/final.png"}}`, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newGeminiImageTestContext(t)
+			beginGeminiImageOutputObservation(c)
+			observeGeminiImageOutputs(c, []byte(geminiImageResponse(preview)))
+			if tc.part != "" {
+				observeGeminiImageOutputs(c, []byte(geminiImageResponse(tc.part)))
+			}
+			require.Equal(t, 0, observedGeminiImageOutputs(c))
+			require.Equal(t, tc.want, resolveGeminiImageCount(c, "gemini-3-pro-image", "alias"))
+			require.Equal(t, tc.want, resolveGeminiImageCount(c, "alias", "gemini-3-pro-image"))
+		})
+	}
+}
+
 // 端到端守住接线：/v1beta/models/{model}:generateContent 的非流式响应体
 // 必须真的喂进计数器，否则上面的单测全绿而线上依然记 $0。
 func TestHandleNativeNonStreamingResponse_FeedsImageCounter(t *testing.T) {
-	c := newGeminiImageTestContext(t)
-	beginGeminiImageOutputObservation(c)
-
-	body := geminiImageResponse(`{"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}}`)
-	resp := &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(strings.NewReader(body)),
+	final := `{"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}}`
+	preview := `{"thought":true,"inlineData":{"mimeType":"image/png","data":"` + geminiTestPNG + `"}}`
+	for _, tc := range []struct {
+		name  string
+		parts string
+		want  int
+	}{
+		{name: "final image", parts: final, want: 1},
+		{name: "preview and final image", parts: preview + "," + final, want: 1},
+		{name: "preview without final image", parts: preview, want: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := newGeminiImageTestContext(t)
+			beginGeminiImageOutputObservation(c)
+			resp := &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(geminiImageResponse(tc.parts))),
+			}
+			svc := &GeminiMessagesCompatService{}
+			usage, err := svc.handleNativeNonStreamingResponse(c, resp, false)
+			require.NoError(t, err)
+			require.NotNil(t, usage)
+			require.Equal(t, tc.want, observedGeminiImageOutputs(c))
+			require.Equal(t, tc.want, resolveGeminiImageCount(c, "nana-banana-2", "nana-banana-2"))
+			require.Equal(t, tc.want, resolveGeminiImageCount(c, "gemini-3-pro-image", "gemini-3-pro-image"))
+		})
 	}
-
-	svc := &GeminiMessagesCompatService{}
-	usage, err := svc.handleNativeNonStreamingResponse(c, resp, false)
-	require.NoError(t, err)
-	require.NotNil(t, usage)
-
-	require.Equal(t, 1, observedGeminiImageOutputs(c))
-	require.Equal(t, 1, resolveGeminiImageCount(c, "nana-banana-2", "nana-banana-2"))
 }

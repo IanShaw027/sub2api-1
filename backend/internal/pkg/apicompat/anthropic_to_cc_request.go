@@ -153,6 +153,12 @@ func anthropicUserBlocksToChat(blocks []AnthropicContentBlock) ([]ChatMessage, e
 		switch b.Type {
 		case "text":
 			parts = append(parts, ChatContentPart{Type: "text", Text: b.Text})
+		case "document":
+			part, err := anthropicDocumentToChat(b)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
 		case "image":
 			if uri := anthropicImageToDataURI(b.Source); uri != "" {
 				parts = append(parts, ChatContentPart{

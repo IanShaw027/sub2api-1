@@ -21,6 +21,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 const geminiStickySessionTTL = time.Hour
@@ -620,7 +622,7 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 		mappedModel = account.GetMappedModel(req.Model)
 	}
 
-	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body)
+	geminiReq, err := convertClaudeMessagesToGeminiGenerateContent(body, mappedModel)
 	if err != nil {
 		return nil, s.writeClaudeError(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 	}
@@ -879,7 +881,13 @@ func (s *GeminiMessagesCompatService) Forward(ctx context.Context, c *gin.Contex
 					stageName = "thinking+tools"
 					signatureRetryStage = 2
 				}
-				retryGeminiReq, txErr := convertClaudeMessagesToGeminiGenerateContent(strippedClaudeBody)
+				// A signature downgrade must not re-enable thinking through effort alone.
+				if gjson.GetBytes(originalClaudeBody, "thinking").Exists() && !gjson.GetBytes(strippedClaudeBody, "thinking").Exists() {
+					if cleaned, err := sjson.DeleteBytes(strippedClaudeBody, "output_config.effort"); err == nil {
+						strippedClaudeBody = cleaned
+					}
+				}
+				retryGeminiReq, txErr := convertClaudeMessagesToGeminiGenerateContent(strippedClaudeBody, mappedModel)
 				if txErr == nil {
 					logger.LegacyPrintf("service.gemini_messages_compat", "Gemini account %d: detected signature-related 400, retrying with downgraded Claude blocks (%s)", account.ID, stageName)
 					geminiReq = retryGeminiReq
@@ -3283,10 +3291,13 @@ func mapGeminiFinishReasonToClaudeStopReason(finishReason string) string {
 	}
 }
 
-func convertClaudeMessagesToGeminiGenerateContent(body []byte) ([]byte, error) {
+func convertClaudeMessagesToGeminiGenerateContent(body []byte, mappedModel string) ([]byte, error) {
 	var req map[string]any
 	if err := json.Unmarshal(body, &req); err != nil {
 		return nil, err
+	}
+	if strings.TrimSpace(mappedModel) != "" {
+		req["model"] = mappedModel
 	}
 
 	toolUseIDToName := make(map[string]string)
@@ -3447,6 +3458,22 @@ func convertClaudeMessagesToGeminiContents(messages any, toolUseIDToName map[str
 							},
 						},
 					})
+				case "document":
+					src, ok := bm["source"].(map[string]any)
+					if !ok {
+						return nil, errors.New("document source is required")
+					}
+					sourceType, _ := src["type"].(string)
+					mediaType, _ := src["media_type"].(string)
+					data, _ := src["data"].(string)
+					switch {
+					case sourceType == "base64" && mediaType == "application/pdf" && data != "":
+						parts = append(parts, map[string]any{"inlineData": map[string]any{"mimeType": mediaType, "data": data}})
+					case sourceType == "text" && (mediaType == "text/plain" || mediaType == "") && data != "":
+						parts = append(parts, map[string]any{"text": data})
+					default:
+						return nil, errors.New("document source must be inline PDF or plain text")
+					}
 				case "image":
 					if src, ok := bm["source"].(map[string]any); ok {
 						if srcType, _ := src["type"].(string); srcType == "base64" {
@@ -3768,6 +3795,18 @@ func schemaNumberFloat64(value any) (float64, bool) {
 
 func convertClaudeGenerationConfig(req map[string]any) map[string]any {
 	out := make(map[string]any)
+	model, _ := req["model"].(string)
+	thinkingType, budget, effort := "", 0, ""
+	if thinking, ok := req["thinking"].(map[string]any); ok {
+		thinkingType, _ = thinking["type"].(string)
+		budget, _ = asInt(thinking["budget_tokens"])
+	}
+	if config, ok := req["output_config"].(map[string]any); ok {
+		effort, _ = config["effort"].(string)
+	}
+	if thinking := gemini.ClaudeThinkingConfig(model, thinkingType, budget, effort); thinking != nil {
+		out["thinkingConfig"] = thinking
+	}
 	if mt, ok := asInt(req["max_tokens"]); ok && mt > 0 {
 		out["maxOutputTokens"] = mt
 	}
