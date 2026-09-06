@@ -28,6 +28,12 @@ const (
 	FieldPrompt = "prompt"
 	// FieldMediaAssetID holds the string denoting the media_asset_id field in the database.
 	FieldMediaAssetID = "media_asset_id"
+	// FieldMediaURL holds the string denoting the media_url field in the database.
+	FieldMediaURL = "media_url"
+	// FieldStorageID holds the string denoting the storage_id field in the database.
+	FieldStorageID = "storage_id"
+	// FieldStorageKey holds the string denoting the storage_key field in the database.
+	FieldStorageKey = "storage_key"
 	// FieldProviderTaskID holds the string denoting the provider_task_id field in the database.
 	FieldProviderTaskID = "provider_task_id"
 	// FieldError holds the string denoting the error field in the database.
@@ -59,6 +65,9 @@ var Columns = []string{
 	FieldModel,
 	FieldPrompt,
 	FieldMediaAssetID,
+	FieldMediaURL,
+	FieldStorageID,
+	FieldStorageKey,
 	FieldProviderTaskID,
 	FieldError,
 	FieldCreatedAt,
@@ -86,6 +95,12 @@ var (
 	ModelValidator func(string) error
 	// DefaultPrompt holds the default value on creation for the "prompt" field.
 	DefaultPrompt string
+	// DefaultMediaURL holds the default value on creation for the "media_url" field.
+	DefaultMediaURL string
+	// DefaultStorageID holds the default value on creation for the "storage_id" field.
+	DefaultStorageID string
+	// DefaultStorageKey holds the default value on creation for the "storage_key" field.
+	DefaultStorageKey string
 	// ProviderTaskIDValidator is a validator for the "provider_task_id" field. It is called by the builders before save.
 	ProviderTaskIDValidator func(string) error
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
@@ -137,6 +152,21 @@ func ByPrompt(opts ...sql.OrderTermOption) OrderOption {
 // ByMediaAssetID orders the results by the media_asset_id field.
 func ByMediaAssetID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMediaAssetID, opts...).ToFunc()
+}
+
+// ByMediaURL orders the results by the media_url field.
+func ByMediaURL(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMediaURL, opts...).ToFunc()
+}
+
+// ByStorageID orders the results by the storage_id field.
+func ByStorageID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStorageID, opts...).ToFunc()
+}
+
+// ByStorageKey orders the results by the storage_key field.
+func ByStorageKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldStorageKey, opts...).ToFunc()
 }
 
 // ByProviderTaskID orders the results by the provider_task_id field.

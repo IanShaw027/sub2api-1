@@ -123,7 +123,10 @@ func TestImageStorageSettingsToggleTakesEffectWithoutRestart(t *testing.T) {
 	_, enabled = svc.resolve()
 	require.False(t, enabled, "turning it back off must also apply immediately")
 
-	require.Len(t, *built, 1, "the S3 client is built only when the feature is on")
+	require.Len(t, *built, 2, "a configured store remains available to finish accepted tasks and renew history URLs when submissions are disabled")
+	uploader, enabled = svc.resolve()
+	require.NotNil(t, uploader)
+	require.False(t, enabled)
 }
 
 func TestImageStorageSettingsReuseBackupCredentials(t *testing.T) {

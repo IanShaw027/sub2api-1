@@ -41,6 +41,9 @@ func (CreationImageJob) Fields() []ent.Field {
 		field.Int64("media_asset_id").
 			Optional().
 			Nillable(),
+		field.Text("media_url").Default(""),
+		field.Text("storage_id").Default(""),
+		field.Text("storage_key").Default(""),
 		field.String("provider_task_id").
 			MaxLen(128).
 			Optional().

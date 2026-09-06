@@ -132,7 +132,7 @@ func registerRoutes(
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg)
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.Invoice, h.PaymentWebhook, h.Admin.Payment, h.Admin.Invoice, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
 	routes.RegisterTicketRoutes(v1, h.Ticket, h.Admin.Ticket, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
-	routes.RegisterCreationRoutes(v1, h.Creation, jwtAuth, settingService, panelRateLimiter)
+	routes.RegisterCreationRoutes(v1, h.Creation, jwtAuth, settingService, panelRateLimiter, compositeResolver)
 	routes.RegisterMediaRoutes(v1, h, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)

@@ -264,7 +264,10 @@ func (r *creationImageJobRepository) Create(ctx context.Context, job *service.Cr
 		SetGroupID(job.GroupID).
 		SetStatus(job.Status).
 		SetModel(job.Model).
-		SetPrompt(job.Prompt)
+		SetPrompt(job.Prompt).
+		SetMediaURL(job.MediaURL).
+		SetStorageID(job.StorageID).
+		SetStorageKey(job.StorageKey)
 	if job.SessionID != nil {
 		builder.SetSessionID(*job.SessionID)
 	}
@@ -368,9 +371,15 @@ func (r *creationImageJobRepository) ListForUser(ctx context.Context, userID int
 }
 
 func (r *creationImageJobRepository) Update(ctx context.Context, id int64, job *service.CreationImageJob) error {
-	builder := r.client.CreationImageJob.UpdateOneID(id).
+	builder := r.client.CreationImageJob.Update().Where(creationimagejob.IDEQ(id)).
 		SetStatus(job.Status).
+		SetMediaURL(job.MediaURL).
+		SetStorageID(job.StorageID).
+		SetStorageKey(job.StorageKey).
 		SetUpdatedAt(time.Now())
+	if job.Status == service.CreationImageJobStatusPending || job.Status == service.CreationImageJobStatusProcessing {
+		builder.Where(creationimagejob.StatusIn(service.CreationImageJobStatusPending, service.CreationImageJobStatusProcessing))
+	}
 	if job.MediaAssetID != nil {
 		builder.SetMediaAssetID(*job.MediaAssetID)
 	}
@@ -389,14 +398,17 @@ func creationImageJobEntityToService(row *dbent.CreationImageJob) *service.Creat
 		return nil
 	}
 	out := &service.CreationImageJob{
-		ID:        row.ID,
-		UserID:    row.UserID,
-		GroupID:   row.GroupID,
-		Status:    row.Status,
-		Model:     row.Model,
-		Prompt:    row.Prompt,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		MediaURL:   row.MediaURL,
+		StorageID:  row.StorageID,
+		StorageKey: row.StorageKey,
+		ID:         row.ID,
+		UserID:     row.UserID,
+		GroupID:    row.GroupID,
+		Status:     row.Status,
+		Model:      row.Model,
+		Prompt:     row.Prompt,
+		CreatedAt:  row.CreatedAt,
+		UpdatedAt:  row.UpdatedAt,
 	}
 	if row.SessionID != nil {
 		v := *row.SessionID

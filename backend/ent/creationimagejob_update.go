@@ -160,6 +160,48 @@ func (_u *CreationImageJobUpdate) ClearMediaAssetID() *CreationImageJobUpdate {
 	return _u
 }
 
+// SetMediaURL sets the "media_url" field.
+func (_u *CreationImageJobUpdate) SetMediaURL(v string) *CreationImageJobUpdate {
+	_u.mutation.SetMediaURL(v)
+	return _u
+}
+
+// SetNillableMediaURL sets the "media_url" field if the given value is not nil.
+func (_u *CreationImageJobUpdate) SetNillableMediaURL(v *string) *CreationImageJobUpdate {
+	if v != nil {
+		_u.SetMediaURL(*v)
+	}
+	return _u
+}
+
+// SetStorageID sets the "storage_id" field.
+func (_u *CreationImageJobUpdate) SetStorageID(v string) *CreationImageJobUpdate {
+	_u.mutation.SetStorageID(v)
+	return _u
+}
+
+// SetNillableStorageID sets the "storage_id" field if the given value is not nil.
+func (_u *CreationImageJobUpdate) SetNillableStorageID(v *string) *CreationImageJobUpdate {
+	if v != nil {
+		_u.SetStorageID(*v)
+	}
+	return _u
+}
+
+// SetStorageKey sets the "storage_key" field.
+func (_u *CreationImageJobUpdate) SetStorageKey(v string) *CreationImageJobUpdate {
+	_u.mutation.SetStorageKey(v)
+	return _u
+}
+
+// SetNillableStorageKey sets the "storage_key" field if the given value is not nil.
+func (_u *CreationImageJobUpdate) SetNillableStorageKey(v *string) *CreationImageJobUpdate {
+	if v != nil {
+		_u.SetStorageKey(*v)
+	}
+	return _u
+}
+
 // SetProviderTaskID sets the "provider_task_id" field.
 func (_u *CreationImageJobUpdate) SetProviderTaskID(v string) *CreationImageJobUpdate {
 	_u.mutation.SetProviderTaskID(v)
@@ -319,6 +361,15 @@ func (_u *CreationImageJobUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if _u.mutation.MediaAssetIDCleared() {
 		_spec.ClearField(creationimagejob.FieldMediaAssetID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MediaURL(); ok {
+		_spec.SetField(creationimagejob.FieldMediaURL, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.StorageID(); ok {
+		_spec.SetField(creationimagejob.FieldStorageID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.StorageKey(); ok {
+		_spec.SetField(creationimagejob.FieldStorageKey, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ProviderTaskID(); ok {
 		_spec.SetField(creationimagejob.FieldProviderTaskID, field.TypeString, value)
@@ -515,6 +566,48 @@ func (_u *CreationImageJobUpdateOne) ClearMediaAssetID() *CreationImageJobUpdate
 	return _u
 }
 
+// SetMediaURL sets the "media_url" field.
+func (_u *CreationImageJobUpdateOne) SetMediaURL(v string) *CreationImageJobUpdateOne {
+	_u.mutation.SetMediaURL(v)
+	return _u
+}
+
+// SetNillableMediaURL sets the "media_url" field if the given value is not nil.
+func (_u *CreationImageJobUpdateOne) SetNillableMediaURL(v *string) *CreationImageJobUpdateOne {
+	if v != nil {
+		_u.SetMediaURL(*v)
+	}
+	return _u
+}
+
+// SetStorageID sets the "storage_id" field.
+func (_u *CreationImageJobUpdateOne) SetStorageID(v string) *CreationImageJobUpdateOne {
+	_u.mutation.SetStorageID(v)
+	return _u
+}
+
+// SetNillableStorageID sets the "storage_id" field if the given value is not nil.
+func (_u *CreationImageJobUpdateOne) SetNillableStorageID(v *string) *CreationImageJobUpdateOne {
+	if v != nil {
+		_u.SetStorageID(*v)
+	}
+	return _u
+}
+
+// SetStorageKey sets the "storage_key" field.
+func (_u *CreationImageJobUpdateOne) SetStorageKey(v string) *CreationImageJobUpdateOne {
+	_u.mutation.SetStorageKey(v)
+	return _u
+}
+
+// SetNillableStorageKey sets the "storage_key" field if the given value is not nil.
+func (_u *CreationImageJobUpdateOne) SetNillableStorageKey(v *string) *CreationImageJobUpdateOne {
+	if v != nil {
+		_u.SetStorageKey(*v)
+	}
+	return _u
+}
+
 // SetProviderTaskID sets the "provider_task_id" field.
 func (_u *CreationImageJobUpdateOne) SetProviderTaskID(v string) *CreationImageJobUpdateOne {
 	_u.mutation.SetProviderTaskID(v)
@@ -704,6 +797,15 @@ func (_u *CreationImageJobUpdateOne) sqlSave(ctx context.Context) (_node *Creati
 	}
 	if _u.mutation.MediaAssetIDCleared() {
 		_spec.ClearField(creationimagejob.FieldMediaAssetID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MediaURL(); ok {
+		_spec.SetField(creationimagejob.FieldMediaURL, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.StorageID(); ok {
+		_spec.SetField(creationimagejob.FieldStorageID, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.StorageKey(); ok {
+		_spec.SetField(creationimagejob.FieldStorageKey, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.ProviderTaskID(); ok {
 		_spec.SetField(creationimagejob.FieldProviderTaskID, field.TypeString, value)

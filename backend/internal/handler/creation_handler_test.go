@@ -175,6 +175,9 @@ func (s *handlerCreationImageJobRepo) Update(_ context.Context, id int64, job *s
 		return service.ErrCreationImageNotFound
 	}
 	row.Status = job.Status
+	row.MediaURL = job.MediaURL
+	row.StorageID = job.StorageID
+	row.StorageKey = job.StorageKey
 	if job.MediaAssetID != nil {
 		v := *job.MediaAssetID
 		row.MediaAssetID = &v
@@ -224,7 +227,7 @@ func TestCreationHandler_CreateAndGetSession(t *testing.T) {
 		&handlerCreationUserRepo{},
 		&handlerCreationUserSubRepo{},
 	)
-	h := NewCreationHandler(svc, nil, nil, nil, nil, nil)
+	h := NewCreationHandler(svc, nil, nil, nil, nil, nil, nil)
 
 	r := gin.New()
 	v1 := r.Group("/api/v1")
@@ -293,15 +296,16 @@ func TestCreationHandler_ImagesAsyncPersistsJobAndImageTaskForwardsTaskID(t *tes
 	resolver := service.NewCreationKeyResolver(keyRepo, apiKeySvc)
 
 	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
-	tasks := service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)
+	uploader := service.NewImageResultUploader(&creationTestImageStorage{}, "images/", 0, nil)
+	tasks := service.NewImageTaskServiceWithUploader(store, uploader, time.Hour, time.Minute)
 	release := make(chan struct{})
 	asyncImage := &AsyncImageHandler{tasks: tasks}
 	asyncImage.execute = func(_ string, c *gin.Context) {
 		<-release
-		c.JSON(http.StatusOK, gin.H{"created": 1, "data": []gin.H{{"url": "https://example.test/cat.png"}}})
+		c.JSON(http.StatusOK, gin.H{"created": 1, "data": []gin.H{{"b64_json": "iVBORw0KGgo="}}})
 	}
 
-	h := NewCreationHandler(creationSvc, resolver, nil, nil, nil, asyncImage)
+	h := NewCreationHandler(creationSvc, resolver, nil, nil, nil, asyncImage, nil)
 	r := gin.New()
 	creation := r.Group("/api/v1/creation")
 	creation.Use(func(c *gin.Context) {
@@ -316,6 +320,8 @@ func TestCreationHandler_ImagesAsyncPersistsJobAndImageTaskForwardsTaskID(t *tes
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/creation/images/generations/async?group_id=3", bytes.NewBufferString(`{"model":"gpt-image-1","prompt":"a cat"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Session-Id", "11")
+	requestCtx, cancelRequest := context.WithCancel(req.Context())
+	req = req.WithContext(requestCtx)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusAccepted, w.Code)
@@ -344,11 +350,22 @@ func TestCreationHandler_ImagesAsyncPersistsJobAndImageTaskForwardsTaskID(t *tes
 	require.NotNil(t, persisted.SessionID)
 	require.Equal(t, int64(11), *persisted.SessionID)
 
+	cancelRequest()
 	close(release)
 	require.Eventually(t, func() bool {
 		got, err := tasks.Get(context.Background(), service.ImageTaskOwner{UserID: 7, APIKeyID: 9}, accepted.TaskID)
 		return err == nil && got.Status == service.ImageTaskStatusCompleted
 	}, time.Second, 10*time.Millisecond)
+
+	// Completion, not polling, has already made the result durable.
+	durable, err := jobs.GetByProviderTaskID(context.Background(), 7, accepted.TaskID)
+	require.NoError(t, err)
+	require.Equal(t, service.CreationImageJobStatusCompleted, durable.Status)
+	require.Equal(t, "test-bucket", durable.StorageID)
+	require.NotEmpty(t, durable.StorageKey)
+	store.mu.Lock()
+	delete(store.tasks, accepted.TaskID)
+	store.mu.Unlock()
 
 	pollReq := httptest.NewRequest(http.MethodGet, "/api/v1/creation/images/tasks/"+accepted.TaskID+"?group_id=3", nil)
 	pollWriter := httptest.NewRecorder()
@@ -356,6 +373,7 @@ func TestCreationHandler_ImagesAsyncPersistsJobAndImageTaskForwardsTaskID(t *tes
 	require.Equal(t, http.StatusOK, pollWriter.Code)
 	require.Contains(t, pollWriter.Body.String(), accepted.TaskID)
 	require.Contains(t, pollWriter.Body.String(), "https://example.test/cat.png")
+	require.Contains(t, pollWriter.Body.String(), "renewed=true")
 
 	synced, err := jobs.GetByProviderTaskID(context.Background(), 7, accepted.TaskID)
 	require.NoError(t, err)
@@ -367,6 +385,20 @@ func TestCreationHandler_ImagesAsyncPersistsJobAndImageTaskForwardsTaskID(t *tes
 	require.Equal(t, http.StatusOK, listWriter.Code)
 	require.Contains(t, listWriter.Body.String(), "https://example.test/cat.png")
 	require.Contains(t, listWriter.Body.String(), accepted.TaskID)
+	require.NotContains(t, listWriter.Body.String(), "storage_key")
+	require.NotContains(t, listWriter.Body.String(), "test-bucket")
+}
+
+type creationTestImageStorage struct{}
+
+func (*creationTestImageStorage) Save(context.Context, string, string, []byte) (string, error) {
+	return "https://example.test/cat.png?expired=true", nil
+}
+
+func (*creationTestImageStorage) StorageID() string { return "test-bucket" }
+
+func (*creationTestImageStorage) URL(context.Context, string) (string, error) {
+	return "https://example.test/cat.png?renewed=true", nil
 }
 
 func TestCreationHandler_ImageTaskFallsBackToIDParam(t *testing.T) {
@@ -408,6 +440,7 @@ func TestCreationHandler_ImageTaskFallsBackToIDParam(t *testing.T) {
 		service.NewCreationKeyResolver(keyRepo, apiKeySvc),
 		nil, nil, nil,
 		&AsyncImageHandler{tasks: tasks},
+		nil,
 	)
 
 	r := gin.New()
@@ -492,7 +525,7 @@ func TestCreationHandler_RejectsCrossUserSessionAndImageAccess(t *testing.T) {
 			&handlerCreationUserRepo{},
 			&handlerCreationUserSubRepo{},
 		),
-		nil, nil, nil, nil, nil,
+		nil, nil, nil, nil, nil, nil,
 	)
 
 	var currentUser int64

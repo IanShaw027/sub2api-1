@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +21,28 @@ import (
 type asyncImageMemoryStore struct {
 	mu    sync.RWMutex
 	tasks map[string]*service.ImageTaskRecord
+}
+
+func TestAsyncImageHandlerDoesNotStartWhenDurableAcceptanceFails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	store := &asyncImageMemoryStore{tasks: make(map[string]*service.ImageTaskRecord)}
+	h := &AsyncImageHandler{tasks: service.NewImageTaskServiceWithUploader(store, nil, time.Hour, time.Minute)}
+	var executed atomic.Bool
+	h.execute = func(_ string, _ *gin.Context) { executed.Store(true) }
+	router := gin.New()
+	router.POST("/images", func(c *gin.Context) {
+		c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+			ID: 9, UserID: 7, Group: &service.Group{Platform: service.PlatformOpenAI, AllowImageGeneration: true},
+		})
+		h.SubmitWithLifecycle(c, func(*service.ImageTask) error { return errors.New("database unavailable") }, nil)
+	})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/images", strings.NewReader(`{"model":"gpt-image-1","prompt":"test"}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.False(t, executed.Load())
+	require.Empty(t, w.Header().Get("Location"))
 }
 
 func (s *asyncImageMemoryStore) Save(_ context.Context, task *service.ImageTaskRecord, _ time.Duration) error {

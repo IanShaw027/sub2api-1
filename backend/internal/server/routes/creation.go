@@ -13,6 +13,7 @@ func RegisterCreationRoutes(
 	jwtAuth middleware.JWTAuthMiddleware,
 	settingService *service.SettingService,
 	panelRateLimiter *middleware.PanelRateLimiter,
+	compositeResolver *service.CompositeRouteResolver,
 ) {
 	creation := v1.Group("/creation")
 	creation.Use(gin.HandlerFunc(jwtAuth))
@@ -20,12 +21,15 @@ func RegisterCreationRoutes(
 	creation.Use(middleware.CreationFeatureGuard(settingService))
 	creation.Use(panelRateLimiter.Global())
 	{
-		creation.POST("/chat/completions", creationHandler.ChatCompletions)
-		creation.POST("/messages", creationHandler.Messages)
-		creation.POST("/images/generations", creationHandler.Images)
-		creation.POST("/images/generations/async", creationHandler.ImagesAsync)
-		creation.GET("/images/tasks/:task_id", creationHandler.ImageTask)
-		creation.GET("/models", creationHandler.Models)
+		gateway := creation.Group("")
+		gateway.Use(creationHandler.GatewayContext)
+		gateway.Use(compositeTargetPlatformMiddleware(compositeResolver))
+		gateway.POST("/chat/completions", creationHandler.ChatCompletions)
+		gateway.POST("/messages", creationHandler.Messages)
+		gateway.POST("/images/generations", creationHandler.Images)
+		gateway.POST("/images/generations/async", creationHandler.ImagesAsync)
+		gateway.GET("/images/tasks/:task_id", creationHandler.ImageTask)
+		gateway.GET("/models", creationHandler.Models)
 
 		creation.GET("/sessions", creationHandler.ListSessions)
 		creation.POST("/sessions", creationHandler.CreateSession)

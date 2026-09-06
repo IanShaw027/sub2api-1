@@ -357,7 +357,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	creationImageJobRepository := repository.NewCreationImageJobRepository(client)
 	creationService := service.ProvideCreationService(creationSessionRepository, creationMessageRepository, creationImageJobRepository, groupRepository, userRepository, userSubscriptionRepository)
 	creationKeyResolver := service.ProvideCreationKeyResolver(apiKeyRepository, apiKeyService)
-	creationHandler := handler.NewCreationHandler(creationService, creationKeyResolver, subscriptionService, gatewayHandler, openAIGatewayHandler, asyncImageHandler)
+	creationHandler := handler.NewCreationHandler(creationService, creationKeyResolver, subscriptionService, gatewayHandler, openAIGatewayHandler, asyncImageHandler, configConfig)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)

@@ -22685,6 +22685,9 @@ type CreationImageJobMutation struct {
 	prompt            *string
 	media_asset_id    *int64
 	addmedia_asset_id *int64
+	media_url         *string
+	storage_id        *string
+	storage_key       *string
 	provider_task_id  *string
 	error             *string
 	created_at        *time.Time
@@ -23134,6 +23137,114 @@ func (m *CreationImageJobMutation) ResetMediaAssetID() {
 	delete(m.clearedFields, creationimagejob.FieldMediaAssetID)
 }
 
+// SetMediaURL sets the "media_url" field.
+func (m *CreationImageJobMutation) SetMediaURL(s string) {
+	m.media_url = &s
+}
+
+// MediaURL returns the value of the "media_url" field in the mutation.
+func (m *CreationImageJobMutation) MediaURL() (r string, exists bool) {
+	v := m.media_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMediaURL returns the old "media_url" field's value of the CreationImageJob entity.
+// If the CreationImageJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreationImageJobMutation) OldMediaURL(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMediaURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMediaURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMediaURL: %w", err)
+	}
+	return oldValue.MediaURL, nil
+}
+
+// ResetMediaURL resets all changes to the "media_url" field.
+func (m *CreationImageJobMutation) ResetMediaURL() {
+	m.media_url = nil
+}
+
+// SetStorageID sets the "storage_id" field.
+func (m *CreationImageJobMutation) SetStorageID(s string) {
+	m.storage_id = &s
+}
+
+// StorageID returns the value of the "storage_id" field in the mutation.
+func (m *CreationImageJobMutation) StorageID() (r string, exists bool) {
+	v := m.storage_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStorageID returns the old "storage_id" field's value of the CreationImageJob entity.
+// If the CreationImageJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreationImageJobMutation) OldStorageID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStorageID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStorageID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStorageID: %w", err)
+	}
+	return oldValue.StorageID, nil
+}
+
+// ResetStorageID resets all changes to the "storage_id" field.
+func (m *CreationImageJobMutation) ResetStorageID() {
+	m.storage_id = nil
+}
+
+// SetStorageKey sets the "storage_key" field.
+func (m *CreationImageJobMutation) SetStorageKey(s string) {
+	m.storage_key = &s
+}
+
+// StorageKey returns the value of the "storage_key" field in the mutation.
+func (m *CreationImageJobMutation) StorageKey() (r string, exists bool) {
+	v := m.storage_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStorageKey returns the old "storage_key" field's value of the CreationImageJob entity.
+// If the CreationImageJob object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreationImageJobMutation) OldStorageKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStorageKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStorageKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStorageKey: %w", err)
+	}
+	return oldValue.StorageKey, nil
+}
+
+// ResetStorageKey resets all changes to the "storage_key" field.
+func (m *CreationImageJobMutation) ResetStorageKey() {
+	m.storage_key = nil
+}
+
 // SetProviderTaskID sets the "provider_task_id" field.
 func (m *CreationImageJobMutation) SetProviderTaskID(s string) {
 	m.provider_task_id = &s
@@ -23365,7 +23476,7 @@ func (m *CreationImageJobMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreationImageJobMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 14)
 	if m.session != nil {
 		fields = append(fields, creationimagejob.FieldSessionID)
 	}
@@ -23386,6 +23497,15 @@ func (m *CreationImageJobMutation) Fields() []string {
 	}
 	if m.media_asset_id != nil {
 		fields = append(fields, creationimagejob.FieldMediaAssetID)
+	}
+	if m.media_url != nil {
+		fields = append(fields, creationimagejob.FieldMediaURL)
+	}
+	if m.storage_id != nil {
+		fields = append(fields, creationimagejob.FieldStorageID)
+	}
+	if m.storage_key != nil {
+		fields = append(fields, creationimagejob.FieldStorageKey)
 	}
 	if m.provider_task_id != nil {
 		fields = append(fields, creationimagejob.FieldProviderTaskID)
@@ -23421,6 +23541,12 @@ func (m *CreationImageJobMutation) Field(name string) (ent.Value, bool) {
 		return m.Prompt()
 	case creationimagejob.FieldMediaAssetID:
 		return m.MediaAssetID()
+	case creationimagejob.FieldMediaURL:
+		return m.MediaURL()
+	case creationimagejob.FieldStorageID:
+		return m.StorageID()
+	case creationimagejob.FieldStorageKey:
+		return m.StorageKey()
 	case creationimagejob.FieldProviderTaskID:
 		return m.ProviderTaskID()
 	case creationimagejob.FieldError:
@@ -23452,6 +23578,12 @@ func (m *CreationImageJobMutation) OldField(ctx context.Context, name string) (e
 		return m.OldPrompt(ctx)
 	case creationimagejob.FieldMediaAssetID:
 		return m.OldMediaAssetID(ctx)
+	case creationimagejob.FieldMediaURL:
+		return m.OldMediaURL(ctx)
+	case creationimagejob.FieldStorageID:
+		return m.OldStorageID(ctx)
+	case creationimagejob.FieldStorageKey:
+		return m.OldStorageKey(ctx)
 	case creationimagejob.FieldProviderTaskID:
 		return m.OldProviderTaskID(ctx)
 	case creationimagejob.FieldError:
@@ -23517,6 +23649,27 @@ func (m *CreationImageJobMutation) SetField(name string, value ent.Value) error 
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMediaAssetID(v)
+		return nil
+	case creationimagejob.FieldMediaURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMediaURL(v)
+		return nil
+	case creationimagejob.FieldStorageID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStorageID(v)
+		return nil
+	case creationimagejob.FieldStorageKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStorageKey(v)
 		return nil
 	case creationimagejob.FieldProviderTaskID:
 		v, ok := value.(string)
@@ -23681,6 +23834,15 @@ func (m *CreationImageJobMutation) ResetField(name string) error {
 		return nil
 	case creationimagejob.FieldMediaAssetID:
 		m.ResetMediaAssetID()
+		return nil
+	case creationimagejob.FieldMediaURL:
+		m.ResetMediaURL()
+		return nil
+	case creationimagejob.FieldStorageID:
+		m.ResetStorageID()
+		return nil
+	case creationimagejob.FieldStorageKey:
+		m.ResetStorageKey()
 		return nil
 	case creationimagejob.FieldProviderTaskID:
 		m.ResetProviderTaskID()

@@ -105,6 +105,48 @@ func (_c *CreationImageJobCreate) SetNillableMediaAssetID(v *int64) *CreationIma
 	return _c
 }
 
+// SetMediaURL sets the "media_url" field.
+func (_c *CreationImageJobCreate) SetMediaURL(v string) *CreationImageJobCreate {
+	_c.mutation.SetMediaURL(v)
+	return _c
+}
+
+// SetNillableMediaURL sets the "media_url" field if the given value is not nil.
+func (_c *CreationImageJobCreate) SetNillableMediaURL(v *string) *CreationImageJobCreate {
+	if v != nil {
+		_c.SetMediaURL(*v)
+	}
+	return _c
+}
+
+// SetStorageID sets the "storage_id" field.
+func (_c *CreationImageJobCreate) SetStorageID(v string) *CreationImageJobCreate {
+	_c.mutation.SetStorageID(v)
+	return _c
+}
+
+// SetNillableStorageID sets the "storage_id" field if the given value is not nil.
+func (_c *CreationImageJobCreate) SetNillableStorageID(v *string) *CreationImageJobCreate {
+	if v != nil {
+		_c.SetStorageID(*v)
+	}
+	return _c
+}
+
+// SetStorageKey sets the "storage_key" field.
+func (_c *CreationImageJobCreate) SetStorageKey(v string) *CreationImageJobCreate {
+	_c.mutation.SetStorageKey(v)
+	return _c
+}
+
+// SetNillableStorageKey sets the "storage_key" field if the given value is not nil.
+func (_c *CreationImageJobCreate) SetNillableStorageKey(v *string) *CreationImageJobCreate {
+	if v != nil {
+		_c.SetStorageKey(*v)
+	}
+	return _c
+}
+
 // SetProviderTaskID sets the "provider_task_id" field.
 func (_c *CreationImageJobCreate) SetProviderTaskID(v string) *CreationImageJobCreate {
 	_c.mutation.SetProviderTaskID(v)
@@ -213,6 +255,18 @@ func (_c *CreationImageJobCreate) defaults() {
 		v := creationimagejob.DefaultPrompt
 		_c.mutation.SetPrompt(v)
 	}
+	if _, ok := _c.mutation.MediaURL(); !ok {
+		v := creationimagejob.DefaultMediaURL
+		_c.mutation.SetMediaURL(v)
+	}
+	if _, ok := _c.mutation.StorageID(); !ok {
+		v := creationimagejob.DefaultStorageID
+		_c.mutation.SetStorageID(v)
+	}
+	if _, ok := _c.mutation.StorageKey(); !ok {
+		v := creationimagejob.DefaultStorageKey
+		_c.mutation.SetStorageKey(v)
+	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		v := creationimagejob.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
@@ -249,6 +303,15 @@ func (_c *CreationImageJobCreate) check() error {
 	}
 	if _, ok := _c.mutation.Prompt(); !ok {
 		return &ValidationError{Name: "prompt", err: errors.New(`ent: missing required field "CreationImageJob.prompt"`)}
+	}
+	if _, ok := _c.mutation.MediaURL(); !ok {
+		return &ValidationError{Name: "media_url", err: errors.New(`ent: missing required field "CreationImageJob.media_url"`)}
+	}
+	if _, ok := _c.mutation.StorageID(); !ok {
+		return &ValidationError{Name: "storage_id", err: errors.New(`ent: missing required field "CreationImageJob.storage_id"`)}
+	}
+	if _, ok := _c.mutation.StorageKey(); !ok {
+		return &ValidationError{Name: "storage_key", err: errors.New(`ent: missing required field "CreationImageJob.storage_key"`)}
 	}
 	if v, ok := _c.mutation.ProviderTaskID(); ok {
 		if err := creationimagejob.ProviderTaskIDValidator(v); err != nil {
@@ -311,6 +374,18 @@ func (_c *CreationImageJobCreate) createSpec() (*CreationImageJob, *sqlgraph.Cre
 	if value, ok := _c.mutation.MediaAssetID(); ok {
 		_spec.SetField(creationimagejob.FieldMediaAssetID, field.TypeInt64, value)
 		_node.MediaAssetID = &value
+	}
+	if value, ok := _c.mutation.MediaURL(); ok {
+		_spec.SetField(creationimagejob.FieldMediaURL, field.TypeString, value)
+		_node.MediaURL = value
+	}
+	if value, ok := _c.mutation.StorageID(); ok {
+		_spec.SetField(creationimagejob.FieldStorageID, field.TypeString, value)
+		_node.StorageID = value
+	}
+	if value, ok := _c.mutation.StorageKey(); ok {
+		_spec.SetField(creationimagejob.FieldStorageKey, field.TypeString, value)
+		_node.StorageKey = value
 	}
 	if value, ok := _c.mutation.ProviderTaskID(); ok {
 		_spec.SetField(creationimagejob.FieldProviderTaskID, field.TypeString, value)
@@ -508,6 +583,42 @@ func (u *CreationImageJobUpsert) AddMediaAssetID(v int64) *CreationImageJobUpser
 // ClearMediaAssetID clears the value of the "media_asset_id" field.
 func (u *CreationImageJobUpsert) ClearMediaAssetID() *CreationImageJobUpsert {
 	u.SetNull(creationimagejob.FieldMediaAssetID)
+	return u
+}
+
+// SetMediaURL sets the "media_url" field.
+func (u *CreationImageJobUpsert) SetMediaURL(v string) *CreationImageJobUpsert {
+	u.Set(creationimagejob.FieldMediaURL, v)
+	return u
+}
+
+// UpdateMediaURL sets the "media_url" field to the value that was provided on create.
+func (u *CreationImageJobUpsert) UpdateMediaURL() *CreationImageJobUpsert {
+	u.SetExcluded(creationimagejob.FieldMediaURL)
+	return u
+}
+
+// SetStorageID sets the "storage_id" field.
+func (u *CreationImageJobUpsert) SetStorageID(v string) *CreationImageJobUpsert {
+	u.Set(creationimagejob.FieldStorageID, v)
+	return u
+}
+
+// UpdateStorageID sets the "storage_id" field to the value that was provided on create.
+func (u *CreationImageJobUpsert) UpdateStorageID() *CreationImageJobUpsert {
+	u.SetExcluded(creationimagejob.FieldStorageID)
+	return u
+}
+
+// SetStorageKey sets the "storage_key" field.
+func (u *CreationImageJobUpsert) SetStorageKey(v string) *CreationImageJobUpsert {
+	u.Set(creationimagejob.FieldStorageKey, v)
+	return u
+}
+
+// UpdateStorageKey sets the "storage_key" field to the value that was provided on create.
+func (u *CreationImageJobUpsert) UpdateStorageKey() *CreationImageJobUpsert {
+	u.SetExcluded(creationimagejob.FieldStorageKey)
 	return u
 }
 
@@ -734,6 +845,48 @@ func (u *CreationImageJobUpsertOne) UpdateMediaAssetID() *CreationImageJobUpsert
 func (u *CreationImageJobUpsertOne) ClearMediaAssetID() *CreationImageJobUpsertOne {
 	return u.Update(func(s *CreationImageJobUpsert) {
 		s.ClearMediaAssetID()
+	})
+}
+
+// SetMediaURL sets the "media_url" field.
+func (u *CreationImageJobUpsertOne) SetMediaURL(v string) *CreationImageJobUpsertOne {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.SetMediaURL(v)
+	})
+}
+
+// UpdateMediaURL sets the "media_url" field to the value that was provided on create.
+func (u *CreationImageJobUpsertOne) UpdateMediaURL() *CreationImageJobUpsertOne {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.UpdateMediaURL()
+	})
+}
+
+// SetStorageID sets the "storage_id" field.
+func (u *CreationImageJobUpsertOne) SetStorageID(v string) *CreationImageJobUpsertOne {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.SetStorageID(v)
+	})
+}
+
+// UpdateStorageID sets the "storage_id" field to the value that was provided on create.
+func (u *CreationImageJobUpsertOne) UpdateStorageID() *CreationImageJobUpsertOne {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.UpdateStorageID()
+	})
+}
+
+// SetStorageKey sets the "storage_key" field.
+func (u *CreationImageJobUpsertOne) SetStorageKey(v string) *CreationImageJobUpsertOne {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.SetStorageKey(v)
+	})
+}
+
+// UpdateStorageKey sets the "storage_key" field to the value that was provided on create.
+func (u *CreationImageJobUpsertOne) UpdateStorageKey() *CreationImageJobUpsertOne {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.UpdateStorageKey()
 	})
 }
 
@@ -1134,6 +1287,48 @@ func (u *CreationImageJobUpsertBulk) UpdateMediaAssetID() *CreationImageJobUpser
 func (u *CreationImageJobUpsertBulk) ClearMediaAssetID() *CreationImageJobUpsertBulk {
 	return u.Update(func(s *CreationImageJobUpsert) {
 		s.ClearMediaAssetID()
+	})
+}
+
+// SetMediaURL sets the "media_url" field.
+func (u *CreationImageJobUpsertBulk) SetMediaURL(v string) *CreationImageJobUpsertBulk {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.SetMediaURL(v)
+	})
+}
+
+// UpdateMediaURL sets the "media_url" field to the value that was provided on create.
+func (u *CreationImageJobUpsertBulk) UpdateMediaURL() *CreationImageJobUpsertBulk {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.UpdateMediaURL()
+	})
+}
+
+// SetStorageID sets the "storage_id" field.
+func (u *CreationImageJobUpsertBulk) SetStorageID(v string) *CreationImageJobUpsertBulk {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.SetStorageID(v)
+	})
+}
+
+// UpdateStorageID sets the "storage_id" field to the value that was provided on create.
+func (u *CreationImageJobUpsertBulk) UpdateStorageID() *CreationImageJobUpsertBulk {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.UpdateStorageID()
+	})
+}
+
+// SetStorageKey sets the "storage_key" field.
+func (u *CreationImageJobUpsertBulk) SetStorageKey(v string) *CreationImageJobUpsertBulk {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.SetStorageKey(v)
+	})
+}
+
+// UpdateStorageKey sets the "storage_key" field to the value that was provided on create.
+func (u *CreationImageJobUpsertBulk) UpdateStorageKey() *CreationImageJobUpsertBulk {
+	return u.Update(func(s *CreationImageJobUpsert) {
+		s.UpdateStorageKey()
 	})
 }
 

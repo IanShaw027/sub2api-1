@@ -90,6 +90,21 @@ func MediaAssetID(v int64) predicate.CreationImageJob {
 	return predicate.CreationImageJob(sql.FieldEQ(FieldMediaAssetID, v))
 }
 
+// MediaURL applies equality check predicate on the "media_url" field. It's identical to MediaURLEQ.
+func MediaURL(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEQ(FieldMediaURL, v))
+}
+
+// StorageID applies equality check predicate on the "storage_id" field. It's identical to StorageIDEQ.
+func StorageID(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEQ(FieldStorageID, v))
+}
+
+// StorageKey applies equality check predicate on the "storage_key" field. It's identical to StorageKeyEQ.
+func StorageKey(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEQ(FieldStorageKey, v))
+}
+
 // ProviderTaskID applies equality check predicate on the "provider_task_id" field. It's identical to ProviderTaskIDEQ.
 func ProviderTaskID(v string) predicate.CreationImageJob {
 	return predicate.CreationImageJob(sql.FieldEQ(FieldProviderTaskID, v))
@@ -463,6 +478,201 @@ func MediaAssetIDIsNil() predicate.CreationImageJob {
 // MediaAssetIDNotNil applies the NotNil predicate on the "media_asset_id" field.
 func MediaAssetIDNotNil() predicate.CreationImageJob {
 	return predicate.CreationImageJob(sql.FieldNotNull(FieldMediaAssetID))
+}
+
+// MediaURLEQ applies the EQ predicate on the "media_url" field.
+func MediaURLEQ(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEQ(FieldMediaURL, v))
+}
+
+// MediaURLNEQ applies the NEQ predicate on the "media_url" field.
+func MediaURLNEQ(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldNEQ(FieldMediaURL, v))
+}
+
+// MediaURLIn applies the In predicate on the "media_url" field.
+func MediaURLIn(vs ...string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldIn(FieldMediaURL, vs...))
+}
+
+// MediaURLNotIn applies the NotIn predicate on the "media_url" field.
+func MediaURLNotIn(vs ...string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldNotIn(FieldMediaURL, vs...))
+}
+
+// MediaURLGT applies the GT predicate on the "media_url" field.
+func MediaURLGT(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldGT(FieldMediaURL, v))
+}
+
+// MediaURLGTE applies the GTE predicate on the "media_url" field.
+func MediaURLGTE(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldGTE(FieldMediaURL, v))
+}
+
+// MediaURLLT applies the LT predicate on the "media_url" field.
+func MediaURLLT(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldLT(FieldMediaURL, v))
+}
+
+// MediaURLLTE applies the LTE predicate on the "media_url" field.
+func MediaURLLTE(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldLTE(FieldMediaURL, v))
+}
+
+// MediaURLContains applies the Contains predicate on the "media_url" field.
+func MediaURLContains(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldContains(FieldMediaURL, v))
+}
+
+// MediaURLHasPrefix applies the HasPrefix predicate on the "media_url" field.
+func MediaURLHasPrefix(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldHasPrefix(FieldMediaURL, v))
+}
+
+// MediaURLHasSuffix applies the HasSuffix predicate on the "media_url" field.
+func MediaURLHasSuffix(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldHasSuffix(FieldMediaURL, v))
+}
+
+// MediaURLEqualFold applies the EqualFold predicate on the "media_url" field.
+func MediaURLEqualFold(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEqualFold(FieldMediaURL, v))
+}
+
+// MediaURLContainsFold applies the ContainsFold predicate on the "media_url" field.
+func MediaURLContainsFold(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldContainsFold(FieldMediaURL, v))
+}
+
+// StorageIDEQ applies the EQ predicate on the "storage_id" field.
+func StorageIDEQ(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEQ(FieldStorageID, v))
+}
+
+// StorageIDNEQ applies the NEQ predicate on the "storage_id" field.
+func StorageIDNEQ(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldNEQ(FieldStorageID, v))
+}
+
+// StorageIDIn applies the In predicate on the "storage_id" field.
+func StorageIDIn(vs ...string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldIn(FieldStorageID, vs...))
+}
+
+// StorageIDNotIn applies the NotIn predicate on the "storage_id" field.
+func StorageIDNotIn(vs ...string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldNotIn(FieldStorageID, vs...))
+}
+
+// StorageIDGT applies the GT predicate on the "storage_id" field.
+func StorageIDGT(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldGT(FieldStorageID, v))
+}
+
+// StorageIDGTE applies the GTE predicate on the "storage_id" field.
+func StorageIDGTE(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldGTE(FieldStorageID, v))
+}
+
+// StorageIDLT applies the LT predicate on the "storage_id" field.
+func StorageIDLT(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldLT(FieldStorageID, v))
+}
+
+// StorageIDLTE applies the LTE predicate on the "storage_id" field.
+func StorageIDLTE(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldLTE(FieldStorageID, v))
+}
+
+// StorageIDContains applies the Contains predicate on the "storage_id" field.
+func StorageIDContains(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldContains(FieldStorageID, v))
+}
+
+// StorageIDHasPrefix applies the HasPrefix predicate on the "storage_id" field.
+func StorageIDHasPrefix(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldHasPrefix(FieldStorageID, v))
+}
+
+// StorageIDHasSuffix applies the HasSuffix predicate on the "storage_id" field.
+func StorageIDHasSuffix(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldHasSuffix(FieldStorageID, v))
+}
+
+// StorageIDEqualFold applies the EqualFold predicate on the "storage_id" field.
+func StorageIDEqualFold(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEqualFold(FieldStorageID, v))
+}
+
+// StorageIDContainsFold applies the ContainsFold predicate on the "storage_id" field.
+func StorageIDContainsFold(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldContainsFold(FieldStorageID, v))
+}
+
+// StorageKeyEQ applies the EQ predicate on the "storage_key" field.
+func StorageKeyEQ(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEQ(FieldStorageKey, v))
+}
+
+// StorageKeyNEQ applies the NEQ predicate on the "storage_key" field.
+func StorageKeyNEQ(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldNEQ(FieldStorageKey, v))
+}
+
+// StorageKeyIn applies the In predicate on the "storage_key" field.
+func StorageKeyIn(vs ...string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldIn(FieldStorageKey, vs...))
+}
+
+// StorageKeyNotIn applies the NotIn predicate on the "storage_key" field.
+func StorageKeyNotIn(vs ...string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldNotIn(FieldStorageKey, vs...))
+}
+
+// StorageKeyGT applies the GT predicate on the "storage_key" field.
+func StorageKeyGT(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldGT(FieldStorageKey, v))
+}
+
+// StorageKeyGTE applies the GTE predicate on the "storage_key" field.
+func StorageKeyGTE(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldGTE(FieldStorageKey, v))
+}
+
+// StorageKeyLT applies the LT predicate on the "storage_key" field.
+func StorageKeyLT(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldLT(FieldStorageKey, v))
+}
+
+// StorageKeyLTE applies the LTE predicate on the "storage_key" field.
+func StorageKeyLTE(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldLTE(FieldStorageKey, v))
+}
+
+// StorageKeyContains applies the Contains predicate on the "storage_key" field.
+func StorageKeyContains(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldContains(FieldStorageKey, v))
+}
+
+// StorageKeyHasPrefix applies the HasPrefix predicate on the "storage_key" field.
+func StorageKeyHasPrefix(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldHasPrefix(FieldStorageKey, v))
+}
+
+// StorageKeyHasSuffix applies the HasSuffix predicate on the "storage_key" field.
+func StorageKeyHasSuffix(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldHasSuffix(FieldStorageKey, v))
+}
+
+// StorageKeyEqualFold applies the EqualFold predicate on the "storage_key" field.
+func StorageKeyEqualFold(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldEqualFold(FieldStorageKey, v))
+}
+
+// StorageKeyContainsFold applies the ContainsFold predicate on the "storage_key" field.
+func StorageKeyContainsFold(v string) predicate.CreationImageJob {
+	return predicate.CreationImageJob(sql.FieldContainsFold(FieldStorageKey, v))
 }
 
 // ProviderTaskIDEQ applies the EQ predicate on the "provider_task_id" field.

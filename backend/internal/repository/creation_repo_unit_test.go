@@ -60,3 +60,30 @@ func TestCreationMessageRepositoryCreateTouchesSession(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, count)
 }
+
+func TestCreationImageRepositoryPersistsStorageAndRejectsStaleProgress(t *testing.T) {
+	_, client := newAPIKeyRepoSQLite(t)
+	ctx := context.Background()
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "creation-image@test.com")
+	repo := NewCreationImageJobRepository(client)
+	taskID := "imgtask_persisted"
+	job := &service.CreationImageJob{
+		UserID: user.ID, GroupID: 3, Model: "gpt-image-1",
+		Status: service.CreationImageJobStatusProcessing, ProviderTaskID: &taskID,
+	}
+	require.NoError(t, repo.Create(ctx, job))
+	stale := *job
+	job.Status = service.CreationImageJobStatusCompleted
+	job.MediaURL = "https://cdn.test/images/result.png?signature=old"
+	job.StorageID, job.StorageKey = "bucket-a", "images/result.png"
+	require.NoError(t, repo.Update(ctx, job.ID, job))
+	require.NoError(t, repo.Update(ctx, job.ID, &stale))
+	got, err := repo.GetByProviderTaskID(ctx, user.ID, taskID)
+	require.NoError(t, err)
+	require.Equal(t, job.Status, got.Status)
+	require.Equal(t, job.StorageID, got.StorageID)
+	require.Equal(t, job.StorageKey, got.StorageKey)
+	require.Equal(t, job.MediaURL, got.MediaURL)
+	_, err = repo.GetForUser(ctx, user.ID+1, job.ID)
+	require.ErrorIs(t, err, service.ErrCreationImageNotFound)
+}

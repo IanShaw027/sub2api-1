@@ -1264,16 +1264,28 @@ func init() {
 	creationimagejobDescPrompt := creationimagejobFields[5].Descriptor()
 	// creationimagejob.DefaultPrompt holds the default value on creation for the prompt field.
 	creationimagejob.DefaultPrompt = creationimagejobDescPrompt.Default.(string)
+	// creationimagejobDescMediaURL is the schema descriptor for media_url field.
+	creationimagejobDescMediaURL := creationimagejobFields[7].Descriptor()
+	// creationimagejob.DefaultMediaURL holds the default value on creation for the media_url field.
+	creationimagejob.DefaultMediaURL = creationimagejobDescMediaURL.Default.(string)
+	// creationimagejobDescStorageID is the schema descriptor for storage_id field.
+	creationimagejobDescStorageID := creationimagejobFields[8].Descriptor()
+	// creationimagejob.DefaultStorageID holds the default value on creation for the storage_id field.
+	creationimagejob.DefaultStorageID = creationimagejobDescStorageID.Default.(string)
+	// creationimagejobDescStorageKey is the schema descriptor for storage_key field.
+	creationimagejobDescStorageKey := creationimagejobFields[9].Descriptor()
+	// creationimagejob.DefaultStorageKey holds the default value on creation for the storage_key field.
+	creationimagejob.DefaultStorageKey = creationimagejobDescStorageKey.Default.(string)
 	// creationimagejobDescProviderTaskID is the schema descriptor for provider_task_id field.
-	creationimagejobDescProviderTaskID := creationimagejobFields[7].Descriptor()
+	creationimagejobDescProviderTaskID := creationimagejobFields[10].Descriptor()
 	// creationimagejob.ProviderTaskIDValidator is a validator for the "provider_task_id" field. It is called by the builders before save.
 	creationimagejob.ProviderTaskIDValidator = creationimagejobDescProviderTaskID.Validators[0].(func(string) error)
 	// creationimagejobDescCreatedAt is the schema descriptor for created_at field.
-	creationimagejobDescCreatedAt := creationimagejobFields[9].Descriptor()
+	creationimagejobDescCreatedAt := creationimagejobFields[12].Descriptor()
 	// creationimagejob.DefaultCreatedAt holds the default value on creation for the created_at field.
 	creationimagejob.DefaultCreatedAt = creationimagejobDescCreatedAt.Default.(func() time.Time)
 	// creationimagejobDescUpdatedAt is the schema descriptor for updated_at field.
-	creationimagejobDescUpdatedAt := creationimagejobFields[10].Descriptor()
+	creationimagejobDescUpdatedAt := creationimagejobFields[13].Descriptor()
 	// creationimagejob.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	creationimagejob.DefaultUpdatedAt = creationimagejobDescUpdatedAt.Default.(func() time.Time)
 	// creationimagejob.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

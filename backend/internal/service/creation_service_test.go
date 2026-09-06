@@ -150,6 +150,9 @@ func (s *creationImageJobRepoStub) Update(_ context.Context, id int64, job *Crea
 		return ErrCreationImageNotFound
 	}
 	row.Status = job.Status
+	row.MediaURL = job.MediaURL
+	row.StorageID = job.StorageID
+	row.StorageKey = job.StorageKey
 	if job.MediaAssetID != nil {
 		v := *job.MediaAssetID
 		row.MediaAssetID = &v

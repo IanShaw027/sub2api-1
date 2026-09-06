@@ -926,6 +926,9 @@ var (
 		{Name: "model", Type: field.TypeString, Size: 100, Default: ""},
 		{Name: "prompt", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "media_asset_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "media_url", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "storage_id", Type: field.TypeString, Size: 2147483647, Default: ""},
+		{Name: "storage_key", Type: field.TypeString, Size: 2147483647, Default: ""},
 		{Name: "provider_task_id", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "error", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
@@ -940,7 +943,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "creation_image_jobs_creation_sessions_image_jobs",
-				Columns:    []*schema.Column{CreationImageJobsColumns[11]},
+				Columns:    []*schema.Column{CreationImageJobsColumns[14]},
 				RefColumns: []*schema.Column{CreationSessionsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -954,17 +957,17 @@ var (
 			{
 				Name:    "creationimagejob_session_id",
 				Unique:  false,
-				Columns: []*schema.Column{CreationImageJobsColumns[11]},
+				Columns: []*schema.Column{CreationImageJobsColumns[14]},
 			},
 			{
 				Name:    "creationimagejob_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{CreationImageJobsColumns[1], CreationImageJobsColumns[9]},
+				Columns: []*schema.Column{CreationImageJobsColumns[1], CreationImageJobsColumns[12]},
 			},
 			{
 				Name:    "creationimagejob_provider_task_id",
 				Unique:  false,
-				Columns: []*schema.Column{CreationImageJobsColumns[7]},
+				Columns: []*schema.Column{CreationImageJobsColumns[10]},
 			},
 		},
 	}

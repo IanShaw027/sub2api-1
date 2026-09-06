@@ -2,12 +2,16 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -24,6 +28,7 @@ type CreationHandler struct {
 	gateway             *GatewayHandler
 	openAI              *OpenAIGatewayHandler
 	asyncImage          *AsyncImageHandler
+	cfg                 *config.Config
 }
 
 func NewCreationHandler(
@@ -33,6 +38,7 @@ func NewCreationHandler(
 	gateway *GatewayHandler,
 	openAI *OpenAIGatewayHandler,
 	asyncImage *AsyncImageHandler,
+	cfg *config.Config,
 ) *CreationHandler {
 	return &CreationHandler{
 		creationService:     creationService,
@@ -41,6 +47,7 @@ func NewCreationHandler(
 		gateway:             gateway,
 		openAI:              openAI,
 		asyncImage:          asyncImage,
+		cfg:                 cfg,
 	}
 }
 
@@ -67,7 +74,12 @@ type createCreationMessageRequest struct {
 
 func (h *CreationHandler) ChatCompletions(c *gin.Context) {
 	h.withGatewayContext(c, func(c *gin.Context) {
-		h.openAI.ChatCompletions(c)
+		apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+		if creationUsesOpenAIGateway(effectiveAPIKeyPlatform(c, apiKey)) {
+			h.openAI.ChatCompletions(c)
+			return
+		}
+		h.gateway.ChatCompletions(c)
 	})
 }
 
@@ -78,11 +90,9 @@ func (h *CreationHandler) Messages(c *gin.Context) {
 			response.Unauthorized(c, "API key context missing")
 			return
 		}
-		switch apiKey.Group.Platform {
-		case service.PlatformOpenAI, service.PlatformGrok,
-			service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
+		if creationUsesOpenAIGateway(effectiveAPIKeyPlatform(c, apiKey)) {
 			h.openAI.Messages(c)
-		default:
+		} else {
 			h.gateway.Messages(c)
 		}
 	})
@@ -90,8 +100,26 @@ func (h *CreationHandler) Messages(c *gin.Context) {
 
 func (h *CreationHandler) Images(c *gin.Context) {
 	h.withGatewayContext(c, func(c *gin.Context) {
-		h.openAI.Images(c)
+		apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+		switch effectiveAPIKeyPlatform(c, apiKey) {
+		case service.PlatformOpenAI:
+			h.openAI.Images(c)
+		case service.PlatformGrok:
+			h.openAI.GrokImages(c)
+		default:
+			imageTaskJSONError(c, http.StatusNotFound, "not_found_error", "Images API is not supported for this platform")
+		}
 	})
+}
+
+func creationUsesOpenAIGateway(platform string) bool {
+	switch platform {
+	case service.PlatformOpenAI, service.PlatformGrok,
+		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *CreationHandler) ImagesAsync(c *gin.Context) {
@@ -101,21 +129,56 @@ func (h *CreationHandler) ImagesAsync(c *gin.Context) {
 			return
 		}
 		model, prompt := peekCreationImageModelPrompt(c)
-		h.asyncImage.Submit(c)
-		h.persistCreationImageJob(c, model, prompt)
+		model = clientRequestedModel(c, model)
+		subject, _ := middleware2.GetAuthSubjectFromContext(c)
+		input := service.CreateCreationImageJobInput{
+			UserID: subject.UserID, GroupID: creationGroupIDFromContext(c),
+			SessionID: parseCreationSessionHeader(c), Model: model, Prompt: prompt,
+			Status: service.CreationImageJobStatusProcessing,
+		}
+		h.asyncImage.SubmitWithLifecycle(c, func(task *service.ImageTask) error {
+			input.ProviderTaskID = task.TaskID
+			_, err := h.creationService.CreateImageJob(c.Request.Context(), input)
+			return err
+		}, func(ctx context.Context, task *service.ImageTask) error {
+			return h.persistCreationImageResult(ctx, input.UserID, task)
+		})
 	})
 }
 
 func (h *CreationHandler) ImageTask(c *gin.Context) {
 	h.withGatewayContext(c, func(c *gin.Context) {
 		ensureImageTaskIDParam(c)
-		if h.asyncImage == nil {
+		if h.asyncImage == nil || h.asyncImage.tasks == nil {
 			imageTaskJSONError(c, http.StatusServiceUnavailable, "api_error", "async image handler is unavailable")
 			return
 		}
-		task, ok := h.asyncImage.loadTaskForGet(c)
-		if !ok {
+		subject, _ := middleware2.GetAuthSubjectFromContext(c)
+		taskID := strings.TrimSpace(c.Param("task_id"))
+		job, jobErr := h.creationService.GetImageByTaskID(c.Request.Context(), subject.UserID, taskID)
+		if jobErr != nil && !errors.Is(jobErr, service.ErrCreationImageNotFound) {
+			response.ErrorFrom(c, jobErr)
 			return
+		}
+		if job != nil && job.GroupID != creationGroupIDFromContext(c) {
+			imageTaskError(c, service.ErrImageTaskNotFound)
+			return
+		}
+		if job != nil && (job.Status == service.CreationImageJobStatusCompleted || job.Status == service.CreationImageJobStatusFailed) {
+			h.attachCreationImageMediaURL(c, subject.UserID, job)
+			writeImageTaskJSON(c, creationImageJobTask(job, taskID))
+			return
+		}
+		apiKey, _ := middleware2.GetAPIKeyFromContext(c)
+		task, err := h.asyncImage.tasks.Get(c.Request.Context(), service.ImageTaskOwner{UserID: subject.UserID, APIKeyID: apiKey.ID}, taskID)
+		if err != nil {
+			if job == nil || !errors.Is(err, service.ErrImageTaskNotFound) {
+				imageTaskError(c, err)
+				return
+			}
+			task = creationImageJobTask(job, taskID)
+			task.Status = service.ImageTaskStatusFailed
+			task.Error = imageTaskErrorPayload("task_expired", "image task expired before its result was saved")
 		}
 		h.syncCreationImageJob(c, task)
 		writeImageTaskJSON(c, task)
@@ -369,7 +432,21 @@ func (h *CreationHandler) GetImage(c *gin.Context) {
 	response.Success(c, view)
 }
 
+const creationGatewayPreparedKey = "creation.gateway_prepared"
+
+// GatewayContext prepares authentication before the shared gateway routing middleware.
+func (h *CreationHandler) GatewayContext(c *gin.Context) {
+	h.withGatewayContext(c, func(c *gin.Context) { c.Next() })
+	if !c.GetBool(creationGatewayPreparedKey) {
+		c.Abort()
+	}
+}
+
 func (h *CreationHandler) withGatewayContext(c *gin.Context, next func(*gin.Context)) {
+	if c.GetBool(creationGatewayPreparedKey) {
+		next(c)
+		return
+	}
 	if h == nil || h.keyResolver == nil || h.creationService == nil {
 		response.InternalError(c, "creation key resolver unavailable")
 		return
@@ -383,7 +460,12 @@ func (h *CreationHandler) withGatewayContext(c *gin.Context, next func(*gin.Cont
 	if !ok {
 		return
 	}
-	if err := h.creationService.EnsureUserCanUseGroup(c.Request.Context(), subject.UserID, groupID); err != nil {
+	readTask := c.Request.Method == http.MethodGet && strings.Contains(c.Request.URL.Path, "/images/tasks/")
+	checkGroup := h.creationService.EnsureUserCanUseGroup
+	if readTask {
+		checkGroup = h.creationService.EnsureUserCanReadGroup
+	}
+	if err := checkGroup(c.Request.Context(), subject.UserID, groupID); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -393,14 +475,30 @@ func (h *CreationHandler) withGatewayContext(c *gin.Context, next func(*gin.Cont
 		return
 	}
 	var subscription *service.UserSubscription
-	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && h.subscriptionService != nil {
+	if !readTask && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && h.subscriptionService != nil {
 		subscription, err = h.subscriptionService.GetActiveSubscription(c.Request.Context(), subject.UserID, groupID)
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return
 		}
+		if c.Request.Method == http.MethodPost && (h.cfg == nil || h.cfg.RunMode != config.RunModeSimple) {
+			needsMaintenance, validateErr := h.subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
+			if needsMaintenance {
+				subscription, err = h.subscriptionService.EnsureWindowMaintenance(c.Request.Context(), subscription)
+				if err != nil {
+					response.ErrorFrom(c, err)
+					return
+				}
+				_, validateErr = h.subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
+			}
+			if validateErr != nil {
+				response.ErrorFrom(c, validateErr)
+				return
+			}
+		}
 	}
 	middleware2.InjectGatewayContextFromAPIKey(c, apiKey, subscription)
+	c.Set(creationGatewayPreparedKey, true)
 	next(c)
 }
 
@@ -430,55 +528,23 @@ func parseCreationSessionID(c *gin.Context) (int64, bool) {
 	return id, true
 }
 
-func (h *CreationHandler) persistCreationImageJob(c *gin.Context, model, prompt string) {
-	if h == nil || h.creationService == nil || c == nil {
-		return
-	}
-	if c.Writer == nil || c.Writer.Status() != http.StatusAccepted {
-		return
-	}
-	task := acceptedAsyncImageTask(c)
-	if task == nil {
-		return
-	}
-	subject, ok := middleware2.GetAuthSubjectFromContext(c)
-	if !ok || subject.UserID <= 0 {
-		return
-	}
-	groupID := creationGroupIDFromContext(c)
-	if groupID <= 0 {
-		return
-	}
-	taskID := strings.TrimSpace(task.TaskID)
-	if taskID == "" {
-		taskID = strings.TrimSpace(task.ID)
-	}
-	if taskID == "" {
-		return
-	}
-	status := strings.TrimSpace(task.Status)
-	if status == "" {
-		status = service.CreationImageJobStatusProcessing
-	}
-	input := service.CreateCreationImageJobInput{
-		UserID:         subject.UserID,
-		GroupID:        groupID,
-		SessionID:      parseCreationSessionHeader(c),
-		Model:          model,
-		Prompt:         prompt,
-		ProviderTaskID: taskID,
-		Status:         status,
-	}
-	var persistErr error
+func (h *CreationHandler) persistCreationImageResult(ctx context.Context, userID int64, task *service.ImageTask) error {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		if _, persistErr = h.creationService.CreateImageJob(c.Request.Context(), input); persistErr == nil {
-			return
+		if err = h.creationService.SyncImageJobFromTask(ctx, userID, task); err == nil {
+			return nil
+		}
+		if attempt < 2 {
+			select {
+			case <-ctx.Done():
+				return errors.Join(err, ctx.Err())
+			case <-time.After(time.Duration(attempt+1) * 100 * time.Millisecond):
+			}
 		}
 	}
-	logger.L().Error("creation.image_job.persist_failed",
-		zap.Error(persistErr),
-		zap.Int64("user_id", subject.UserID),
-		zap.String("task_id", taskID))
+	return err
 }
 
 func (h *CreationHandler) syncCreationImageJob(c *gin.Context, task *service.ImageTask) {
@@ -503,16 +569,45 @@ func (h *CreationHandler) attachCreationImageMediaURLs(c *gin.Context, userID in
 }
 
 func (h *CreationHandler) attachCreationImageMediaURL(c *gin.Context, userID int64, job *service.CreationImageJob) {
-	if job == nil || strings.TrimSpace(job.MediaURL) != "" || h == nil || h.asyncImage == nil {
-		return
-	}
-	if job.ProviderTaskID == nil || strings.TrimSpace(*job.ProviderTaskID) == "" {
+	if job == nil || h == nil || h.asyncImage == nil || h.asyncImage.tasks == nil {
 		return
 	}
 	ctx := c.Request.Context()
-	if url := h.asyncImage.imageURLForUser(ctx, userID, *job.ProviderTaskID); url != "" {
-		job.MediaURL = url
+	if job.ProviderTaskID != nil && (job.StorageKey == "" || job.Status == service.CreationImageJobStatusProcessing || job.Status == service.CreationImageJobStatusPending) {
+		if task, err := h.asyncImage.tasks.GetByIDForUser(ctx, userID, *job.ProviderTaskID); err == nil {
+			h.syncCreationImageJob(c, task)
+			if fresh, err := h.creationService.GetImage(ctx, userID, job.ID); err == nil {
+				*job = *fresh
+			}
+		}
 	}
+	if job.StorageKey != "" {
+		// Never reuse a stale signed URL or resolve a key against a different bucket.
+		job.MediaURL = ""
+		if url, err := h.asyncImage.tasks.ResolveStorageURL(ctx, service.ImageStorageReference{StorageID: job.StorageID, Key: job.StorageKey}); err == nil {
+			job.MediaURL = url
+		}
+	} else if job.MediaAssetID != nil && *job.MediaAssetID > 0 {
+		job.MediaURL = service.MediaPublicPath(*job.MediaAssetID)
+	}
+}
+
+func creationImageJobTask(job *service.CreationImageJob, taskID string) *service.ImageTask {
+	task := &service.ImageTask{
+		ID: taskID, TaskID: taskID, Object: "image.generation.task",
+		Status: job.Status, ImageURL: job.MediaURL, CreatedAt: job.CreatedAt.Unix(),
+	}
+	if job.Status == service.CreationImageJobStatusCompleted || job.Status == service.CreationImageJobStatusFailed {
+		completedAt := job.UpdatedAt.Unix()
+		task.CompletedAt = &completedAt
+	}
+	if job.MediaURL != "" {
+		task.Result, _ = json.Marshal(gin.H{"data": []gin.H{{"url": job.MediaURL}}})
+	}
+	if job.Error != nil && *job.Error != "" {
+		task.Error = imageTaskErrorPayload("api_error", *job.Error)
+	}
+	return task
 }
 
 func ensureImageTaskIDParam(c *gin.Context) {

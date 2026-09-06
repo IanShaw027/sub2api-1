@@ -6,8 +6,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -56,8 +58,9 @@ func (s *creationRouteSettingRepoStub) Delete(context.Context, string) error {
 func newCreationRouteSettings() *service.SettingService {
 	return service.NewSettingService(&creationRouteSettingRepoStub{
 		values: map[string]string{
-			service.SettingKeyBackendModeEnabled:    "false",
-			service.SettingKeyCreationCenterEnabled: "true",
+			service.SettingKeyBackendModeEnabled:     "false",
+			service.SettingKeyCreationCenterEnabled:  "true",
+			service.SettingKeyPanelRateLimitSettings: `{"enabled":false}`,
 		},
 	}, nil)
 }
@@ -67,7 +70,7 @@ func newCreationRoutesTestRouter() *gin.Engine {
 	router := gin.New()
 	v1 := router.Group("/api/v1")
 	settingService := newCreationRouteSettings()
-	h := handler.NewCreationHandler(nil, nil, nil, nil, nil, nil)
+	h := handler.NewCreationHandler(nil, nil, nil, nil, nil, nil, nil)
 
 	creation := v1.Group("/creation")
 	creation.Use(gin.HandlerFunc(servermiddleware.JWTAuthMiddleware(func(c *gin.Context) {
@@ -122,10 +125,11 @@ func TestCreationImageTaskRouteUsesTaskIDParam(t *testing.T) {
 	})
 	RegisterCreationRoutes(
 		v1,
-		handler.NewCreationHandler(nil, nil, nil, nil, nil, nil),
+		handler.NewCreationHandler(nil, nil, nil, nil, nil, nil, nil),
 		jwt,
 		settingService,
 		servermiddleware.NewPanelRateLimiter(nil, settingService),
+		nil,
 	)
 
 	var foundTaskID bool
@@ -160,4 +164,73 @@ func TestCreationImageTaskRouteForwardsTaskIDParam(t *testing.T) {
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "imgtask_forwarded", w.Body.String())
+}
+
+type creationRouteGroupRepo struct {
+	service.GroupRepository
+	group *service.Group
+}
+
+func (r creationRouteGroupRepo) GetByID(context.Context, int64) (*service.Group, error) {
+	return r.group, nil
+}
+
+type creationRouteUserRepo struct{ service.UserRepository }
+
+func (creationRouteUserRepo) GetByID(context.Context, int64) (*service.User, error) {
+	return &service.User{ID: 1, Status: service.StatusActive}, nil
+}
+
+type creationRouteKeyRepo struct {
+	service.APIKeyRepository
+	key *service.APIKey
+}
+
+func (r creationRouteKeyRepo) GetByUserGroupAndPurpose(context.Context, int64, int64, string) (*service.APIKey, error) {
+	return r.key, nil
+}
+
+func (r creationRouteKeyRepo) GetByKeyForAuth(context.Context, string) (*service.APIKey, error) {
+	return r.key, nil
+}
+
+func TestCreationRoutesResolveCompositeAliasesAfterAuthentication(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	group := &service.Group{ID: 3, Platform: service.PlatformComposite, Status: service.StatusActive}
+	groups := creationRouteGroupRepo{group: group}
+	creation := service.NewCreationService(nil, nil, nil, groups, creationRouteUserRepo{}, struct {
+		service.UserSubscriptionRepository
+	}{})
+	keyRepo := creationRouteKeyRepo{key: &service.APIKey{
+		ID: 9, UserID: 1, GroupID: &group.ID, Group: group,
+		Key: "sk-internal-test", Status: service.StatusAPIKeyActive,
+		User: &service.User{ID: 1, Status: service.StatusActive},
+	}}
+	keyService := service.NewAPIKeyService(keyRepo, nil, nil, nil, nil, nil, &config.Config{})
+	h := handler.NewCreationHandler(creation, service.NewCreationKeyResolver(keyRepo, keyService), nil, nil, &handler.OpenAIGatewayHandler{}, nil, nil)
+	resolver := service.NewCompositeRouteResolver(compositeRouteRepoStub{routes: []service.CompositeModelRoute{{
+		ID: 1, GroupID: 3, PublicModel: "studio-alias", MatchType: service.CompositeRouteMatchExact,
+		TargetPlatform: service.PlatformOpenAI, UpstreamModel: "gpt-5", Endpoint: service.CompositeRouteEndpointChatCompletions,
+		Priority: 100, Enabled: true,
+	}}})
+	router := gin.New()
+	var platform, model string
+	router.Use(func(c *gin.Context) {
+		c.Next()
+		platform, _ = service.ResolvedTargetPlatformFromContext(c.Request.Context())
+		model, _ = service.ResolvedUpstreamModelFromContext(c.Request.Context())
+	})
+	settings := newCreationRouteSettings()
+	RegisterCreationRoutes(router.Group("/api/v1"), h, servermiddleware.JWTAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(servermiddleware.ContextKeyUser), servermiddleware.AuthSubject{UserID: 1})
+		c.Next()
+	}), settings, servermiddleware.NewPanelRateLimiter(nil, settings), resolver)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/creation/chat/completions?group_id=3", strings.NewReader(`{"model":"studio-alias","messages":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+	// The intentionally unconfigured upstream handler stops after dispatch.
+	require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
+	require.Equal(t, service.PlatformOpenAI, platform)
+	require.Equal(t, "gpt-5", model)
 }

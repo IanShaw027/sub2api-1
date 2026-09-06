@@ -77,6 +77,8 @@ type CreationImageJob struct {
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 	MediaURL       string    `json:"media_url,omitempty"`
+	StorageID      string    `json:"-"`
+	StorageKey     string    `json:"-"`
 }
 
 type CreateCreationSessionInput struct {

@@ -228,8 +228,20 @@ func (s *CreationService) SyncImageJobFromTask(ctx context.Context, userID int64
 	if job == nil {
 		return nil
 	}
+	// A late processing poll must not overwrite a background terminal update.
+	if (job.Status == CreationImageJobStatusCompleted || job.Status == CreationImageJobStatusFailed) &&
+		(task.Status == ImageTaskStatusProcessing || task.Status == CreationImageJobStatusPending) {
+		return nil
+	}
 	job.Status = creationImageJobStatusFromTask(task.Status)
 	job.Error = creationImageJobErrorFromTask(task)
+	if task.ImageURL != "" {
+		job.MediaURL = task.ImageURL
+	}
+	if task.StorageObject != nil {
+		job.StorageID = task.StorageObject.StorageID
+		job.StorageKey = task.StorageObject.Key
+	}
 	if mediaAssetID := creationImageMediaAssetIDFromTask(task); mediaAssetID != nil {
 		job.MediaAssetID = mediaAssetID
 	}
@@ -246,6 +258,10 @@ func populateCreationImageMediaURL(job *CreationImageJob) {
 	if job.MediaAssetID != nil && *job.MediaAssetID > 0 {
 		job.MediaURL = MediaPublicPath(*job.MediaAssetID)
 	}
+}
+
+func (s *CreationService) GetImageByTaskID(ctx context.Context, userID int64, taskID string) (*CreationImageJob, error) {
+	return s.imageJobs.GetByProviderTaskID(ctx, userID, taskID)
 }
 
 func creationImageJobStatusFromTask(status string) string {
@@ -300,6 +316,15 @@ func creationImageMediaAssetIDFromTask(task *ImageTask) *int64 {
 // delegated gateway requests. Client-side available-group filtering is not an
 // authorization boundary.
 func (s *CreationService) EnsureUserCanUseGroup(ctx context.Context, userID, groupID int64) error {
+	return s.ensureUserCanAccessGroup(ctx, userID, groupID, true)
+}
+
+// EnsureUserCanReadGroup preserves access to already accepted tasks after a subscription expires.
+func (s *CreationService) EnsureUserCanReadGroup(ctx context.Context, userID, groupID int64) error {
+	return s.ensureUserCanAccessGroup(ctx, userID, groupID, false)
+}
+
+func (s *CreationService) ensureUserCanAccessGroup(ctx context.Context, userID, groupID int64, requireSubscription bool) error {
 	if s == nil || s.users == nil || s.groups == nil || s.userSubs == nil {
 		return fmt.Errorf("creation group authorization is not configured")
 	}
@@ -321,6 +346,9 @@ func (s *CreationService) EnsureUserCanUseGroup(ctx context.Context, userID, gro
 		return ErrCreationGroupNotAllowed
 	}
 	if group.IsSubscriptionType() {
+		if !requireSubscription {
+			return nil
+		}
 		_, err = s.userSubs.GetActiveByUserIDAndGroupID(ctx, userID, groupID)
 		if err != nil {
 			return ErrCreationGroupNotAllowed

@@ -3,6 +3,7 @@ package repository
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
@@ -20,9 +21,11 @@ type S3ImageStorage struct {
 	bucket        string
 	publicBaseURL string
 	presignExpiry time.Duration
+	storageID     string
 }
 
 var _ service.ImageStorage = (*S3ImageStorage)(nil)
+var _ service.ImageObjectStorage = (*S3ImageStorage)(nil)
 
 // NewS3ImageStorage 依据配置构造 S3 图片存储（调用方应先确认 cfg.Active()）。
 func NewS3ImageStorage(ctx context.Context, cfg *config.ImageStorageConfig) (*S3ImageStorage, error) {
@@ -41,12 +44,17 @@ func NewS3ImageStorage(ctx context.Context, cfg *config.ImageStorageConfig) (*S3
 	if expiry <= 0 {
 		expiry = 24 * time.Hour
 	}
+	region := cfg.Region
+	if region == "" {
+		region = "auto"
+	}
 
 	return &S3ImageStorage{
 		client:        client,
 		bucket:        cfg.Bucket,
 		publicBaseURL: strings.TrimRight(cfg.PublicBaseURL, "/"),
 		presignExpiry: expiry,
+		storageID:     fmt.Sprintf("s3:%x", sha256.Sum256([]byte(strings.TrimRight(cfg.Endpoint, "/")+"\n"+region+"\n"+cfg.Bucket))),
 	}, nil
 }
 
@@ -62,6 +70,15 @@ func (s *S3ImageStorage) Save(ctx context.Context, key, contentType string, data
 	finish()
 	if err != nil {
 		return "", fmt.Errorf("S3 PutObject: %w", err)
+	}
+	return s.URL(ctx, key)
+}
+
+func (s *S3ImageStorage) StorageID() string { return s.storageID }
+
+func (s *S3ImageStorage) URL(ctx context.Context, key string) (string, error) {
+	if strings.TrimSpace(key) == "" {
+		return "", fmt.Errorf("image storage key is required")
 	}
 
 	if s.publicBaseURL != "" {

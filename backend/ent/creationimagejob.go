@@ -32,6 +32,12 @@ type CreationImageJob struct {
 	Prompt string `json:"prompt,omitempty"`
 	// MediaAssetID holds the value of the "media_asset_id" field.
 	MediaAssetID *int64 `json:"media_asset_id,omitempty"`
+	// MediaURL holds the value of the "media_url" field.
+	MediaURL string `json:"media_url,omitempty"`
+	// StorageID holds the value of the "storage_id" field.
+	StorageID string `json:"storage_id,omitempty"`
+	// StorageKey holds the value of the "storage_key" field.
+	StorageKey string `json:"storage_key,omitempty"`
 	// ProviderTaskID holds the value of the "provider_task_id" field.
 	ProviderTaskID *string `json:"provider_task_id,omitempty"`
 	// Error holds the value of the "error" field.
@@ -73,7 +79,7 @@ func (*CreationImageJob) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case creationimagejob.FieldID, creationimagejob.FieldSessionID, creationimagejob.FieldUserID, creationimagejob.FieldGroupID, creationimagejob.FieldMediaAssetID:
 			values[i] = new(sql.NullInt64)
-		case creationimagejob.FieldStatus, creationimagejob.FieldModel, creationimagejob.FieldPrompt, creationimagejob.FieldProviderTaskID, creationimagejob.FieldError:
+		case creationimagejob.FieldStatus, creationimagejob.FieldModel, creationimagejob.FieldPrompt, creationimagejob.FieldMediaURL, creationimagejob.FieldStorageID, creationimagejob.FieldStorageKey, creationimagejob.FieldProviderTaskID, creationimagejob.FieldError:
 			values[i] = new(sql.NullString)
 		case creationimagejob.FieldCreatedAt, creationimagejob.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -141,6 +147,24 @@ func (_m *CreationImageJob) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.MediaAssetID = new(int64)
 				*_m.MediaAssetID = value.Int64
+			}
+		case creationimagejob.FieldMediaURL:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field media_url", values[i])
+			} else if value.Valid {
+				_m.MediaURL = value.String
+			}
+		case creationimagejob.FieldStorageID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field storage_id", values[i])
+			} else if value.Valid {
+				_m.StorageID = value.String
+			}
+		case creationimagejob.FieldStorageKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field storage_key", values[i])
+			} else if value.Valid {
+				_m.StorageKey = value.String
 			}
 		case creationimagejob.FieldProviderTaskID:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -233,6 +257,15 @@ func (_m *CreationImageJob) String() string {
 		builder.WriteString("media_asset_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("media_url=")
+	builder.WriteString(_m.MediaURL)
+	builder.WriteString(", ")
+	builder.WriteString("storage_id=")
+	builder.WriteString(_m.StorageID)
+	builder.WriteString(", ")
+	builder.WriteString("storage_key=")
+	builder.WriteString(_m.StorageKey)
 	builder.WriteString(", ")
 	if v := _m.ProviderTaskID; v != nil {
 		builder.WriteString("provider_task_id=")

@@ -27,6 +27,18 @@ type ImageStorage interface {
 	Save(ctx context.Context, key, contentType string, data []byte) (url string, err error)
 }
 
+type ImageStorageReference struct {
+	StorageID string `json:"storage_id"`
+	Key       string `json:"key"`
+}
+
+// ImageObjectStorage can renew access to an object without uploading it again.
+type ImageObjectStorage interface {
+	ImageStorage
+	StorageID() string
+	URL(ctx context.Context, key string) (string, error)
+}
+
 // ImageResultUploader 是 ImageStorage 的上层编排器（与具体厂商无关）：
 // 把上游生图响应里的每张图片（b64_json 解码 / url 下载）转存到对象存储，
 // 并把响应结果改写为只含短链接的紧凑 JSON，从而避免大 base64 落 Redis。
@@ -61,38 +73,47 @@ func defaultImageDownloadHTTPClient() *http.Client {
 // 返回改写后的紧凑结果（data[i].url 指向对象存储，b64_json 被移除）。
 // 任一图片转存失败即返回 error（调用方据此将任务标记为失败，绝不把大 blob 落 Redis）。
 func (u *ImageResultUploader) Rewrite(ctx context.Context, taskID string, result json.RawMessage) (json.RawMessage, error) {
+	out, _, err := u.rewrite(ctx, taskID, result)
+	return out, err
+}
+
+func (u *ImageResultUploader) rewrite(ctx context.Context, taskID string, result json.RawMessage) (json.RawMessage, *ImageStorageReference, error) {
 	if u == nil || u.storage == nil {
-		return result, nil
+		return result, nil, nil
 	}
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(result, &top); err != nil {
-		return nil, fmt.Errorf("parse image response: %w", err)
+		return nil, nil, fmt.Errorf("parse image response: %w", err)
 	}
 	rawData, ok := top["data"]
 	if !ok {
 		// 没有 data 数组（结构不符合预期），保持原样返回，交由上层决定。
-		return result, nil
+		return result, nil, nil
 	}
 	var items []map[string]json.RawMessage
 	if err := json.Unmarshal(rawData, &items); err != nil {
-		return nil, fmt.Errorf("parse image response data: %w", err)
+		return nil, nil, fmt.Errorf("parse image response data: %w", err)
 	}
 	if len(items) == 0 {
-		return result, nil
+		return result, nil, nil
 	}
+	var reference *ImageStorageReference
 	for i, item := range items {
 		data, contentType, err := u.fetchImageBytes(ctx, item)
 		if err != nil {
-			return nil, fmt.Errorf("image %d: %w", i, err)
+			return nil, nil, fmt.Errorf("image %d: %w", i, err)
 		}
 		key := u.buildKey(taskID, i, contentType)
 		url, err := u.storage.Save(ctx, key, contentType, data)
 		if err != nil {
-			return nil, fmt.Errorf("image %d: upload to object storage: %w", i, err)
+			return nil, nil, fmt.Errorf("image %d: upload to object storage: %w", i, err)
+		}
+		if storage, ok := u.storage.(ImageObjectStorage); ok && i == 0 {
+			reference = &ImageStorageReference{StorageID: storage.StorageID(), Key: key}
 		}
 		urlRaw, err := json.Marshal(url)
 		if err != nil {
-			return nil, fmt.Errorf("image %d: encode url: %w", i, err)
+			return nil, nil, fmt.Errorf("image %d: encode url: %w", i, err)
 		}
 		item["url"] = urlRaw
 		delete(item, "b64_json")
@@ -100,14 +121,14 @@ func (u *ImageResultUploader) Rewrite(ctx context.Context, taskID string, result
 	}
 	newData, err := json.Marshal(items)
 	if err != nil {
-		return nil, fmt.Errorf("encode image response data: %w", err)
+		return nil, nil, fmt.Errorf("encode image response data: %w", err)
 	}
 	top["data"] = newData
 	out, err := json.Marshal(top)
 	if err != nil {
-		return nil, fmt.Errorf("encode image response: %w", err)
+		return nil, nil, fmt.Errorf("encode image response: %w", err)
 	}
-	return out, nil
+	return out, reference, nil
 }
 
 func (u *ImageResultUploader) fetchImageBytes(ctx context.Context, item map[string]json.RawMessage) ([]byte, string, error) {
