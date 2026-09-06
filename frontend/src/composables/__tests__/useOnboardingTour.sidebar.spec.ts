@@ -135,7 +135,7 @@ describe('ensureSidebarSectionForSelector', () => {
     const setOpen = vi.spyOn(appStore, 'setSidebarSectionOpen')
 
     const myAccount = wrapper.find('[data-section="myAccount"]')
-    expect(myAccount.find('.sidebar-section-items').classes()).toContain('hidden')
+    expect(myAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
 
     await ensureSidebarSectionForSelector('[data-tour="sidebar-my-keys"]')
     await nextTick()
@@ -148,7 +148,7 @@ describe('ensureSidebarSectionForSelector', () => {
 
     appStore.clearSidebarSectionsForceOpen()
     await nextTick()
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).toContain('hidden')
+    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
 
     wrapper.unmount()
   })

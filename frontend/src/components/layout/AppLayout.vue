@@ -1,6 +1,5 @@
 <template>
  <div class="app-shell">
- <div class="app-shell-glow" aria-hidden="true"></div>
 
  <AppSidebar />
 
@@ -52,16 +51,6 @@ defineExpose({ replayTour })
  min-height: 100vh;
  background: var(--bg-workspace);
  color: var(--foreground);
-}
-
-.app-shell-glow {
- pointer-events: none;
- position: fixed;
- inset: 0;
- background:
- radial-gradient(circle at 0% 0%, color-mix(in oklch, var(--accent) 22%, transparent) 0%, transparent 30rem),
- radial-gradient(circle at 18% 100%, color-mix(in oklch, var(--accent) 10%, transparent) 0%, transparent 30rem),
- radial-gradient(circle at 100% 0%, color-mix(in oklch, var(--success) 14%, transparent) 0%, transparent 24rem);
 }
 
 .app-shell-main {

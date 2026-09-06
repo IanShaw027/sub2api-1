@@ -1,6 +1,6 @@
-/** Sidebar sections are open by default except `myAccount`. */
-export function defaultSectionOpen(key: string): boolean {
-  return key !== 'myAccount'
+/** Sidebar sections are open by default; explicit persisted user choices still win. */
+export function defaultSectionOpen(_key: string): boolean {
+  return true
 }
 
 /**

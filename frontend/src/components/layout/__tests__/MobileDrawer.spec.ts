@@ -468,7 +468,7 @@ describe('mobile shell breakpoints', () => {
     expect(headerSource).toContain(':aria-expanded="appStore.mobileOpen"')
     expect(headerSource).toContain('aria-controls="mobile-drawer"')
     expect(headerSource).not.toContain('header-icon-btn lg:hidden')
-    expect(headerSource).not.toContain('.header-icon-btn {')
+    expect(headerSource).not.toMatch(/^\.header-icon-btn\s*\{/m)
     expect(styleSource).toContain('.header-icon-btn {')
     expect((headerSource.match(/<AnnouncementBell/g) ?? []).length).toBe(1)
   })

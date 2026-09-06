@@ -378,10 +378,10 @@ describe('useAppStore', () => {
       store.toggleSidebarSection('myAccount')
       store.toggleSidebarSection('overview')
 
-      expect(store.sidebarSectionsOpen.myAccount).toBe(true)
+      expect(store.sidebarSectionsOpen.myAccount).toBe(false)
       expect(store.sidebarSectionsOpen.overview).toBe(false)
       expect(JSON.parse(localStorage.getItem('sidebar-sections-open') || '{}')).toEqual({
-        myAccount: true,
+        myAccount: false,
         overview: false
       })
     })

@@ -278,12 +278,12 @@ describe('AppSidebar sections render', () => {
     wrapper.unmount()
   })
 
-  it('keeps My Account collapsed by default and opens it on an active child', async () => {
+  it('keeps My Account visible by default and opens it on an active child', async () => {
     const closed = await mountSidebar('/admin/dashboard', 'admin')
     const myAccount = closed.wrapper.find('[data-section="myAccount"]')
     expect(myAccount.exists()).toBe(true)
     expect(myAccount.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
-    expect(myAccount.find('.sidebar-section-items').classes()).toContain('hidden')
+    expect(myAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
     closed.wrapper.unmount()
 
     const opened = await mountSidebar('/keys', 'admin')
@@ -310,7 +310,7 @@ describe('AppSidebar sections render', () => {
 
   it('opens My Account from transient force-open without persisting preference', async () => {
     const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).toContain('hidden')
+    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
 
     appStore.forceOpenSidebarSection('myAccount')
     await nextTick()

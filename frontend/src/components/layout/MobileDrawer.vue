@@ -20,8 +20,7 @@
  >
  <div class="mobile-drawer-header">
  <div
- class="flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full text-[13px] font-bold"
- style="background: color-mix(in oklch, var(--accent) 18%, transparent); color: var(--accent)"
+ class="avatar-accent flex h-8 w-8 flex-none items-center justify-center overflow-hidden rounded-full text-[13px] font-bold"
  >
  <img
  v-if="avatarUrl"
@@ -35,7 +34,7 @@
  <span class="truncate text-[13px] font-semibold text-[var(--foreground)]">{{ user?.email }}</span>
  <span
  class="text-[11px] font-semibold"
- :class="isAdmin ? 'text-[var(--accent)]' : 'text-[var(--muted)]'"
+ :class="isAdmin ? 'text-info-text' : 'text-muted'"
  >{{ roleLabel }}</span>
  </div>
  <button

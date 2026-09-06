@@ -14,7 +14,7 @@
  >
  <svg
  v-if="isDark"
- class="h-4 w-4 flex-none text-warning-500"
+ class="h-4 w-4 flex-none text-warning-text"
  viewBox="0 0 24 24"
  fill="none"
  stroke="currentColor"
@@ -69,8 +69,7 @@
  :class="collapsed ? 'justify-center' : 'justify-start'"
  >
  <div
- class="flex h-7 w-7 flex-none items-center justify-center overflow-hidden rounded-full text-xs font-bold"
- style="background: color-mix(in oklch, var(--accent) 18%, transparent); color: var(--accent)"
+ class="avatar-accent flex h-7 w-7 flex-none items-center justify-center overflow-hidden rounded-full text-xs font-bold"
  >
  <img
  v-if="avatarUrl"
@@ -84,7 +83,7 @@
  <span class="truncate text-xs font-semibold">{{ user.email }}</span>
  <span
  class="text-[10.5px] font-semibold"
- :class="isAdmin ? 'text-[var(--accent)]' : 'text-[var(--muted)]'"
+ :class="isAdmin ? 'text-info-text' : 'text-muted'"
  >{{ roleLabel }}</span>
  </div>
  </div>

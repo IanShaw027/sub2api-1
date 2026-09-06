@@ -1,25 +1,20 @@
 import { reactive } from 'vue'
 
-// Column-visibility persistence for the admin accounts table (glass-ui-redesign 8.4 / frontend-health-cleanup 6.4).
-// Extracted from AccountsView.vue: owns the hidden-columns Set plus its versioned
-// localStorage migration so existing admins get the new prototype-04 default
-// column set exactly once, without losing any custom column choices they made.
+// Column-visibility persistence for the admin accounts table. Defaults retain
+// the pre-Glass readable fields; saved layouts are never rewritten by a theme
+// migration.
 const DEFAULT_HIDDEN_COLUMNS = [
-  'id',
-  'groups',
+  'today_stats',
   'proxy',
   'notes',
   'scheduler_score',
   'rate_multiplier',
-  'upstream_billing_rate',
-  'created_at',
-  'expires_at'
 ]
 
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
 // One-time migration: hide scheduler score for existing admins too, because showing it opt-ins to heavy backend scoring.
 const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
-const HIDDEN_COLUMNS_CURRENT_VERSION = 'glass-04-default-columns'
+const HIDDEN_COLUMNS_CURRENT_VERSION = 'preserve-readable-columns-v2'
 
 export function useAccountColumnVisibility() {
   const hiddenColumns = reactive<Set<string>>(new Set())
@@ -41,19 +36,15 @@ export function useAccountColumnVisibility() {
         parsed.forEach(key => {
           hiddenColumns.add(key)
         })
-        // Older saved column layouts may have scheduler_score/upstream_billing_rate/created_at visible;
-        // migrate them to the new prototype-04 default once.
+        // The scheduler score was already opt-in before the Glass migration and
+        // remains the one backend-expensive column whose legacy default must be
+        // preserved. Other columns are never rewritten from a theme migration.
         const savedVersion = localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY)
         if (savedVersion !== HIDDEN_COLUMNS_CURRENT_VERSION) {
-          // The older 'scheduler-score-hidden-by-default' marker means this browser already went
-          // through the scheduler-score migration once; if the admin explicitly re-showed it since
-          // then (it's absent from their saved hidden set), respect that instead of re-hiding it.
-          if (savedVersion !== 'scheduler-score-hidden-by-default') {
+          if (!savedVersion && !hiddenColumns.has('scheduler_score')) {
             hiddenColumns.add('scheduler_score')
+            localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
           }
-          hiddenColumns.add('upstream_billing_rate')
-          hiddenColumns.add('created_at')
-          localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
           localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
         }
       } else {

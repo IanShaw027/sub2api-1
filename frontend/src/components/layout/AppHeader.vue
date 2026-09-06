@@ -1,5 +1,5 @@
 <template>
-  <header class="app-header">
+  <header ref="headerRef" class="app-header" :class="{ 'is-compact': compactHeader }">
     <!-- ===== Mobile top bar (<768) — design 08 ===== -->
     <div class="topbar-mobile">
       <router-link :to="homePath" class="brand-mark" :aria-label="siteName">
@@ -10,6 +10,7 @@
         <span class="topbar-mobile-sub">{{ mobileSubtitle }}</span>
       </div>
       <div class="topbar-mobile-actions">
+        <div id="topbar-mobile-more"></div>
         <div v-if="user" id="topbar-mobile-bell" class="topbar-mobile-btn"></div>
         <button
           type="button"
@@ -43,6 +44,7 @@
           type="button"
           class="topbar-search"
           :aria-label="t('nav.search')"
+          :title="t('nav.search')"
           @click="paletteOpen = true"
         >
           <Icon name="search" size="sm" :stroke-width="1.8" />
@@ -51,7 +53,7 @@
         </button>
 
         <!-- Balance pill (users) -->
-        <div v-if="user && !authStore.isAdmin" class="topbar-balance group relative">
+        <div v-if="user && !authStore.isAdmin" class="topbar-balance group relative" tabindex="0">
           <span>{{ t('nav.balance') }}</span>
           <b>{{ formatHeaderMoney(availableBalance) }}</b>
           <span v-if="frozenBalance > 0" class="tag tag-warning">{{ balanceFrozenLabel }}</span>
@@ -65,6 +67,35 @@
 
         <SubscriptionProgressMini v-if="user" />
 
+        <div v-if="user" class="topbar-bell">
+          <Teleport defer to="#topbar-mobile-bell" :disabled="!isMobile">
+            <AnnouncementBell />
+          </Teleport>
+        </div>
+
+        <Teleport defer to="#topbar-mobile-more" :disabled="!isMobile">
+        <div ref="moreRef" class="topbar-more" @keydown.esc.stop="closeMore(true)">
+          <button
+            v-if="compactHeader"
+            ref="moreButtonRef"
+            type="button"
+            class="header-icon-btn"
+            :aria-label="t('common.moreActions')"
+            :title="t('common.moreActions')"
+            :aria-expanded="moreOpen"
+            aria-controls="topbar-more-actions"
+            @click="toggleMore"
+          >
+            <Icon name="more" size="sm" />
+          </button>
+          <div
+            id="topbar-more-actions"
+            v-show="!compactHeader || moreOpen"
+            class="topbar-secondary-actions"
+            :class="{ 'dropdown': compactHeader }"
+            role="group"
+            :aria-label="t('common.moreActions')"
+          >
         <a
           v-if="docUrl"
           :href="docUrl"
@@ -75,6 +106,7 @@
           :aria-label="t('nav.docs')"
         >
           <Icon name="book" size="sm" :stroke-width="1.8" />
+          <span v-if="compactHeader">{{ t('nav.docs') }}</span>
         </a>
 
         <a
@@ -87,6 +119,7 @@
           :aria-label="t('common.downloadTools')"
         >
           <Icon name="download" size="sm" :stroke-width="1.8" />
+          <span v-if="compactHeader">{{ t('common.downloadTools') }}</span>
         </a>
 
         <router-link
@@ -97,17 +130,12 @@
           :aria-label="t('nav.modelPlaza')"
         >
           <Icon name="grid" size="sm" :stroke-width="1.8" />
+          <span v-if="compactHeader">{{ t('nav.modelPlaza') }}</span>
         </router-link>
 
-        <SupportQRCodesButton :entries="supportQRCodes" :legacy-contact-info="contactInfo" />
+        <SupportQRCodesButton :entries="supportQRCodes" :legacy-contact-info="contactInfo" :menu-mode="compactHeader" @update:open="supportOpen = $event" />
 
-        <div v-if="user" class="topbar-bell">
-          <Teleport defer to="#topbar-mobile-bell" :disabled="!isMobile">
-            <AnnouncementBell />
-          </Teleport>
-        </div>
-
-        <LocaleSwitcher />
+        <LocaleSwitcher :menu-mode="compactHeader" />
 
         <button
           type="button"
@@ -118,14 +146,18 @@
         >
           <Icon v-if="isDark" name="sun" size="sm" :stroke-width="1.8" />
           <Icon v-else name="moon" size="sm" :stroke-width="1.8" />
+          <span v-if="compactHeader">{{ isDark ? t('nav.lightMode') : t('nav.darkMode') }}</span>
         </button>
+          </div>
+        </div>
+        </Teleport>
 
         <span class="topbar-divider" aria-hidden="true"></span>
 
         <!-- User pill + menu -->
         <div v-if="user" ref="dropdownRef" class="relative">
-          <button type="button" class="topbar-user" :aria-label="t('common.userMenu')" :aria-expanded="dropdownOpen" @click="toggleDropdown">
-            <span class="topbar-avatar">
+          <button ref="userButtonRef" type="button" class="topbar-user" :aria-label="t('common.userMenu')" :aria-expanded="dropdownOpen" aria-controls="topbar-user-actions" @click="toggleDropdown" @keydown.esc.stop="closeDropdown(true)">
+            <span class="topbar-avatar avatar-accent">
               <img v-if="avatarUrl" :src="avatarUrl" :alt="displayName" />
               <span v-else>{{ userInitial }}</span>
             </span>
@@ -134,7 +166,7 @@
           </button>
 
           <transition name="dropdown">
-            <div v-if="dropdownOpen" class="dropdown topbar-menu">
+            <div v-if="dropdownOpen" id="topbar-user-actions" class="dropdown topbar-menu" @keydown.esc.stop="closeDropdown(true)">
               <div class="topbar-menu-head">
                 <div class="topbar-menu-name">{{ displayName }}</div>
                 <div class="topbar-menu-mail">{{ user.email }}</div>
@@ -196,7 +228,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
@@ -226,6 +258,14 @@ const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const paletteOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
+const headerRef = ref<HTMLElement | null>(null)
+const userButtonRef = ref<HTMLButtonElement | null>(null)
+const moreRef = ref<HTMLElement | null>(null)
+const moreButtonRef = ref<HTMLButtonElement | null>(null)
+const moreOpen = ref(false)
+const supportOpen = ref(false)
+const compactHeader = ref(typeof window !== 'undefined' && window.innerWidth < 1280)
+let headerObserver: ResizeObserver | undefined
 const contactInfo = computed(() => appStore.contactInfo)
 const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
 const downloadToolsUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.download_tools_url || ''))
@@ -314,12 +354,32 @@ function toggleMobileSidebar() {
   appStore.toggleMobileSidebar()
 }
 
-function toggleDropdown() {
+async function toggleDropdown() {
+  closeMore()
   dropdownOpen.value = !dropdownOpen.value
+  if (dropdownOpen.value) {
+    await nextTick()
+    dropdownRef.value?.querySelector<HTMLElement>('.dropdown-item')?.focus()
+  }
 }
 
-function closeDropdown() {
+function closeDropdown(restoreFocus: unknown = false) {
   dropdownOpen.value = false
+  if (restoreFocus === true) userButtonRef.value?.focus()
+}
+
+async function toggleMore() {
+  closeDropdown()
+  moreOpen.value = !moreOpen.value
+  if (moreOpen.value) {
+    await nextTick()
+    moreRef.value?.querySelector<HTMLElement>('.topbar-secondary-actions a, .topbar-secondary-actions button')?.focus()
+  }
+}
+
+function closeMore(restoreFocus = false) {
+  moreOpen.value = false
+  if (restoreFocus) moreButtonRef.value?.focus()
 }
 
 async function handleLogout() {
@@ -347,6 +407,8 @@ function handleClickOutside(event: MouseEvent) {
   if (dropdownRef.value && !dropdownRef.value.contains(event.target as Node)) {
     closeDropdown()
   }
+  // The support dialog is teleported outside More; keep its return-focus target visible.
+  if (!supportOpen.value && moreRef.value && !moreRef.value.contains(event.target as Node)) closeMore()
 }
 
 function onGlobalKeydown(event: KeyboardEvent) {
@@ -357,14 +419,29 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined' && headerRef.value) {
+    headerObserver = new ResizeObserver(([entry]) => {
+      if (entry) compactHeader.value = entry.contentRect.width < 1040
+    })
+    headerObserver.observe(headerRef.value)
+  }
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('keydown', onGlobalKeydown)
 })
 
 onBeforeUnmount(() => {
+  headerObserver?.disconnect()
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', onGlobalKeydown)
 })
+
+watch(() => route.fullPath, () => {
+  closeDropdown()
+  closeMore()
+})
+
+watch(isMobile, () => closeMore())
+watch(compactHeader, () => closeMore())
 </script>
 
 <style scoped>
@@ -400,7 +477,7 @@ onBeforeUnmount(() => {
   font-family: var(--display);
   font-size: 15px;
   font-weight: 800;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
   color: var(--foreground);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -440,6 +517,10 @@ onBeforeUnmount(() => {
    mounts a button into it, otherwise it renders as an empty pill. */
 #topbar-mobile-bell:empty {
   display: none;
+}
+
+#topbar-mobile-more {
+  display: contents;
 }
 
 .topbar-mobile-btn :deep(button) {
@@ -486,11 +567,46 @@ onBeforeUnmount(() => {
   flex: none;
 }
 
+.topbar-more {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.topbar-secondary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.topbar-secondary-actions.dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 176px;
+  padding: 6px;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.topbar-secondary-actions.dropdown > * {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.topbar-secondary-actions.dropdown > .header-icon-btn {
+  gap: 10px;
+  padding-inline: 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .topbar-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 36px;
+  height: 34px;
   width: 230px;
   padding: 0 12px;
   border-radius: var(--radius-field);
@@ -545,6 +661,10 @@ onBeforeUnmount(() => {
 }
 
 .topbar-balance:hover .topbar-balance-pop {
+  display: block;
+}
+
+.topbar-balance:focus-within .topbar-balance-pop {
   display: block;
 }
 
@@ -689,24 +809,30 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (min-width: 768px) and (max-width: 1023px) {
+.is-compact {
   .topbar {
-    height: auto;
+    height: 66px;
     min-height: 66px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
-    padding-top: 12px;
-    padding-bottom: 12px;
+    padding-top: 6px;
+    padding-bottom: 0;
   }
 
   .topbar-crumbs {
-    flex: 1 1 100%;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .topbar-crumbs > :not(.topbar-crumb-current) {
+    display: none;
   }
 
   .topbar-actions {
-    flex: 1 1 100%;
+    flex: none;
     min-width: 0;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 4px;
   }
 

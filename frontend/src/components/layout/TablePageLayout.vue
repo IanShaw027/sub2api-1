@@ -14,12 +14,10 @@
  <div class="layout-section-scrollable">
  <div class="glass-card table-scroll-container">
  <slot name="table" />
- </div>
- </div>
-
- <!-- 固定区域：分页器 -->
- <div v-if="$slots.pagination" class="layout-section-fixed">
+ <div v-if="$slots.pagination" class="layout-section-fixed table-pagination-footer">
  <slot name="pagination" />
+ </div>
+ </div>
  </div>
  </div>
 </template>
@@ -60,6 +58,7 @@ onUnmounted(() => {
 .layout-section-scrollable {
  flex: 1;
  min-height: 0;
+ min-width: 0;
  display: flex;
  flex-direction: column;
 }
@@ -69,6 +68,11 @@ onUnmounted(() => {
  flex-direction: column;
  height: 100%;
  overflow: hidden;
+ min-width: 0;
+}
+
+.table-pagination-footer {
+ border-top: 1px solid var(--border);
 }
 
 .table-scroll-container :deep(.table-wrapper) {
