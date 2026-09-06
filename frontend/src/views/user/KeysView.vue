@@ -37,7 +37,19 @@
  :badge-tone="endpoint.badgeTone"
  :copy-label="t('keys.endpoints.copy')"
  @copy="copyEndpoint"
- />
+ >
+ <template #actions>
+ <a
+ :href="`https://www.tcptest.cn/http/${encodeURIComponent(endpoint.url)}`"
+ target="_blank"
+ rel="noopener noreferrer"
+ class="keys-endpoint-speed-test"
+ >
+ <Icon name="externalLink" size="sm" />
+ {{ t('keys.endpoints.speedTest') }}
+ </a>
+ </template>
+ </EndpointCard>
  <MiniStatCard class="keys-stats" :items="keyMiniStats" />
  </div>
 
@@ -120,8 +132,8 @@
  </div>
  </template>
 
- <template #table>
- <div class="keys-table-wrap">
+      <template #table>
+<div class="keys-table-wrap">
       <KeysDataTable
         v-if="isTabletUp"
         :columns="columns"
@@ -135,11 +147,17 @@
         :group-cell-suffix="groupCellSuffix"
         :group-cell-tooltip="groupCellTooltip"
         :rate-limit-detail="rateLimitDetail"
+        :hide-ccs-import="!!publicSettings?.hide_ccs_import_button"
         @sort="handleSort"
         @toggle-reveal="toggleKeyReveal"
         @copy="copyToClipboard"
         @open-group-selector="openGroupSelector"
         @use="openUseKeyModal"
+        @import-ccs="importToCcswitch"
+        @toggle-status="toggleKeyStatus"
+        @edit="editKey"
+        @delete="confirmDelete"
+        @reset-rate-limit="confirmResetRateLimitFromTable"
         @more="toggleRowMenu"
         @empty-action="showCreateModal = true"
       />
@@ -152,12 +170,24 @@
         :usage-stats="usageStats"
         :now="now"
         :is-key-revealed="isKeyRevealed"
+        :hide-ccs-import="!!publicSettings?.hide_ccs_import_button"
+        :set-group-button-ref="setGroupButtonRef"
         @more="toggleRowMenu"
+        @use="openUseKeyModal"
+        @import-ccs="importToCcswitch"
+        @toggle-status="toggleKeyStatus"
+        @edit="editKey"
+        @delete="confirmDelete"
+        @reset-rate-limit="confirmResetRateLimitFromTable"
+        @open-group-selector="openGroupSelector"
         @toggle-reveal="toggleKeyReveal"
         @copy="copyToClipboard"
         @empty-action="showCreateModal = true"
       />
 
+ </div>
+ </template>
+ <template #pagination>
  <Pagination
  v-if="pagination.total > 0"
  class="keys-pagination"
@@ -167,7 +197,6 @@
  @update:page="handlePageChange"
  @update:pageSize="handlePageSizeChange"
  />
- </div>
  </template>
  </TablePageLayout>
 
@@ -450,7 +479,7 @@ const todayKeySpend = computed(() =>
 )
 const keyMiniStats = computed(() => [
   { label: t('keys.miniStats.total'), value: pagination.value.total },
-  { label: t('common.currentPageLabel', { label: t('keys.miniStats.active') }), value: activeKeyCount.value },
+  { label: t('common.currentPageLabel', { label: t('keys.miniStats.active') }), value: activeKeyCount.value, tone: 'success' as const },
   { label: t('common.currentPageLabel', { label: t('keys.miniStats.todaySpend') }), value: `$${todayKeySpend.value.toFixed(2)}` }
 ])
 
@@ -896,8 +925,12 @@ onUnmounted(() => {
   padding: 12px 16px;
 }
 
-.keys-page .keys-toolbar .keys-stats :deep(.ui-mini-stat:nth-child(2) .ui-mini-stat-value) {
-  color: var(--success-text);
+.keys-endpoint-speed-test {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-text);
+  font-size: var(--fs-12);
 }
 
 /* ---------- Filter row ---------- */
@@ -985,6 +1018,15 @@ onUnmounted(() => {
   line-height: 1.6;
 }
 
+@media (min-width: 768px) and (max-width: 1023px) {
+  /* Keep endpoint and summary cards readable on tablet widths. The table
+     retains its horizontal scroll; summary content must never be clipped. */
+  .keys-top-grid,
+  .keys-top-grid.is-wide {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---------- Mobile card mode (prototype 08, 390px) ---------- */
 .keys-pagination {
   flex: none;
@@ -1003,10 +1045,6 @@ onUnmounted(() => {
   .keys-top-grid.is-wide {
     grid-template-columns: 1fr;
     gap: 8px;
-  }
-
-  .keys-page .keys-endpoint {
-    display: none;
   }
 
   .keys-toolbar {

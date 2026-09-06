@@ -23,10 +23,20 @@
         :revealed="isKeyRevealed(row.id)"
         :copied="copiedKeyId === row.id"
         :today-cost="usageStats[row.id]?.today_actual_cost"
+        :total-cost="usageStats[row.id]?.total_actual_cost"
         :now="now"
+        :hide-ccs-import="hideCcsImport"
+        :set-group-button-ref="setGroupButtonRef"
         @more="$emit('more', row, $event)"
         @toggle-reveal="$emit('toggle-reveal', row.id)"
         @copy="$emit('copy', row.key, row.id)"
+        @use="$emit('use', row)"
+        @import-ccs="$emit('import-ccs', row)"
+        @toggle-status="$emit('toggle-status', row)"
+        @edit="$emit('edit', row)"
+        @delete="$emit('delete', row)"
+        @reset-rate-limit="$emit('reset-rate-limit', row)"
+        @open-group-selector="$emit('open-group-selector', row)"
       />
     </div>
     <ListFade class="keys-list-fade" />
@@ -35,6 +45,7 @@
 
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import type { ComponentPublicInstance } from 'vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ListFade from '@/components/ui/ListFade.vue'
 import KeyMobileCard from './KeyMobileCard.vue'
@@ -48,12 +59,21 @@ defineProps<{
   usageStats: Record<string, BatchApiKeyUsageStats>
   now: Date
   isKeyRevealed: (id: number) => boolean
+  hideCcsImport?: boolean
+  setGroupButtonRef?: (id: number, el: Element | ComponentPublicInstance | null) => void
 }>()
 
 defineEmits<{
   more: [row: ApiKey, event: MouseEvent]
   'toggle-reveal': [id: number]
   copy: [key: string, id: number]
+  use: [row: ApiKey]
+  'import-ccs': [row: ApiKey]
+  'toggle-status': [row: ApiKey]
+  edit: [row: ApiKey]
+  delete: [row: ApiKey]
+  'reset-rate-limit': [row: ApiKey]
+  'open-group-selector': [row: ApiKey]
   'empty-action': []
 }>()
 

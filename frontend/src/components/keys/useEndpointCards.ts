@@ -17,15 +17,12 @@ export function useEndpointCards(
   publicSettings: Ref<PublicSettings | null>,
   t: (key: string) => string
 ): { endpointCards: ComputedRef<EndpointCardEntry[]> } {
-  // Custom endpoints don't carry a protocol-description field from the API;
-  // derive the prototype's "which clients use this" hint from the endpoint
-  // name when it looks OpenAI-compatible, and fall back to the mock/API
-  // description for any other custom endpoint shape (avoids feature loss).
   const describeCustomEndpoint = (endpoint: { name: string; description?: string }) => {
+    if (endpoint.description?.trim()) return endpoint.description
     if (/openai/i.test(endpoint.name)) {
       return t('keys.endpoints.openaiDesc')
     }
-    return endpoint.description || undefined
+    return undefined
   }
 
   const endpointCards = computed<EndpointCardEntry[]>(() => {

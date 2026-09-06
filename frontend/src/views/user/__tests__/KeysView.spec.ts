@@ -222,6 +222,7 @@ const mountView = async () => {
   const wrapper = mount(KeysView, {
     global: {
       stubs: {
+        RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
         AppLayout: AppLayoutStub,
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
@@ -293,13 +294,42 @@ describe('user KeysView column settings', () => {
     const wrapper = await mountView()
     expect(wrapper.getComponent(MiniStatCard).props('items')).toEqual([
       { label: 'keys.miniStats.total', value: 21 },
-      { label: 'This page: keys.miniStats.active', value: 1 },
+      { label: 'This page: keys.miniStats.active', value: 1, tone: 'success' },
       { label: 'This page: keys.miniStats.todaySpend', value: '$1.50' }
     ])
     wrapper.unmount()
   })
 
-  it('uses the default API key columns with low-frequency columns hidden', async () => {
+  it('preserves every endpoint description, copy action and speed-test destination', async () => {
+    const urls = ['https://api.example.com', 'https://custom.example.com/v1?region=a&mode=b']
+    getPublicSettings.mockResolvedValue({
+      api_base_url: urls[0],
+      custom_endpoints: [{ name: 'OpenAI regional', endpoint: urls[1], description: 'Regional endpoint configured by administrator' }],
+    })
+    const wrapper = await mountView()
+    const cards = wrapper.findAll('.keys-endpoint')
+    expect(cards).toHaveLength(2)
+    expect(cards[1].text()).toContain('Regional endpoint configured by administrator')
+    for (const [index, card] of cards.entries()) {
+      const speedTest = card.get('a.keys-endpoint-speed-test')
+      expect(speedTest.attributes('href')).toBe(`https://www.tcptest.cn/http/${encodeURIComponent(urls[index])}`)
+      expect(speedTest.attributes('rel')).toBe('noopener noreferrer')
+      await card.get('.ui-endpoint-card-copy').trigger('click')
+      expect(copyToClipboard).toHaveBeenLastCalledWith(urls[index], 'keys.endpoints.copied')
+    }
+    wrapper.unmount()
+  })
+
+  it('uses a protocol hint only when a custom endpoint has no description', async () => {
+    getPublicSettings.mockResolvedValue({
+      custom_endpoints: [{ name: 'OpenAI', endpoint: 'https://custom.example.com', description: ' ' }],
+    })
+    const wrapper = await mountView()
+    expect(wrapper.get('.keys-endpoint').text()).toContain('keys.endpoints.openaiDesc')
+    wrapper.unmount()
+  })
+
+  it('uses the default API key columns without hiding the readable created field', async () => {
     const wrapper = await mountView()
 
     expect(visibleColumnKeys(wrapper)).toEqual([
@@ -312,9 +342,9 @@ describe('user KeysView column settings', () => {
       'expires_at',
       'last_used_at',
       'status',
+      'created_at',
       'actions',
     ])
-    expect(visibleColumnKeys(wrapper)).not.toContain('created_at')
     expect(visibleColumnKeys(wrapper)).not.toContain('last_used_ip')
     expect(visibleColumnKeys(wrapper)).not.toContain('id')
   })
@@ -326,11 +356,11 @@ describe('user KeysView column settings', () => {
     await getButtonByText(wrapper, 'Created').trigger('click')
     await nextTick()
 
-    expect(visibleColumnKeys(wrapper)).toContain('created_at')
+    expect(visibleColumnKeys(wrapper)).not.toContain('created_at')
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
-      JSON.stringify(['id', 'last_used_ip'])
+      JSON.stringify(['id', 'last_used_ip', 'created_at'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('5')
   })
 
   it('shows the API key ID column when toggled', async () => {
@@ -383,7 +413,7 @@ describe('user KeysView column settings', () => {
     expect(localStorage.getItem('api-key-hidden-columns')).toBe(
       JSON.stringify(['group', 'created_at', 'last_used_ip', 'id'])
     )
-    expect(localStorage.getItem('api-key-column-settings-version')).toBe('4')
+    expect(localStorage.getItem('api-key-column-settings-version')).toBe('5')
   })
 
   it('does not include always-visible columns in the toggleable menu', async () => {

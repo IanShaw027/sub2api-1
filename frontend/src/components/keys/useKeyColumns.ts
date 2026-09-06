@@ -5,23 +5,16 @@ import type { Column } from '@/components/common/types'
 // KeysView.vue to keep the view under the frontend-health-cleanup 6.4 line cap.
 
 const ALWAYS_VISIBLE_COLUMNS = new Set(['name', 'actions'])
-// Prototype default visibility: show 速率限制 (rate_limit) and 最近使用
-// (last_used_at) by default, hide 创建时间 (created_at) instead — deviation
-// "prototype wins" over the previous default, logged in deviations.md.
-const DEFAULT_HIDDEN_COLUMNS = ['id', 'last_used_ip', 'created_at']
+// Preserve the pre-Glass defaults: created_at remains readable by default.
+// Users can still hide any toggleable column through the column menu.
+const DEFAULT_HIDDEN_COLUMNS = ['id', 'last_used_ip']
 const HIDDEN_COLUMNS_KEY = 'api-key-hidden-columns'
 const COLUMN_SETTINGS_VERSION_KEY = 'api-key-column-settings-version'
-const COLUMN_SETTINGS_VERSION = 4
+const COLUMN_SETTINGS_VERSION = 5
 const VERSION_NEW_HIDDEN_COLUMNS: Record<number, string[]> = {
   2: ['last_used_ip'],
   3: ['id'],
-  4: ['created_at']
-}
-// v4 also flips rate_limit/last_used_at to visible-by-default (prototype
-// wins); the generic "add to hidden" migration above can't express an
-// unhide, so it's handled as an explicit removal step keyed by version.
-const VERSION_UNHIDE_COLUMNS: Record<number, string[]> = {
-  4: ['rate_limit', 'last_used_at']
+  // v4's created_at migration was removed: it hid an existing readable field.
 }
 
 export function useKeyColumns(allColumns: ComputedRef<Column[]>) {
@@ -65,9 +58,6 @@ export function useKeyColumns(allColumns: ComputedRef<Column[]>) {
               if (validColumnKeys.has(key) && !ALWAYS_VISIBLE_COLUMNS.has(key)) {
                 hiddenColumns.add(key)
               }
-            }
-            for (const key of VERSION_UNHIDE_COLUMNS[v] ?? []) {
-              hiddenColumns.delete(key)
             }
           }
           saveColumnsToStorage()

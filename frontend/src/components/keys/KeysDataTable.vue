@@ -109,6 +109,14 @@
         {{ rateLimitSummary(row) }}
       </span>
       <span v-else class="keys-cell-empty">—</span>
+      <button
+        v-if="row.usage_5h > 0 || row.usage_1d > 0 || row.usage_7d > 0"
+        type="button"
+        class="icon-btn"
+        :title="t('keys.resetRateLimitUsage')"
+        :aria-label="t('keys.resetRateLimitUsage')"
+        @click.stop="$emit('reset-rate-limit', row)"
+      ><Icon name="refresh" size="xs" /></button>
     </template>
 
     <template #cell-expires_at="{ value }">
@@ -135,9 +143,15 @@
 
     <template #cell-actions="{ row }">
       <div class="keys-actions">
-        <button type="button" class="keys-use-btn" @click.stop="$emit('use', row)">
-          {{ t('keys.use') }}
-        </button>
+        <KeyInlineActions
+          :row="row"
+          :hide-ccs-import="hideCcsImport"
+          @use="$emit('use', row)"
+          @import-ccs="$emit('import-ccs', row)"
+          @toggle-status="$emit('toggle-status', row)"
+          @edit="$emit('edit', row)"
+          @delete="$emit('delete', row)"
+        />
         <button
           type="button"
           class="icon-btn keys-more-btn"
@@ -168,6 +182,7 @@ import DataTable from '@/components/common/DataTable.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Icon from '@/components/icons/Icon.vue'
 import StatusBadge from '@/components/ui/StatusBadge.vue'
+import KeyInlineActions from './KeyInlineActions.vue'
 import type { ApiKey } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
@@ -196,6 +211,7 @@ defineProps<{
   groupCellSuffix: (row: ApiKey) => string
   groupCellTooltip: (row: ApiKey) => string
   rateLimitDetail: (row: ApiKey) => string
+  hideCcsImport?: boolean
 }>()
 
 defineEmits<{
@@ -204,6 +220,11 @@ defineEmits<{
   copy: [value: string, keyId: number]
   'open-group-selector': [row: ApiKey]
   use: [row: ApiKey]
+  'import-ccs': [row: ApiKey]
+  'toggle-status': [row: ApiKey]
+  edit: [row: ApiKey]
+  delete: [row: ApiKey]
+  'reset-rate-limit': [row: ApiKey]
   more: [row: ApiKey, event: MouseEvent]
   'empty-action': []
 }>()
@@ -223,7 +244,8 @@ const { t } = useI18n()
 }
 
 .table-wrapper.keys-table :deep(table) {
-  table-layout: fixed;
+  table-layout: auto;
+  min-width: 1280px;
 }
 
 .table-wrapper.keys-table :deep(th) {
@@ -256,58 +278,21 @@ const { t } = useI18n()
   padding-right: 16px;
 }
 
-/* Fixed column widths (ratios match the 05 reference: name/key flex a bit
-   wider, the rest are content-driven fixed widths). table-layout:fixed with
-   table {width:100%} scales these proportionally to the card's inner width. */
-.table-wrapper.keys-table :deep(th:nth-child(1)),
-.table-wrapper.keys-table :deep(td:nth-child(1)) {
-  width: 150px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(2)),
-.table-wrapper.keys-table :deep(td:nth-child(2)) {
-  width: 250px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(3)),
-.table-wrapper.keys-table :deep(td:nth-child(3)) {
-  width: 96px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(4)),
-.table-wrapper.keys-table :deep(td:nth-child(4)) {
-  width: 56px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(5)),
-.table-wrapper.keys-table :deep(td:nth-child(5)) {
-  width: 100px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(6)),
-.table-wrapper.keys-table :deep(td:nth-child(6)) {
-  width: 72px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(7)),
-.table-wrapper.keys-table :deep(td:nth-child(7)) {
-  width: 88px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(8)),
-.table-wrapper.keys-table :deep(td:nth-child(8)) {
-  width: 80px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(9)),
-.table-wrapper.keys-table :deep(td:nth-child(9)) {
-  width: 76px;
-}
-
-.table-wrapper.keys-table :deep(th:nth-child(10)),
-.table-wrapper.keys-table :deep(td:nth-child(10)) {
-  width: 80px;
-}
+/* Key-driven widths remain correct when users toggle columns. The table keeps
+   a readable minimum and scrolls inside its card instead of overlapping data. */
+.table-wrapper.keys-table :deep([data-column='name']) { width: 150px; min-width: 150px; }
+.table-wrapper.keys-table :deep([data-column='id']) { width: 72px; min-width: 72px; }
+.table-wrapper.keys-table :deep([data-column='key']) { width: 250px; min-width: 220px; }
+.table-wrapper.keys-table :deep([data-column='group']) { width: 120px; min-width: 96px; }
+.table-wrapper.keys-table :deep([data-column='current_concurrency']) { width: 100px; min-width: 92px; }
+.table-wrapper.keys-table :deep([data-column='usage']) { width: 112px; min-width: 104px; }
+.table-wrapper.keys-table :deep([data-column='rate_limit']) { width: 108px; min-width: 100px; }
+.table-wrapper.keys-table :deep([data-column='expires_at']) { width: 118px; min-width: 112px; }
+.table-wrapper.keys-table :deep([data-column='last_used_at']) { width: 118px; min-width: 112px; }
+.table-wrapper.keys-table :deep([data-column='last_used_ip']) { width: 128px; min-width: 120px; }
+.table-wrapper.keys-table :deep([data-column='status']) { width: 108px; min-width: 96px; }
+.table-wrapper.keys-table :deep([data-column='created_at']) { width: 118px; min-width: 112px; }
+.table-wrapper.keys-table :deep([data-column='actions']) { width: 216px; min-width: 208px; }
 
 /* ---------- Cells ---------- */
 .keys-cell-name {
@@ -441,6 +426,10 @@ const { t } = useI18n()
 .keys-muted-cell {
   font-size: var(--fs-12-5);
   color: var(--muted);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .keys-mono-cell {
