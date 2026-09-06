@@ -519,12 +519,12 @@ import ProxySelector from '@/components/common/ProxySelector.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelRestrictionEditor from '@/components/account/ModelRestrictionEditor.vue'
-import OpenAIPanel from '@/components/account/platform/OpenAIPanel.vue'
-import KiroPanel from '@/components/account/platform/KiroPanel.vue'
-import AnthropicPanel from '@/components/account/platform/AnthropicPanel.vue'
-import GeminiPanel from '@/components/account/platform/GeminiPanel.vue'
-import AntigravityPanel from '@/components/account/platform/AntigravityPanel.vue'
-import VertexServiceAccountPanel from '@/components/account/platform/VertexServiceAccountPanel.vue'
+const OpenAIPanel = defineAsyncComponent(() => import('@/components/account/platform/OpenAIPanel.vue'))
+const KiroPanel = defineAsyncComponent(() => import('@/components/account/platform/KiroPanel.vue'))
+const AnthropicPanel = defineAsyncComponent(() => import('@/components/account/platform/AnthropicPanel.vue'))
+const GeminiPanel = defineAsyncComponent(() => import('@/components/account/platform/GeminiPanel.vue'))
+const AntigravityPanel = defineAsyncComponent(() => import('@/components/account/platform/AntigravityPanel.vue'))
+const VertexServiceAccountPanel = defineAsyncComponent(() => import('@/components/account/platform/VertexServiceAccountPanel.vue'))
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
   defaultCNBaseUrl,

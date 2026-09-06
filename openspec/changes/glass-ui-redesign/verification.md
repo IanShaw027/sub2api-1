@@ -635,4 +635,10 @@ lead 复核（提交 `54c74b793`）：vue-tsc 0；eslint 0；`vitest run src/i18
 
 ## 16 汇总：文件行数门禁
 
-`find src -name '*.vue' -o -name '*.ts'`（含 i18n，排除 `__tests__`）> 1,500 行文件数：拆分前 21 → **0**。`vite build` 40.9s、180 个 chunk；最大路由块 `AccountsView-*.js` 890 KB（静态导入，与 6.1 的 ≤ 300 KB 目标不符，16K 处理中）。
+`find src -name '*.vue' -o -name '*.ts'`（含 i18n，排除 `__tests__`）> 1,500 行文件数：拆分前 21 → **0**。`vite build` 40.9s、180 个 chunk；最大路由块 `AccountsView-*.js` 890 KB（静态导入，与 6.1 的 ≤ 300 KB 目标不符）→ 16K 后 213 KB。
+
+## 16K AccountsView 弹层 / 平台面板异步化（sonnet 5 代理 + lead 验收；frontend-health-cleanup 6.1 块大小）
+
+`views/admin/AccountsView.vue` 14 个条件渲染弹层改为 `defineAsyncComponent(() => import('具体 .vue'))`，不再经 `@/components/account` 桶导入；`CreateAccountModal.vue` 7 个平台面板同样异步化（`GrokPanel` 原已是）。`EditAccountModal.vue` 不引用 `platform/*Panel`，未改。`CreateAccountModal.spec.ts` 的 `selectButtonByText` 改为轮询等待异步面板按钮出现。
+
+lead 复核（提交见 git log）：`AccountsView-*.js` 911,390 → 218,145 字节（213 KB，≤ 300 KB 达标）；chunk 数 180 → 207；最大 chunk 仍为 `index-*.js` 434 KB（与本任务无关）；vue-tsc 0；eslint 0；`vitest run src/views/admin/__tests__ src/components/account` 57 文件 543 用例通过；anchor-diff `lost 0`。代理 before/after `pixel-diff --tol 0`：首屏 0.17%（相对时间 / 限流倒计时文案时间漂移）、打开"添加账号"弹层 0.002%（21 px 抗锯齿噪声，弹层内容一致）。

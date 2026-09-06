@@ -157,10 +157,25 @@ function mountModal(groups: any[] = []) {
   })
 }
 
+// Platform panels (OpenAIPanel, AnthropicPanel, AntigravityPanel, etc.) are
+// defineAsyncComponent. Their first dynamic import() in a given test run needs a
+// real module transform (not just a microtask flush), so poll for a bit instead
+// of assuming a fixed number of flushPromises() calls is enough.
+async function findButtonByText(wrapper: ReturnType<typeof mountModal>, text: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const button = wrapper.findAll('button').find((candidate) => candidate.text().includes(text))
+    if (button) return button
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  return undefined
+}
+
 async function selectButtonByText(wrapper: ReturnType<typeof mountModal>, text: string) {
-  const button = wrapper.findAll('button').find((candidate) => candidate.text().includes(text))
+  const button = await findButtonByText(wrapper, text)
   expect(button).toBeDefined()
   await button?.trigger('click')
+  await flushPromises()
 }
 
 async function submitApiKeyAccount(
@@ -169,6 +184,9 @@ async function submitApiKeyAccount(
   disableUpstreamBillingProbe = false
 ) {
   const wrapper = mountModal()
+  // Default form.platform is 'anthropic', so AnthropicPanel (a defineAsyncComponent)
+  // is already mounting before any button is clicked — flush its import first.
+  await flushPromises()
   await selectButtonByText(wrapper, platform === 'openai' ? 'OpenAI' : 'admin.accounts.claudeConsole')
   if (platform === 'openai') {
     await selectButtonByText(wrapper, 'API Key')

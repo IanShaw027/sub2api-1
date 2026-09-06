@@ -52,8 +52,8 @@
 
 ## 6. 超大文件拆分（与 glass-ui-redesign 组 8 / 10 / 11 同批）
 
-- [~] 6.1 `components/account/CreateAccountModal.vue`（7,464 行）按平台面板拆为 `components/account/platform/{Anthropic,OpenAI,Gemini,Antigravity,Grok,Kiro,Ollama,Generic}Panel.vue`（`defineModel` 直通、`defineAsyncComponent` 加载）；验证 `CreateAccountModal.spec` 全绿、主文件 ≤ 1,500 行、`AccountsView` 块 ≤ 300KB
-  - 2026-09-06：主文件 1495 行（`create/` + `platform/` + `shared/`，glass 16 / 16A）；块 890 KB 未达标 → 16K 改 `defineAsyncComponent` 处理中
+- [x] 6.1 `components/account/CreateAccountModal.vue`（7,464 行）按平台面板拆为 `components/account/platform/{Anthropic,OpenAI,Gemini,Antigravity,Grok,Kiro,Ollama,Generic}Panel.vue`（`defineModel` 直通、`defineAsyncComponent` 加载）；验证 `CreateAccountModal.spec` 全绿、主文件 ≤ 1,500 行、`AccountsView` 块 ≤ 300KB
+  - 2026-09-06：主文件 1495 行（`create/` + `platform/` + `shared/`，glass 16 / 16A）；块 890 KB → 16K 将 14 个弹层与 7 个平台面板改为 `defineAsyncComponent` 后 213 KB（chunk 数 180 → 207）
 - [x] 6.2 `EditAccountModal.vue`（5,932 行）复用 6.1 的平台面板；验证 spec 全绿、≤ 1,500 行
   - 2026-09-06：1401 行（`edit/`，glass 16A，提交 `42c56bb44`）
 - [x] 6.3 `views/admin/SettingsView.vue`（14,077 行）按 tab 拆为 `components/admin/settings/tabs/{General,Agreement,Features,Security,UserDefaults,Gateway,Payment,Email,Backup}Tab.vue`（单一 `<form id="settings-form">` 与 `v-show` 保留，settings 对象经 `defineModel`）；验证 `SettingsView*.spec` 全绿、主文件 ≤ 1,500 行、块 ≤ 300KB
