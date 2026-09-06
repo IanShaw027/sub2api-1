@@ -2070,6 +2070,14 @@ const routes = {
   'GET /api/v1/admin/groups': (ctx) => paginate(GROUPS, ctx.query),
   'GET /api/v1/admin/groups/all': (ctx) => { const p = ctx.query.get('platform'); return p ? GROUPS.filter((g) => g.platform === p) : GROUPS },
   'GET /api/v1/admin/groups/live-capability': () => ({ supported: true }),
+  'GET /api/v1/admin/groups/usage-summary': () => GROUPS.map((group, index) => ({
+    group_id: group.id, today_cost: round2(12.5 + index * 8.25),
+    yesterday_cost: round2(10.5 + index * 7.5), total_cost: round2(245 + index * 112.5),
+  })),
+  'GET /api/v1/admin/groups/capacity-summary': () => GROUPS.map((group, index) => ({
+    group_id: group.id, concurrency_used: index + 1, concurrency_max: 20,
+    sessions_used: index + 2, sessions_max: 40, rpm_used: 10 + index * 5, rpm_max: 120,
+  })),
   'GET /api/v1/admin/proxies': (ctx) => emptyPage(ctx.query),
   'GET /api/v1/admin/proxies/all': () => [],
   'GET /api/v1/admin/plugins': () => MOCK_PLUGINS,
@@ -2085,6 +2093,22 @@ const routes = {
 
   // ---- admin: settings & feature status ----
   'GET /api/v1/admin/settings': () => ADMIN_SETTINGS,
+  'GET /api/v1/admin/backups/image-storage': () => ({
+    config: {
+      enabled: false, reuse_backup_s3: true, bucket: '', prefix: 'images/',
+      public_base_url: '', presign_expiry_hours: 24, max_download_bytes: 20 * 1024 * 1024,
+      endpoint: '', region: 'auto', access_key_id: '', force_path_style: false,
+    },
+    secret_configured: false,
+  }),
+  'GET /api/v1/admin/backups/s3-config': () => ({
+    endpoint: '', region: 'auto', bucket: '', access_key_id: '',
+    prefix: 'backups/', force_path_style: false,
+  }),
+  'GET /api/v1/admin/backups/schedule': () => ({
+    enabled: false, cron_expr: '0 2 * * *', retain_days: 7, retain_count: 10,
+  }),
+  'GET /api/v1/admin/backups': () => ({ items: [] }),
   'PUT /api/v1/admin/settings': (ctx) => ({ ...ADMIN_SETTINGS, ...(ctx.body || {}) }),
   'GET /api/v1/admin/settings/admin-api-key': () => ({ exists: true, masked_key: 'sk-admin-****3f2a' }),
   'GET /api/v1/admin/settings/overload-cooldown': () => ({ enabled: true, cooldown_minutes: 10 }),

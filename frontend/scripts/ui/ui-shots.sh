@@ -18,9 +18,10 @@ only="${UI_SHOTS_ONLY:-}"
 
 case "$mode" in
   all)     states="d-light d-dark m-light m-dark" ;;
+  matrix)  states="d-light d-dark t1024-light t1024-dark t768-light t768-dark m-light m-dark" ;;
   desktop) states="d-light d-dark" ;;
   mobile)  states="m-light m-dark" ;;
-  *) echo "usage: $0 all|desktop|mobile" >&2; exit 2 ;;
+  *) echo "usage: $0 all|matrix|desktop|mobile" >&2; exit 2 ;;
 esac
 
 for p in 8091 3777; do
@@ -41,6 +42,10 @@ while IFS='|' read -r pattern role actual; do
     case "$st" in
       d-light) w=1440; h=900; theme=glass-light ;;
       d-dark)  w=1440; h=900; theme=glass-dark ;;
+      t1024-light) w=1024; h=900; theme=glass-light ;;
+      t1024-dark) w=1024; h=900; theme=glass-dark ;;
+      t768-light) w=768; h=1024; theme=glass-light ;;
+      t768-dark) w=768; h=1024; theme=glass-dark ;;
       m-light) w=390;  h=844; theme=glass-light ;;
       m-dark)  w=390;  h=844; theme=glass-dark ;;
     esac
