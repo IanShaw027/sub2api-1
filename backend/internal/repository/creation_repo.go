@@ -216,36 +216,95 @@ func (r *creationMessageRepository) Create(ctx context.Context, msg *service.Cre
 	return nil
 }
 
+func (r *creationMessageRepository) CreateExchange(ctx context.Context, input service.CreateCreationExchangeInput) (*service.CreationExchange, error) {
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin creation exchange transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Updating the parent takes a write lock before the idempotency lookup,
+	// serializing retries and concurrent deletion on PostgreSQL and SQLite.
+	n, err := tx.CreationSession.Update().Where(creationsession.IDEQ(input.SessionID), creationsession.UserIDEQ(input.UserID)).SetUpdatedAt(time.Now()).Save(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, service.ErrCreationSessionNotFound
+	}
+	rows, err := tx.CreationMessage.Query().Where(creationmessage.SessionIDEQ(input.SessionID), creationmessage.ExchangeRequestIDEQ(input.RequestID)).All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	userContent, _ := json.Marshal(input.UserContent)
+	assistantContent, _ := json.Marshal(input.AssistantContent)
+	if len(rows) != 0 {
+		exchange := &service.CreationExchange{}
+		for _, row := range rows {
+			switch row.Role {
+			case service.CreationMessageRoleUser:
+				exchange.User = *creationMessageEntityToService(row)
+			case service.CreationMessageRoleAssistant:
+				exchange.Assistant = *creationMessageEntityToService(row)
+			}
+		}
+		if len(rows) != 2 || !creationContentMatches(exchange.User.Content, input.UserContent) || !creationContentMatches(exchange.Assistant.Content, input.AssistantContent) ||
+			exchange.Assistant.Model == nil || *exchange.Assistant.Model != input.Model ||
+			!sameCreationTokenCount(exchange.Assistant.InputTokens, input.InputTokens) || !sameCreationTokenCount(exchange.Assistant.OutputTokens, input.OutputTokens) {
+			return nil, service.ErrCreationExchangeConflict
+		}
+		// A replay must not change the session's last-message timestamp.
+		if err := tx.Rollback(); err != nil {
+			return nil, err
+		}
+		return exchange, nil
+	}
+	user, err := tx.CreationMessage.Create().SetSessionID(input.SessionID).SetExchangeRequestID(input.RequestID).
+		SetRole(service.CreationMessageRoleUser).SetContent(userContent).Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("save creation exchange user: %w", err)
+	}
+	assistant, err := tx.CreationMessage.Create().SetSessionID(input.SessionID).SetExchangeRequestID(input.RequestID).
+		SetRole(service.CreationMessageRoleAssistant).SetContent(assistantContent).SetModel(input.Model).
+		SetNillableInputTokens(input.InputTokens).SetNillableOutputTokens(input.OutputTokens).Save(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("save creation exchange assistant: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit creation exchange: %w", err)
+	}
+	return &service.CreationExchange{User: *creationMessageEntityToService(user), Assistant: *creationMessageEntityToService(assistant)}, nil
+}
+
+func sameCreationTokenCount(a, b *int) bool {
+	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
+}
+
+func creationContentMatches(raw json.RawMessage, content string) bool {
+	var decoded string
+	return json.Unmarshal(raw, &decoded) == nil && decoded == content
+}
+
+func creationMessageEntityToService(row *dbent.CreationMessage) *service.CreationMessage {
+	return &service.CreationMessage{
+		ID: row.ID, SessionID: row.SessionID, Role: row.Role,
+		ExchangeRequestID: row.ExchangeRequestID,
+		Content:           append(json.RawMessage(nil), row.Content...), Model: row.Model,
+		InputTokens: row.InputTokens, OutputTokens: row.OutputTokens, CreatedAt: row.CreatedAt,
+	}
+}
+
 func (r *creationMessageRepository) ListBySession(ctx context.Context, sessionID int64) ([]service.CreationMessage, error) {
 	rows, err := r.client.CreationMessage.Query().
 		Where(creationmessage.SessionIDEQ(sessionID)).
-		Order(dbent.Asc(creationmessage.FieldCreatedAt)).
+		Order(dbent.Asc(creationmessage.FieldCreatedAt), dbent.Asc(creationmessage.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]service.CreationMessage, 0, len(rows))
 	for _, row := range rows {
-		item := service.CreationMessage{
-			ID:        row.ID,
-			SessionID: row.SessionID,
-			Role:      row.Role,
-			Content:   append(json.RawMessage(nil), row.Content...),
-			CreatedAt: row.CreatedAt,
-		}
-		if row.Model != nil {
-			v := *row.Model
-			item.Model = &v
-		}
-		if row.InputTokens != nil {
-			v := *row.InputTokens
-			item.InputTokens = &v
-		}
-		if row.OutputTokens != nil {
-			v := *row.OutputTokens
-			item.OutputTokens = &v
-		}
-		out = append(out, item)
+		out = append(out, *creationMessageEntityToService(row))
 	}
 	return out, nil
 }
@@ -379,6 +438,8 @@ func (r *creationImageJobRepository) Update(ctx context.Context, id int64, job *
 		SetUpdatedAt(time.Now())
 	if job.Status == service.CreationImageJobStatusPending || job.Status == service.CreationImageJobStatusProcessing {
 		builder.Where(creationimagejob.StatusIn(service.CreationImageJobStatusPending, service.CreationImageJobStatusProcessing))
+	} else {
+		builder.Where(creationimagejob.StatusIn(service.CreationImageJobStatusPending, service.CreationImageJobStatusProcessing, job.Status))
 	}
 	if job.MediaAssetID != nil {
 		builder.SetMediaAssetID(*job.MediaAssetID)

@@ -41,3 +41,30 @@ func TestImageTaskStoreMissing(t *testing.T) {
 	_, err := store.Get(context.Background(), "imgtask_missing")
 	require.ErrorIs(t, err, service.ErrImageTaskNotFound)
 }
+
+func TestImageTaskStoreTerminalUpdateIsAtomicAndPreservesWinner(t *testing.T) {
+	mr := miniredis.RunT(t)
+	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+	store := NewImageTaskStore(rdb)
+	atomicStore := store.(service.ImageTaskAtomicStore)
+	task := &service.ImageTaskRecord{ID: "imgtask_race", Status: service.ImageTaskStatusProcessing}
+	require.NoError(t, store.Save(context.Background(), task, time.Hour))
+	completed := *task
+	completed.Status = service.ImageTaskStatusCompleted
+	got, err := atomicStore.FinishIfProcessing(context.Background(), &completed, 24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, service.ImageTaskStatusCompleted, got.Status)
+	mr.FastForward(time.Minute)
+	failed := *task
+	failed.Status = service.ImageTaskStatusFailed
+	got, err = atomicStore.FinishIfProcessing(context.Background(), &failed, 24*time.Hour)
+	require.NoError(t, err)
+	require.Equal(t, service.ImageTaskStatusCompleted, got.Status)
+	require.Equal(t, 24*time.Hour-time.Minute, mr.TTL(imageTaskKey(task.ID)))
+
+	failed.ID = "imgtask_missing"
+	_, err = atomicStore.FinishIfProcessing(context.Background(), &failed, time.Hour)
+	require.ErrorIs(t, err, service.ErrImageTaskNotFound)
+	require.False(t, mr.Exists(imageTaskKey(failed.ID)), "never resurrect expired tasks without ownership")
+}

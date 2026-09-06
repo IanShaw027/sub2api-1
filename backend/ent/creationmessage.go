@@ -22,6 +22,8 @@ type CreationMessage struct {
 	ID int64 `json:"id,omitempty"`
 	// SessionID holds the value of the "session_id" field.
 	SessionID int64 `json:"session_id,omitempty"`
+	// ExchangeRequestID holds the value of the "exchange_request_id" field.
+	ExchangeRequestID *string `json:"exchange_request_id,omitempty"`
 	// Role holds the value of the "role" field.
 	Role string `json:"role,omitempty"`
 	// Content holds the value of the "content" field.
@@ -69,7 +71,7 @@ func (*CreationMessage) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case creationmessage.FieldID, creationmessage.FieldSessionID, creationmessage.FieldInputTokens, creationmessage.FieldOutputTokens:
 			values[i] = new(sql.NullInt64)
-		case creationmessage.FieldRole, creationmessage.FieldModel:
+		case creationmessage.FieldExchangeRequestID, creationmessage.FieldRole, creationmessage.FieldModel:
 			values[i] = new(sql.NullString)
 		case creationmessage.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -99,6 +101,13 @@ func (_m *CreationMessage) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field session_id", values[i])
 			} else if value.Valid {
 				_m.SessionID = value.Int64
+			}
+		case creationmessage.FieldExchangeRequestID:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field exchange_request_id", values[i])
+			} else if value.Valid {
+				_m.ExchangeRequestID = new(string)
+				*_m.ExchangeRequestID = value.String
 			}
 		case creationmessage.FieldRole:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -184,6 +193,11 @@ func (_m *CreationMessage) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("session_id=")
 	builder.WriteString(fmt.Sprintf("%v", _m.SessionID))
+	builder.WriteString(", ")
+	if v := _m.ExchangeRequestID; v != nil {
+		builder.WriteString("exchange_request_id=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	builder.WriteString("role=")
 	builder.WriteString(_m.Role)

@@ -16,6 +16,8 @@ const (
 	FieldID = "id"
 	// FieldSessionID holds the string denoting the session_id field in the database.
 	FieldSessionID = "session_id"
+	// FieldExchangeRequestID holds the string denoting the exchange_request_id field in the database.
+	FieldExchangeRequestID = "exchange_request_id"
 	// FieldRole holds the string denoting the role field in the database.
 	FieldRole = "role"
 	// FieldContent holds the string denoting the content field in the database.
@@ -45,6 +47,7 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldSessionID,
+	FieldExchangeRequestID,
 	FieldRole,
 	FieldContent,
 	FieldModel,
@@ -64,6 +67,8 @@ func ValidColumn(column string) bool {
 }
 
 var (
+	// ExchangeRequestIDValidator is a validator for the "exchange_request_id" field. It is called by the builders before save.
+	ExchangeRequestIDValidator func(string) error
 	// RoleValidator is a validator for the "role" field. It is called by the builders before save.
 	RoleValidator func(string) error
 	// ModelValidator is a validator for the "model" field. It is called by the builders before save.
@@ -83,6 +88,11 @@ func ByID(opts ...sql.OrderTermOption) OrderOption {
 // BySessionID orders the results by the session_id field.
 func BySessionID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSessionID, opts...).ToFunc()
+}
+
+// ByExchangeRequestID orders the results by the exchange_request_id field.
+func ByExchangeRequestID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldExchangeRequestID, opts...).ToFunc()
 }
 
 // ByRole orders the results by the role field.

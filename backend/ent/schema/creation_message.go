@@ -27,6 +27,7 @@ func (CreationMessage) Annotations() []schema.Annotation {
 func (CreationMessage) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int64("session_id"),
+		field.String("exchange_request_id").MaxLen(128).Optional().Nillable(),
 		field.String("role").
 			MaxLen(32).
 			NotEmpty(),
@@ -63,5 +64,6 @@ func (CreationMessage) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("session_id"),
 		index.Fields("session_id", "created_at"),
+		index.Fields("session_id", "exchange_request_id", "role").Unique(),
 	}
 }

@@ -94,3 +94,30 @@ func TestCreationImageCompletionPersistsWhenRedisReadFails(t *testing.T) {
 	require.Equal(t, "https://cdn.test/result.png", persisted.ImageURL)
 	require.Nil(t, store.task, "do not recreate a public Redis task without its original ownership")
 }
+
+func TestCreationImageTerminalStateSurvivesLateExpiryAndCompletion(t *testing.T) {
+	ctx := context.Background()
+	for _, terminal := range []string{CreationImageJobStatusCompleted, CreationImageJobStatusFailed} {
+		t.Run(terminal, func(t *testing.T) {
+			creation := NewCreationService(nil, nil, &creationImageJobRepoStub{}, nil, nil, nil)
+			job, err := creation.CreateImageJob(ctx, CreateCreationImageJobInput{UserID: 7, GroupID: 3, ProviderTaskID: "imgtask_terminal"})
+			require.NoError(t, err)
+			winner := &ImageTask{TaskID: "imgtask_terminal", Status: terminal}
+			if terminal == CreationImageJobStatusCompleted {
+				winner.ImageURL = "https://cdn.test/result.png"
+				winner.StorageObject = &ImageStorageReference{StorageID: "bucket-a", Key: "result.png"}
+			}
+			require.NoError(t, creation.SyncImageJobFromTask(ctx, 7, winner))
+			loser := &ImageTask{TaskID: "imgtask_terminal", Status: ImageTaskStatusFailed, Error: json.RawMessage(`{"type":"task_expired","message":"expired"}`)}
+			if terminal == CreationImageJobStatusFailed {
+				loser.Status = ImageTaskStatusCompleted
+				loser.ImageURL = "https://cdn.test/late.png"
+			}
+			require.NoError(t, creation.SyncImageJobFromTask(ctx, 7, loser))
+			got, err := creation.GetImage(ctx, 7, job.ID)
+			require.NoError(t, err)
+			require.Equal(t, terminal, got.Status)
+			require.Equal(t, winner.ImageURL, got.MediaURL)
+		})
+	}
+}

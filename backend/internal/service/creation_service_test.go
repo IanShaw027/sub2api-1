@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -14,6 +15,35 @@ import (
 type creationSessionRepoStub struct {
 	items map[int64]*CreationSession
 	next  int64
+}
+
+func TestCreationServiceExchangeValidatesOwnershipAndMetadata(t *testing.T) {
+	sessions := &creationSessionRepoStub{items: map[int64]*CreationSession{1: {ID: 1, UserID: 7}}}
+	messages := &creationMessageRepoStub{}
+	svc := NewCreationService(sessions, messages, nil, nil, nil, nil)
+	tokens := 42
+	valid := CreateCreationExchangeInput{UserID: 7, SessionID: 1, RequestID: "request-1", UserContent: "question", AssistantContent: "answer", Model: "gpt-4o", InputTokens: &tokens}
+	_, err := svc.CreateExchange(context.Background(), valid)
+	require.NoError(t, err)
+	require.Equal(t, valid, *messages.exchangeInput)
+	for _, mutate := range []func(*CreateCreationExchangeInput){
+		func(v *CreateCreationExchangeInput) { v.RequestID = " " },
+		func(v *CreateCreationExchangeInput) { v.RequestID = strings.Repeat("x", 129) },
+		func(v *CreateCreationExchangeInput) { v.UserContent = " " },
+		func(v *CreateCreationExchangeInput) { v.AssistantContent = " " },
+		func(v *CreateCreationExchangeInput) { v.Model = strings.Repeat("x", 101) },
+		func(v *CreateCreationExchangeInput) { negative := -1; v.InputTokens = &negative },
+		func(v *CreateCreationExchangeInput) { negative := -1; v.OutputTokens = &negative },
+		func(v *CreateCreationExchangeInput) { v.UserID++ },
+		func(v *CreateCreationExchangeInput) { v.SessionID++ },
+	} {
+		invalid := valid
+		mutate(&invalid)
+		messages.exchangeInput = nil
+		_, err := svc.CreateExchange(context.Background(), invalid)
+		require.Error(t, err)
+		require.Nil(t, messages.exchangeInput)
+	}
 }
 
 func (s *creationSessionRepoStub) Create(ctx context.Context, input *CreationSession) error {
@@ -68,9 +98,15 @@ func (s *creationSessionRepoStub) Delete(ctx context.Context, userID, id int64) 
 	return nil
 }
 
-type creationMessageRepoStub struct{}
+type creationMessageRepoStub struct {
+	exchangeInput *CreateCreationExchangeInput
+}
 
 func (s *creationMessageRepoStub) Create(ctx context.Context, msg *CreationMessage) error { return nil }
+func (s *creationMessageRepoStub) CreateExchange(_ context.Context, input CreateCreationExchangeInput) (*CreationExchange, error) {
+	s.exchangeInput = &input
+	return &CreationExchange{}, nil
+}
 func (s *creationMessageRepoStub) ListBySession(ctx context.Context, sessionID int64) ([]CreationMessage, error) {
 	return nil, nil
 }

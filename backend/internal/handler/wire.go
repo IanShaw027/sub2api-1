@@ -218,6 +218,23 @@ func ProvideAdminUserHandler(
 	return h
 }
 
+func ProvideCreationHandler(
+	creationService *service.CreationService,
+	keyResolver *service.CreationKeyResolver,
+	subscriptions *service.SubscriptionService,
+	gateway *GatewayHandler,
+	openAI *OpenAIGatewayHandler,
+	images *AsyncImageHandler,
+	cfg *config.Config,
+	voiceTickets *service.CreationVoiceTicketService,
+	videoObserver *service.CreationVideoObserver,
+) *CreationHandler {
+	h := NewCreationHandler(creationService, keyResolver, subscriptions, gateway, openAI, images, cfg)
+	h.voiceTickets = voiceTickets
+	h.SetLocalVideoObserver(videoObserver)
+	return h
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -245,36 +262,40 @@ func ProvideHandlers(
 	batchImageHandler *BatchImageHandler,
 	mediaHandler *MediaHandler,
 	creationHandler *CreationHandler,
+	creationPublicationHandler *CreationPublicationHandler,
+	creationMediaPricingHandler *CreationMediaPricingHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
 ) *Handlers {
 	return &Handlers{
-		Auth:             authHandler,
-		User:             userHandler,
-		APIKey:           apiKeyHandler,
-		Usage:            usageHandler,
-		Redeem:           redeemHandler,
-		Subscription:     subscriptionHandler,
-		Announcement:     announcementHandler,
-		ChannelMonitor:   channelMonitorUserHandler,
-		ChannelMonitorV2: channelMonitorV2Handler,
-		Admin:            adminHandlers,
-		Gateway:          gatewayHandler,
-		OpenAIGateway:    openaiGatewayHandler,
-		Setting:          settingHandler,
-		Totp:             totpHandler,
-		Passkey:          passkeyHandler,
-		Payment:          paymentHandler,
-		Invoice:          invoiceHandler,
-		Ticket:           ticketHandler,
-		PaymentWebhook:   paymentWebhookHandler,
-		AvailableChannel: availableChannelHandler,
-		ModelPlaza:       modelPlazaHandler,
-		AsyncImage:       asyncImageHandler,
-		BatchImage:       batchImageHandler,
-		Media:            mediaHandler,
-		Creation:         creationHandler,
+		Auth:                 authHandler,
+		User:                 userHandler,
+		APIKey:               apiKeyHandler,
+		Usage:                usageHandler,
+		Redeem:               redeemHandler,
+		Subscription:         subscriptionHandler,
+		Announcement:         announcementHandler,
+		ChannelMonitor:       channelMonitorUserHandler,
+		ChannelMonitorV2:     channelMonitorV2Handler,
+		Admin:                adminHandlers,
+		Gateway:              gatewayHandler,
+		OpenAIGateway:        openaiGatewayHandler,
+		Setting:              settingHandler,
+		Totp:                 totpHandler,
+		Passkey:              passkeyHandler,
+		Payment:              paymentHandler,
+		Invoice:              invoiceHandler,
+		Ticket:               ticketHandler,
+		PaymentWebhook:       paymentWebhookHandler,
+		AvailableChannel:     availableChannelHandler,
+		ModelPlaza:           modelPlazaHandler,
+		AsyncImage:           asyncImageHandler,
+		BatchImage:           batchImageHandler,
+		Media:                mediaHandler,
+		Creation:             creationHandler,
+		CreationPublication:  creationPublicationHandler,
+		CreationMediaPricing: creationMediaPricingHandler,
 	}
 }
 
@@ -304,7 +325,9 @@ var ProviderSet = wire.NewSet(
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
 	NewMediaHandler,
-	NewCreationHandler,
+	ProvideCreationHandler,
+	NewCreationPublicationHandler,
+	NewCreationMediaPricingHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,

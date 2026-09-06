@@ -30,6 +30,20 @@ func (_c *CreationMessageCreate) SetSessionID(v int64) *CreationMessageCreate {
 	return _c
 }
 
+// SetExchangeRequestID sets the "exchange_request_id" field.
+func (_c *CreationMessageCreate) SetExchangeRequestID(v string) *CreationMessageCreate {
+	_c.mutation.SetExchangeRequestID(v)
+	return _c
+}
+
+// SetNillableExchangeRequestID sets the "exchange_request_id" field if the given value is not nil.
+func (_c *CreationMessageCreate) SetNillableExchangeRequestID(v *string) *CreationMessageCreate {
+	if v != nil {
+		_c.SetExchangeRequestID(*v)
+	}
+	return _c
+}
+
 // SetRole sets the "role" field.
 func (_c *CreationMessageCreate) SetRole(v string) *CreationMessageCreate {
 	_c.mutation.SetRole(v)
@@ -149,6 +163,11 @@ func (_c *CreationMessageCreate) check() error {
 	if _, ok := _c.mutation.SessionID(); !ok {
 		return &ValidationError{Name: "session_id", err: errors.New(`ent: missing required field "CreationMessage.session_id"`)}
 	}
+	if v, ok := _c.mutation.ExchangeRequestID(); ok {
+		if err := creationmessage.ExchangeRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "exchange_request_id", err: fmt.Errorf(`ent: validator failed for field "CreationMessage.exchange_request_id": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.Role(); !ok {
 		return &ValidationError{Name: "role", err: errors.New(`ent: missing required field "CreationMessage.role"`)}
 	}
@@ -198,6 +217,10 @@ func (_c *CreationMessageCreate) createSpec() (*CreationMessage, *sqlgraph.Creat
 		_spec = sqlgraph.NewCreateSpec(creationmessage.Table, sqlgraph.NewFieldSpec(creationmessage.FieldID, field.TypeInt64))
 	)
 	_spec.OnConflict = _c.conflict
+	if value, ok := _c.mutation.ExchangeRequestID(); ok {
+		_spec.SetField(creationmessage.FieldExchangeRequestID, field.TypeString, value)
+		_node.ExchangeRequestID = &value
+	}
 	if value, ok := _c.mutation.Role(); ok {
 		_spec.SetField(creationmessage.FieldRole, field.TypeString, value)
 		_node.Role = value
@@ -300,6 +323,24 @@ func (u *CreationMessageUpsert) SetSessionID(v int64) *CreationMessageUpsert {
 // UpdateSessionID sets the "session_id" field to the value that was provided on create.
 func (u *CreationMessageUpsert) UpdateSessionID() *CreationMessageUpsert {
 	u.SetExcluded(creationmessage.FieldSessionID)
+	return u
+}
+
+// SetExchangeRequestID sets the "exchange_request_id" field.
+func (u *CreationMessageUpsert) SetExchangeRequestID(v string) *CreationMessageUpsert {
+	u.Set(creationmessage.FieldExchangeRequestID, v)
+	return u
+}
+
+// UpdateExchangeRequestID sets the "exchange_request_id" field to the value that was provided on create.
+func (u *CreationMessageUpsert) UpdateExchangeRequestID() *CreationMessageUpsert {
+	u.SetExcluded(creationmessage.FieldExchangeRequestID)
+	return u
+}
+
+// ClearExchangeRequestID clears the value of the "exchange_request_id" field.
+func (u *CreationMessageUpsert) ClearExchangeRequestID() *CreationMessageUpsert {
+	u.SetNull(creationmessage.FieldExchangeRequestID)
 	return u
 }
 
@@ -449,6 +490,27 @@ func (u *CreationMessageUpsertOne) SetSessionID(v int64) *CreationMessageUpsertO
 func (u *CreationMessageUpsertOne) UpdateSessionID() *CreationMessageUpsertOne {
 	return u.Update(func(s *CreationMessageUpsert) {
 		s.UpdateSessionID()
+	})
+}
+
+// SetExchangeRequestID sets the "exchange_request_id" field.
+func (u *CreationMessageUpsertOne) SetExchangeRequestID(v string) *CreationMessageUpsertOne {
+	return u.Update(func(s *CreationMessageUpsert) {
+		s.SetExchangeRequestID(v)
+	})
+}
+
+// UpdateExchangeRequestID sets the "exchange_request_id" field to the value that was provided on create.
+func (u *CreationMessageUpsertOne) UpdateExchangeRequestID() *CreationMessageUpsertOne {
+	return u.Update(func(s *CreationMessageUpsert) {
+		s.UpdateExchangeRequestID()
+	})
+}
+
+// ClearExchangeRequestID clears the value of the "exchange_request_id" field.
+func (u *CreationMessageUpsertOne) ClearExchangeRequestID() *CreationMessageUpsertOne {
+	return u.Update(func(s *CreationMessageUpsert) {
+		s.ClearExchangeRequestID()
 	})
 }
 
@@ -779,6 +841,27 @@ func (u *CreationMessageUpsertBulk) SetSessionID(v int64) *CreationMessageUpsert
 func (u *CreationMessageUpsertBulk) UpdateSessionID() *CreationMessageUpsertBulk {
 	return u.Update(func(s *CreationMessageUpsert) {
 		s.UpdateSessionID()
+	})
+}
+
+// SetExchangeRequestID sets the "exchange_request_id" field.
+func (u *CreationMessageUpsertBulk) SetExchangeRequestID(v string) *CreationMessageUpsertBulk {
+	return u.Update(func(s *CreationMessageUpsert) {
+		s.SetExchangeRequestID(v)
+	})
+}
+
+// UpdateExchangeRequestID sets the "exchange_request_id" field to the value that was provided on create.
+func (u *CreationMessageUpsertBulk) UpdateExchangeRequestID() *CreationMessageUpsertBulk {
+	return u.Update(func(s *CreationMessageUpsert) {
+		s.UpdateExchangeRequestID()
+	})
+}
+
+// ClearExchangeRequestID clears the value of the "exchange_request_id" field.
+func (u *CreationMessageUpsertBulk) ClearExchangeRequestID() *CreationMessageUpsertBulk {
+	return u.Update(func(s *CreationMessageUpsert) {
+		s.ClearExchangeRequestID()
 	})
 }
 

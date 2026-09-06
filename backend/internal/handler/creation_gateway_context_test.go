@@ -43,6 +43,11 @@ func (r *creationSubscriptionRepo) GetActiveByUserIDAndGroupID(context.Context, 
 	return &copy, nil
 }
 
+func (r *creationSubscriptionRepo) GetByUserIDAndGroupID(context.Context, int64, int64) (*service.UserSubscription, error) {
+	copy := r.sub
+	return &copy, nil
+}
+
 func (r *creationSubscriptionRepo) GetByID(context.Context, int64) (*service.UserSubscription, error) {
 	copy := r.sub
 	return &copy, nil
@@ -163,6 +168,28 @@ func TestCreationGatewayContextAllowsTaskReadAfterSubscriptionExpires(t *testing
 	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 7})
 	called := false
 	h.withGatewayContext(c, func(*gin.Context) { called = true })
+	require.True(t, called, w.Body.String())
+	require.Zero(t, repo.activeReads)
+	require.Zero(t, repo.resets)
+}
+
+func TestCreationGatewayContextPreservesExpiredSubscriptionForLocalVideoCompletion(t *testing.T) {
+	repo := &creationSubscriptionRepo{sub: newCreationSubscription()}
+	repo.sub.ExpiresAt = time.Now().Add(-time.Hour)
+	repo.sub.DailyUsageUSD = 999
+	h := newCreationSubscriptionHandler(t, repo)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/creation/local/videos/owned/content?group_id=3", nil)
+	c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 7})
+	called := false
+	h.withGatewayContext(c, func(c *gin.Context) {
+		called = true
+		subscription, ok := middleware2.GetSubscriptionFromContext(c)
+		require.True(t, ok)
+		require.Equal(t, repo.sub.ID, subscription.ID)
+		require.Equal(t, repo.sub.ExpiresAt, subscription.ExpiresAt)
+	})
 	require.True(t, called, w.Body.String())
 	require.Zero(t, repo.activeReads)
 	require.Zero(t, repo.resets)

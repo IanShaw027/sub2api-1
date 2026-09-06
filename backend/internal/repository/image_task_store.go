@@ -43,6 +43,34 @@ func (s *imageTaskStore) Get(ctx context.Context, id string) (*service.ImageTask
 	return &task, nil
 }
 
+var finishImageTaskScript = redis.NewScript(`
+local current = redis.call('GET', KEYS[1])
+if not current then return false end
+local task = cjson.decode(current)
+if task.status ~= 'processing' then return current end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return ARGV[1]
+`)
+
+func (s *imageTaskStore) FinishIfProcessing(ctx context.Context, task *service.ImageTaskRecord, ttl time.Duration) (*service.ImageTaskRecord, error) {
+	data, err := json.Marshal(task)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := finishImageTaskScript.Run(ctx, s.rdb, []string{imageTaskKey(task.ID)}, data, ttl.Milliseconds()).Text()
+	if err != nil {
+		if err == redis.Nil {
+			return nil, service.ErrImageTaskNotFound
+		}
+		return nil, err
+	}
+	var current service.ImageTaskRecord
+	if err := json.Unmarshal([]byte(stored), &current); err != nil {
+		return nil, err
+	}
+	return &current, nil
+}
+
 func imageTaskKey(id string) string {
 	return imageTaskKeyPrefix + strings.TrimSpace(id)
 }

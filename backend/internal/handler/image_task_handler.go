@@ -23,6 +23,7 @@ import (
 type AsyncImageHandler struct {
 	tasks   *service.ImageTaskService
 	openAI  *OpenAIGatewayHandler
+	gemini  *GatewayHandler
 	execute func(platform string, c *gin.Context)
 }
 
@@ -64,7 +65,7 @@ func (h *AsyncImageHandler) SubmitWithLifecycle(c *gin.Context, beforeStart func
 		return
 	}
 	platform := effectiveAPIKeyPlatform(c, apiKey)
-	if platform != service.PlatformOpenAI && platform != service.PlatformGrok {
+	if platform != service.PlatformOpenAI && platform != service.PlatformGrok && !(platform == service.PlatformGemini && h.gemini != nil) {
 		imageTaskJSONError(c, http.StatusNotFound, "not_found_error", "Images API is not supported for this platform")
 		return
 	}
@@ -136,6 +137,9 @@ func (h *AsyncImageHandler) SubmitWithLifecycle(c *gin.Context, beforeStart func
 }
 
 func (h *AsyncImageHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, apiKey *service.APIKey, platform string, body []byte) bool {
+	if platform == service.PlatformGemini {
+		return h.checkCreationGeminiImageAudit(c, apiKey, body)
+	}
 	if h == nil || h.openAI == nil {
 		return true
 	}
@@ -210,6 +214,10 @@ func writeImageTaskJSON(c *gin.Context, task *service.ImageTask) {
 }
 
 func (h *AsyncImageHandler) validateRequest(c *gin.Context, platform string, body []byte) error {
+	if platform == service.PlatformGemini {
+		_, _, err := parseCreationGeminiImageRequest(c.GetHeader("Content-Type"), c.Request.URL.Path, body)
+		return err
+	}
 	if h.openAI == nil || h.openAI.gatewayService == nil {
 		return nil
 	}
@@ -231,6 +239,10 @@ func (h *AsyncImageHandler) validateRequest(c *gin.Context, platform string, bod
 }
 
 func (h *AsyncImageHandler) executeWithGateway(platform string, c *gin.Context) {
+	if platform == service.PlatformGemini {
+		h.executeCreationGeminiImage(c)
+		return
+	}
 	if h.openAI == nil {
 		imageTaskJSONError(c, http.StatusServiceUnavailable, "api_error", "image gateway is unavailable")
 		return
@@ -310,6 +322,9 @@ func asyncImageRequestStreams(contentType string, body []byte) bool {
 }
 
 func imageTaskPollURL(submitPath, taskID string) string {
+	if prefix, _, ok := strings.Cut(submitPath, "/creation/local/images/"); ok {
+		return prefix + "/creation/local/images/tasks/" + taskID
+	}
 	if strings.HasPrefix(submitPath, "/v1/") {
 		return "/v1/images/tasks/" + taskID
 	}

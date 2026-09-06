@@ -357,11 +357,20 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	creationImageJobRepository := repository.NewCreationImageJobRepository(client)
 	creationService := service.ProvideCreationService(creationSessionRepository, creationMessageRepository, creationImageJobRepository, groupRepository, userRepository, userSubscriptionRepository)
 	creationKeyResolver := service.ProvideCreationKeyResolver(apiKeyRepository, apiKeyService)
-	creationHandler := handler.NewCreationHandler(creationService, creationKeyResolver, subscriptionService, gatewayHandler, openAIGatewayHandler, asyncImageHandler, configConfig)
+	creationVoiceTicketService := service.NewCreationVoiceTicketService(authService, userRepository, gatewayCache)
+	creationVideoObservationQueue := repository.NewCreationVideoObservationQueue(redisClient)
+	creationVideoBillingLookup := repository.NewCreationVideoBillingLookup(db)
+	creationVideoObserver := service.NewCreationVideoObserver(creationVideoObservationQueue, apiKeyRepository, userSubscriptionRepository, creationVideoBillingLookup, openAIGatewayService, configConfig)
+	creationHandler := handler.ProvideCreationHandler(creationService, creationKeyResolver, subscriptionService, gatewayHandler, openAIGatewayHandler, asyncImageHandler, configConfig, creationVoiceTicketService, creationVideoObserver)
+	creationPublicationRepository := repository.NewCreationPublicationRepository(db)
+	creationPublicationService := service.NewCreationPublicationService(creationPublicationRepository, mediaStorageResolver)
+	creationPublicationHandler := handler.NewCreationPublicationHandler(creationPublicationService)
+	creationMediaPricingService := service.NewCreationMediaPricingService(creationService, creationKeyResolver, openAIGatewayService, imageTaskService, usageLogRepository, creationVideoBillingLookup, configConfig)
+	creationMediaPricingHandler := handler.NewCreationMediaPricingHandler(creationMediaPricingService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	openAIQuotaAutoResetService := service.ProvideOpenAIQuotaAutoResetService(accountRepository, openAIQuotaService, rateLimitService, idempotencyCoordinator, auditLogService, settingService, leaderLockCache)
-	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, handlerInvoiceHandler, handlerTicketHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, mediaHandler, creationHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService)
+	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, announcementHandler, channelMonitorUserHandler, channelMonitorV2Handler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, passkeyHandler, handlerPaymentHandler, handlerInvoiceHandler, handlerTicketHandler, paymentWebhookHandler, availableChannelHandler, modelPlazaHandler, asyncImageHandler, batchImageHandler, mediaHandler, creationHandler, creationPublicationHandler, creationMediaPricingHandler, idempotencyCoordinator, idempotencyCleanupService, openAIQuotaAutoResetService)
 	jwtAuthMiddleware := middleware.NewJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	optionalJWTAuthMiddleware := middleware.NewOptionalJWTAuthMiddleware(authService, userService, settingService, auditLogService)
 	adminAuthMiddleware := middleware.NewAdminAuthMiddleware(authService, userService, settingService, auditLogService)
@@ -390,7 +399,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	usageUserDailyCostRepository := repository.NewUsageUserDailyCostRepository(client, db)
 	usageUserDailyCostAggregator := service.ProvideUsageUserDailyCostAggregator(usageUserDailyCostRepository, configConfig)
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, usageUserDailyCostAggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, cnProviderBalanceCheckService, openAICodexVersionSyncService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, creationVideoObserver, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, channelMonitorV2Aggregator, usageUserDailyCostAggregator, userPlatformQuotaUsageFlusher, upstreamBillingProbeService, ollamaCloudUsageService, auditLogService, openAIQuotaAutoResetService, promptService, pluginManager)
 	application := &Application{
 		Server:        httpServer,
 		PromptAudit:   promptService,
@@ -451,6 +460,7 @@ func provideCleanup(
 	idempotencyCleanup *service.IdempotencyCleanupService,
 	batchImageCleanup *service.BatchImageCleanupService,
 	batchImageWorker *service.BatchImageWorkerRuntime,
+	creationVideoObserver *service.CreationVideoObserver,
 	pricing *service.PricingService,
 	emailQueue *service.EmailQueueService,
 	billingCache *service.BillingCacheService,
@@ -597,6 +607,12 @@ func provideCleanup(
 			{"BatchImageWorkerRuntime", func() error {
 				if batchImageWorker != nil {
 					batchImageWorker.Stop()
+				}
+				return nil
+			}},
+			{"CreationVideoObserver", func() error {
+				if creationVideoObserver != nil {
+					creationVideoObserver.Stop()
 				}
 				return nil
 			}},

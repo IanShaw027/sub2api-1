@@ -149,6 +149,26 @@ func (s *CreationService) CreateMessage(ctx context.Context, input CreateCreatio
 	return msg, nil
 }
 
+func (s *CreationService) CreateExchange(ctx context.Context, input CreateCreationExchangeInput) (*CreationExchange, error) {
+	input.RequestID = strings.TrimSpace(input.RequestID)
+	input.Model = strings.TrimSpace(input.Model)
+	if input.RequestID == "" || len(input.RequestID) > 128 {
+		return nil, infraerrors.BadRequest("CREATION_INVALID_REQUEST_ID", "request_id must contain 1 to 128 bytes")
+	}
+	if strings.TrimSpace(input.UserContent) == "" || strings.TrimSpace(input.AssistantContent) == "" {
+		return nil, infraerrors.BadRequest("CREATION_EMPTY_CONTENT", "both user and assistant content are required")
+	}
+	if len(input.Model) > 100 || (input.InputTokens != nil && *input.InputTokens < 0) || (input.OutputTokens != nil && *input.OutputTokens < 0) {
+		return nil, infraerrors.BadRequest("CREATION_INVALID_EXCHANGE", "model is too long or token counts are negative")
+	}
+	// Ownership is checked again under the repository's transaction lock to
+	// cover a concurrent deletion. Client token counts are history metadata only.
+	if _, err := s.sessions.GetForUser(ctx, input.UserID, input.SessionID); err != nil {
+		return nil, err
+	}
+	return s.messages.CreateExchange(ctx, input)
+}
+
 func (s *CreationService) ListImages(ctx context.Context, userID int64, filters CreationImageListFilters) ([]CreationImageJob, int64, error) {
 	items, page, err := s.imageJobs.ListForUser(ctx, userID, filters)
 	if err != nil {
@@ -228,9 +248,9 @@ func (s *CreationService) SyncImageJobFromTask(ctx context.Context, userID int64
 	if job == nil {
 		return nil
 	}
-	// A late processing poll must not overwrite a background terminal update.
+	// The first durable terminal state wins over delayed polling or completion.
 	if (job.Status == CreationImageJobStatusCompleted || job.Status == CreationImageJobStatusFailed) &&
-		(task.Status == ImageTaskStatusProcessing || task.Status == CreationImageJobStatusPending) {
+		job.Status != creationImageJobStatusFromTask(task.Status) {
 		return nil
 	}
 	job.Status = creationImageJobStatusFromTask(task.Status)
@@ -322,6 +342,12 @@ func (s *CreationService) EnsureUserCanUseGroup(ctx context.Context, userID, gro
 // EnsureUserCanReadGroup preserves access to already accepted tasks after a subscription expires.
 func (s *CreationService) EnsureUserCanReadGroup(ctx context.Context, userID, groupID int64) error {
 	return s.ensureUserCanAccessGroup(ctx, userID, groupID, false)
+}
+
+// SubscriptionForAcceptedTask keeps completion billing on the original group
+// subscription even if it expired while the upstream generation was running.
+func (s *CreationService) SubscriptionForAcceptedTask(ctx context.Context, userID, groupID int64) (*UserSubscription, error) {
+	return s.userSubs.GetByUserIDAndGroupID(ctx, userID, groupID)
 }
 
 func (s *CreationService) ensureUserCanAccessGroup(ctx context.Context, userID, groupID int64, requireSubscription bool) error {

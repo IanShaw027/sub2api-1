@@ -23937,24 +23937,25 @@ func (m *CreationImageJobMutation) ResetEdge(name string) error {
 // CreationMessageMutation represents an operation that mutates the CreationMessage nodes in the graph.
 type CreationMessageMutation struct {
 	config
-	op               Op
-	typ              string
-	id               *int64
-	role             *string
-	content          *jsontext.Value
-	appendcontent    jsontext.Value
-	model            *string
-	input_tokens     *int
-	addinput_tokens  *int
-	output_tokens    *int
-	addoutput_tokens *int
-	created_at       *time.Time
-	clearedFields    map[string]struct{}
-	session          *int64
-	clearedsession   bool
-	done             bool
-	oldValue         func(context.Context) (*CreationMessage, error)
-	predicates       []predicate.CreationMessage
+	op                  Op
+	typ                 string
+	id                  *int64
+	exchange_request_id *string
+	role                *string
+	content             *jsontext.Value
+	appendcontent       jsontext.Value
+	model               *string
+	input_tokens        *int
+	addinput_tokens     *int
+	output_tokens       *int
+	addoutput_tokens    *int
+	created_at          *time.Time
+	clearedFields       map[string]struct{}
+	session             *int64
+	clearedsession      bool
+	done                bool
+	oldValue            func(context.Context) (*CreationMessage, error)
+	predicates          []predicate.CreationMessage
 }
 
 var _ ent.Mutation = (*CreationMessageMutation)(nil)
@@ -24089,6 +24090,55 @@ func (m *CreationMessageMutation) OldSessionID(ctx context.Context) (v int64, er
 // ResetSessionID resets all changes to the "session_id" field.
 func (m *CreationMessageMutation) ResetSessionID() {
 	m.session = nil
+}
+
+// SetExchangeRequestID sets the "exchange_request_id" field.
+func (m *CreationMessageMutation) SetExchangeRequestID(s string) {
+	m.exchange_request_id = &s
+}
+
+// ExchangeRequestID returns the value of the "exchange_request_id" field in the mutation.
+func (m *CreationMessageMutation) ExchangeRequestID() (r string, exists bool) {
+	v := m.exchange_request_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldExchangeRequestID returns the old "exchange_request_id" field's value of the CreationMessage entity.
+// If the CreationMessage object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *CreationMessageMutation) OldExchangeRequestID(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldExchangeRequestID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldExchangeRequestID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldExchangeRequestID: %w", err)
+	}
+	return oldValue.ExchangeRequestID, nil
+}
+
+// ClearExchangeRequestID clears the value of the "exchange_request_id" field.
+func (m *CreationMessageMutation) ClearExchangeRequestID() {
+	m.exchange_request_id = nil
+	m.clearedFields[creationmessage.FieldExchangeRequestID] = struct{}{}
+}
+
+// ExchangeRequestIDCleared returns if the "exchange_request_id" field was cleared in this mutation.
+func (m *CreationMessageMutation) ExchangeRequestIDCleared() bool {
+	_, ok := m.clearedFields[creationmessage.FieldExchangeRequestID]
+	return ok
+}
+
+// ResetExchangeRequestID resets all changes to the "exchange_request_id" field.
+func (m *CreationMessageMutation) ResetExchangeRequestID() {
+	m.exchange_request_id = nil
+	delete(m.clearedFields, creationmessage.FieldExchangeRequestID)
 }
 
 // SetRole sets the "role" field.
@@ -24464,9 +24514,12 @@ func (m *CreationMessageMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *CreationMessageMutation) Fields() []string {
-	fields := make([]string, 0, 7)
+	fields := make([]string, 0, 8)
 	if m.session != nil {
 		fields = append(fields, creationmessage.FieldSessionID)
+	}
+	if m.exchange_request_id != nil {
+		fields = append(fields, creationmessage.FieldExchangeRequestID)
 	}
 	if m.role != nil {
 		fields = append(fields, creationmessage.FieldRole)
@@ -24496,6 +24549,8 @@ func (m *CreationMessageMutation) Field(name string) (ent.Value, bool) {
 	switch name {
 	case creationmessage.FieldSessionID:
 		return m.SessionID()
+	case creationmessage.FieldExchangeRequestID:
+		return m.ExchangeRequestID()
 	case creationmessage.FieldRole:
 		return m.Role()
 	case creationmessage.FieldContent:
@@ -24519,6 +24574,8 @@ func (m *CreationMessageMutation) OldField(ctx context.Context, name string) (en
 	switch name {
 	case creationmessage.FieldSessionID:
 		return m.OldSessionID(ctx)
+	case creationmessage.FieldExchangeRequestID:
+		return m.OldExchangeRequestID(ctx)
 	case creationmessage.FieldRole:
 		return m.OldRole(ctx)
 	case creationmessage.FieldContent:
@@ -24546,6 +24603,13 @@ func (m *CreationMessageMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSessionID(v)
+		return nil
+	case creationmessage.FieldExchangeRequestID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetExchangeRequestID(v)
 		return nil
 	case creationmessage.FieldRole:
 		v, ok := value.(string)
@@ -24646,6 +24710,9 @@ func (m *CreationMessageMutation) AddField(name string, value ent.Value) error {
 // mutation.
 func (m *CreationMessageMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(creationmessage.FieldExchangeRequestID) {
+		fields = append(fields, creationmessage.FieldExchangeRequestID)
+	}
 	if m.FieldCleared(creationmessage.FieldModel) {
 		fields = append(fields, creationmessage.FieldModel)
 	}
@@ -24669,6 +24736,9 @@ func (m *CreationMessageMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *CreationMessageMutation) ClearField(name string) error {
 	switch name {
+	case creationmessage.FieldExchangeRequestID:
+		m.ClearExchangeRequestID()
+		return nil
 	case creationmessage.FieldModel:
 		m.ClearModel()
 		return nil
@@ -24688,6 +24758,9 @@ func (m *CreationMessageMutation) ResetField(name string) error {
 	switch name {
 	case creationmessage.FieldSessionID:
 		m.ResetSessionID()
+		return nil
+	case creationmessage.FieldExchangeRequestID:
+		m.ResetExchangeRequestID()
 		return nil
 	case creationmessage.FieldRole:
 		m.ResetRole()

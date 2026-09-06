@@ -30,13 +30,14 @@ const (
 )
 
 var (
-	ErrCreationCenterDisabled  = infraerrors.Forbidden("CREATION_CENTER_DISABLED", "creation center is disabled")
-	ErrCreationSessionNotFound = infraerrors.NotFound("CREATION_SESSION_NOT_FOUND", "creation session not found")
-	ErrCreationImageNotFound   = infraerrors.NotFound("CREATION_IMAGE_NOT_FOUND", "creation image not found")
-	ErrCreationGroupRequired   = infraerrors.BadRequest("CREATION_GROUP_REQUIRED", "group_id is required")
-	ErrCreationGroupNotAllowed = infraerrors.Forbidden("CREATION_GROUP_NOT_ALLOWED", "group is not allowed for this user")
-	ErrCreationInvalidMode     = infraerrors.BadRequest("CREATION_INVALID_MODE", "invalid creation session mode")
-	ErrCreationInvalidStatus   = infraerrors.BadRequest("CREATION_INVALID_STATUS", "invalid creation session status")
+	ErrCreationCenterDisabled   = infraerrors.Forbidden("CREATION_CENTER_DISABLED", "creation center is disabled")
+	ErrCreationSessionNotFound  = infraerrors.NotFound("CREATION_SESSION_NOT_FOUND", "creation session not found")
+	ErrCreationImageNotFound    = infraerrors.NotFound("CREATION_IMAGE_NOT_FOUND", "creation image not found")
+	ErrCreationGroupRequired    = infraerrors.BadRequest("CREATION_GROUP_REQUIRED", "group_id is required")
+	ErrCreationGroupNotAllowed  = infraerrors.Forbidden("CREATION_GROUP_NOT_ALLOWED", "group is not allowed for this user")
+	ErrCreationInvalidMode      = infraerrors.BadRequest("CREATION_INVALID_MODE", "invalid creation session mode")
+	ErrCreationInvalidStatus    = infraerrors.BadRequest("CREATION_INVALID_STATUS", "invalid creation session status")
+	ErrCreationExchangeConflict = infraerrors.Conflict("CREATION_EXCHANGE_CONFLICT", "request_id already identifies a different exchange")
 )
 
 type CreationSession struct {
@@ -53,14 +54,15 @@ type CreationSession struct {
 }
 
 type CreationMessage struct {
-	ID           int64           `json:"id"`
-	SessionID    int64           `json:"session_id"`
-	Role         string          `json:"role"`
-	Content      json.RawMessage `json:"content"`
-	Model        *string         `json:"model,omitempty"`
-	InputTokens  *int            `json:"input_tokens,omitempty"`
-	OutputTokens *int            `json:"output_tokens,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	ID                int64           `json:"id"`
+	SessionID         int64           `json:"session_id"`
+	ExchangeRequestID *string         `json:"exchange_request_id,omitempty"`
+	Role              string          `json:"role"`
+	Content           json.RawMessage `json:"content"`
+	Model             *string         `json:"model,omitempty"`
+	InputTokens       *int            `json:"input_tokens,omitempty"`
+	OutputTokens      *int            `json:"output_tokens,omitempty"`
+	CreatedAt         time.Time       `json:"created_at"`
 }
 
 type CreationImageJob struct {
@@ -106,6 +108,22 @@ type CreateCreationMessageInput struct {
 	Model     *string
 }
 
+type CreateCreationExchangeInput struct {
+	UserID           int64
+	SessionID        int64
+	RequestID        string
+	UserContent      string
+	AssistantContent string
+	Model            string
+	InputTokens      *int
+	OutputTokens     *int
+}
+
+type CreationExchange struct {
+	User      CreationMessage `json:"user"`
+	Assistant CreationMessage `json:"assistant"`
+}
+
 type CreationSessionListFilters struct {
 	Mode     string
 	Status   string
@@ -140,6 +158,7 @@ type CreationSessionRepository interface {
 
 type CreationMessageRepository interface {
 	Create(ctx context.Context, msg *CreationMessage) error
+	CreateExchange(ctx context.Context, input CreateCreationExchangeInput) (*CreationExchange, error)
 	ListBySession(ctx context.Context, sessionID int64) ([]CreationMessage, error)
 }
 

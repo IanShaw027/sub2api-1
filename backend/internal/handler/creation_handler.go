@@ -28,6 +28,8 @@ type CreationHandler struct {
 	gateway             *GatewayHandler
 	openAI              *OpenAIGatewayHandler
 	asyncImage          *AsyncImageHandler
+	voiceTickets        *service.CreationVoiceTicketService
+	localVideoObserver  *service.CreationVideoObserver
 	cfg                 *config.Config
 }
 
@@ -70,6 +72,15 @@ type createCreationMessageRequest struct {
 	Role    string          `json:"role"`
 	Content json.RawMessage `json:"content"`
 	Model   *string         `json:"model"`
+}
+
+type createCreationExchangeRequest struct {
+	RequestID        string `json:"request_id"`
+	UserContent      string `json:"user_content"`
+	AssistantContent string `json:"assistant_content"`
+	Model            string `json:"model"`
+	InputTokens      *int   `json:"input_tokens"`
+	OutputTokens     *int   `json:"output_tokens"`
 }
 
 func (h *CreationHandler) ChatCompletions(c *gin.Context) {
@@ -177,10 +188,17 @@ func (h *CreationHandler) ImageTask(c *gin.Context) {
 				return
 			}
 			task = creationImageJobTask(job, taskID)
-			task.Status = service.ImageTaskStatusFailed
-			task.Error = imageTaskErrorPayload("task_expired", "image task expired before its result was saved")
+			if !time.Now().Before(h.asyncImage.tasks.ProcessingDeadline(job.CreatedAt)) {
+				task.Status = service.ImageTaskStatusFailed
+				task.Error = imageTaskErrorPayload("task_expired", "image task expired before its result was saved")
+			}
 		}
 		h.syncCreationImageJob(c, task)
+		if fresh, err := h.creationService.GetImageByTaskID(c.Request.Context(), subject.UserID, taskID); err == nil &&
+			(fresh.Status == service.CreationImageJobStatusCompleted || fresh.Status == service.CreationImageJobStatusFailed) {
+			h.attachCreationImageMediaURL(c, subject.UserID, fresh)
+			task = creationImageJobTask(fresh, taskID)
+		}
 		writeImageTaskJSON(c, task)
 	})
 }
@@ -377,6 +395,36 @@ func (h *CreationHandler) CreateSessionMessage(c *gin.Context) {
 	response.Success(c, view)
 }
 
+func (h *CreationHandler) CreateSessionExchange(c *gin.Context) {
+	if !h.requireCreationService(c) {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	id, ok := parseCreationSessionID(c)
+	if !ok {
+		return
+	}
+	var req createCreationExchangeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "invalid request")
+		return
+	}
+	exchange, err := h.creationService.CreateExchange(c.Request.Context(), service.CreateCreationExchangeInput{
+		UserID: subject.UserID, SessionID: id, RequestID: req.RequestID,
+		UserContent: req.UserContent, AssistantContent: req.AssistantContent, Model: req.Model,
+		InputTokens: req.InputTokens, OutputTokens: req.OutputTokens,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, exchange)
+}
+
 func (h *CreationHandler) ListImages(c *gin.Context) {
 	if !h.requireCreationService(c) {
 		return
@@ -460,7 +508,8 @@ func (h *CreationHandler) withGatewayContext(c *gin.Context, next func(*gin.Cont
 	if !ok {
 		return
 	}
-	readTask := c.Request.Method == http.MethodGet && strings.Contains(c.Request.URL.Path, "/images/tasks/")
+	readLocalVideo := c.Request.Method == http.MethodGet && strings.Contains(c.Request.URL.Path, "/creation/local/videos/")
+	readTask := c.Request.Method == http.MethodGet && (strings.Contains(c.Request.URL.Path, "/images/tasks/") || readLocalVideo)
 	checkGroup := h.creationService.EnsureUserCanUseGroup
 	if readTask {
 		checkGroup = h.creationService.EnsureUserCanReadGroup
@@ -475,8 +524,12 @@ func (h *CreationHandler) withGatewayContext(c *gin.Context, next func(*gin.Cont
 		return
 	}
 	var subscription *service.UserSubscription
-	if !readTask && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && h.subscriptionService != nil {
-		subscription, err = h.subscriptionService.GetActiveSubscription(c.Request.Context(), subject.UserID, groupID)
+	if (!readTask || readLocalVideo) && apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && h.subscriptionService != nil {
+		if readLocalVideo {
+			subscription, err = h.creationService.SubscriptionForAcceptedTask(c.Request.Context(), subject.UserID, groupID)
+		} else {
+			subscription, err = h.subscriptionService.GetActiveSubscription(c.Request.Context(), subject.UserID, groupID)
+		}
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return
@@ -575,6 +628,16 @@ func (h *CreationHandler) attachCreationImageMediaURL(c *gin.Context, userID int
 	ctx := c.Request.Context()
 	if job.ProviderTaskID != nil && (job.StorageKey == "" || job.Status == service.CreationImageJobStatusProcessing || job.Status == service.CreationImageJobStatusPending) {
 		if task, err := h.asyncImage.tasks.GetByIDForUser(ctx, userID, *job.ProviderTaskID); err == nil {
+			h.syncCreationImageJob(c, task)
+			if fresh, err := h.creationService.GetImage(ctx, userID, job.ID); err == nil {
+				*job = *fresh
+			}
+		} else if errors.Is(err, service.ErrImageTaskNotFound) &&
+			(job.Status == service.CreationImageJobStatusProcessing || job.Status == service.CreationImageJobStatusPending) &&
+			!time.Now().Before(h.asyncImage.tasks.ProcessingDeadline(job.CreatedAt)) {
+			task := creationImageJobTask(job, *job.ProviderTaskID)
+			task.Status = service.ImageTaskStatusFailed
+			task.Error = imageTaskErrorPayload("task_expired", "image task expired before its result was saved")
 			h.syncCreationImageJob(c, task)
 			if fresh, err := h.creationService.GetImage(ctx, userID, job.ID); err == nil {
 				*job = *fresh

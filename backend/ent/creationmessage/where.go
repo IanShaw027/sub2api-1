@@ -60,6 +60,11 @@ func SessionID(v int64) predicate.CreationMessage {
 	return predicate.CreationMessage(sql.FieldEQ(FieldSessionID, v))
 }
 
+// ExchangeRequestID applies equality check predicate on the "exchange_request_id" field. It's identical to ExchangeRequestIDEQ.
+func ExchangeRequestID(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldEQ(FieldExchangeRequestID, v))
+}
+
 // Role applies equality check predicate on the "role" field. It's identical to RoleEQ.
 func Role(v string) predicate.CreationMessage {
 	return predicate.CreationMessage(sql.FieldEQ(FieldRole, v))
@@ -103,6 +108,81 @@ func SessionIDIn(vs ...int64) predicate.CreationMessage {
 // SessionIDNotIn applies the NotIn predicate on the "session_id" field.
 func SessionIDNotIn(vs ...int64) predicate.CreationMessage {
 	return predicate.CreationMessage(sql.FieldNotIn(FieldSessionID, vs...))
+}
+
+// ExchangeRequestIDEQ applies the EQ predicate on the "exchange_request_id" field.
+func ExchangeRequestIDEQ(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldEQ(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDNEQ applies the NEQ predicate on the "exchange_request_id" field.
+func ExchangeRequestIDNEQ(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldNEQ(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDIn applies the In predicate on the "exchange_request_id" field.
+func ExchangeRequestIDIn(vs ...string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldIn(FieldExchangeRequestID, vs...))
+}
+
+// ExchangeRequestIDNotIn applies the NotIn predicate on the "exchange_request_id" field.
+func ExchangeRequestIDNotIn(vs ...string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldNotIn(FieldExchangeRequestID, vs...))
+}
+
+// ExchangeRequestIDGT applies the GT predicate on the "exchange_request_id" field.
+func ExchangeRequestIDGT(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldGT(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDGTE applies the GTE predicate on the "exchange_request_id" field.
+func ExchangeRequestIDGTE(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldGTE(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDLT applies the LT predicate on the "exchange_request_id" field.
+func ExchangeRequestIDLT(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldLT(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDLTE applies the LTE predicate on the "exchange_request_id" field.
+func ExchangeRequestIDLTE(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldLTE(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDContains applies the Contains predicate on the "exchange_request_id" field.
+func ExchangeRequestIDContains(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldContains(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDHasPrefix applies the HasPrefix predicate on the "exchange_request_id" field.
+func ExchangeRequestIDHasPrefix(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldHasPrefix(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDHasSuffix applies the HasSuffix predicate on the "exchange_request_id" field.
+func ExchangeRequestIDHasSuffix(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldHasSuffix(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDIsNil applies the IsNil predicate on the "exchange_request_id" field.
+func ExchangeRequestIDIsNil() predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldIsNull(FieldExchangeRequestID))
+}
+
+// ExchangeRequestIDNotNil applies the NotNil predicate on the "exchange_request_id" field.
+func ExchangeRequestIDNotNil() predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldNotNull(FieldExchangeRequestID))
+}
+
+// ExchangeRequestIDEqualFold applies the EqualFold predicate on the "exchange_request_id" field.
+func ExchangeRequestIDEqualFold(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldEqualFold(FieldExchangeRequestID, v))
+}
+
+// ExchangeRequestIDContainsFold applies the ContainsFold predicate on the "exchange_request_id" field.
+func ExchangeRequestIDContainsFold(v string) predicate.CreationMessage {
+	return predicate.CreationMessage(sql.FieldContainsFold(FieldExchangeRequestID, v))
 }
 
 // RoleEQ applies the EQ predicate on the "role" field.

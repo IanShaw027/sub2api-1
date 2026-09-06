@@ -1292,8 +1292,12 @@ func init() {
 	creationimagejob.UpdateDefaultUpdatedAt = creationimagejobDescUpdatedAt.UpdateDefault.(func() time.Time)
 	creationmessageFields := schema.CreationMessage{}.Fields()
 	_ = creationmessageFields
+	// creationmessageDescExchangeRequestID is the schema descriptor for exchange_request_id field.
+	creationmessageDescExchangeRequestID := creationmessageFields[1].Descriptor()
+	// creationmessage.ExchangeRequestIDValidator is a validator for the "exchange_request_id" field. It is called by the builders before save.
+	creationmessage.ExchangeRequestIDValidator = creationmessageDescExchangeRequestID.Validators[0].(func(string) error)
 	// creationmessageDescRole is the schema descriptor for role field.
-	creationmessageDescRole := creationmessageFields[1].Descriptor()
+	creationmessageDescRole := creationmessageFields[2].Descriptor()
 	// creationmessage.RoleValidator is a validator for the "role" field. It is called by the builders before save.
 	creationmessage.RoleValidator = func() func(string) error {
 		validators := creationmessageDescRole.Validators
@@ -1311,11 +1315,11 @@ func init() {
 		}
 	}()
 	// creationmessageDescModel is the schema descriptor for model field.
-	creationmessageDescModel := creationmessageFields[3].Descriptor()
+	creationmessageDescModel := creationmessageFields[4].Descriptor()
 	// creationmessage.ModelValidator is a validator for the "model" field. It is called by the builders before save.
 	creationmessage.ModelValidator = creationmessageDescModel.Validators[0].(func(string) error)
 	// creationmessageDescCreatedAt is the schema descriptor for created_at field.
-	creationmessageDescCreatedAt := creationmessageFields[6].Descriptor()
+	creationmessageDescCreatedAt := creationmessageFields[7].Descriptor()
 	// creationmessage.DefaultCreatedAt holds the default value on creation for the created_at field.
 	creationmessage.DefaultCreatedAt = creationmessageDescCreatedAt.Default.(func() time.Time)
 	creationsessionMixin := schema.CreationSession{}.Mixin()

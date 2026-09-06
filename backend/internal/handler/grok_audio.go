@@ -123,7 +123,7 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	defer release()
 	defer func() { _ = upstream.Close() }()
 
-	conn, err := coderws.Accept(c.Writer, c.Request, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
+	conn, err := acceptVoiceRealtime(c)
 	if err != nil {
 		return
 	}
@@ -132,15 +132,17 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	started := time.Now()
 	audioObserved, proxyErr := h.gatewayService.ProxyGrokRealtimeConn(c.Request.Context(), c, conn, upstream)
 	elapsed := time.Since(started)
+	// Audio already consumed must be billed even when the client sends an invalid
+	// event or terminates with an abnormal close code.
+	if result := grokRealtimeBillingResult(model, elapsed, audioObserved); result != nil {
+		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, "realtime", nil, result)
+	}
 	if proxyErr != nil {
 		reqLog.Info("grok_realtime.proxy_failed", zap.Error(proxyErr))
 		if !isExpectedGrokRealtimeClose(proxyErr) {
 			_ = conn.Close(coderws.StatusInternalError, "upstream realtime websocket failed")
 			return
 		}
-	}
-	if result := grokRealtimeBillingResult(model, elapsed, audioObserved); result != nil {
-		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, "realtime", nil, result)
 	}
 }
 

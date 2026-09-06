@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/google/uuid"
@@ -21,6 +22,8 @@ const (
 
 	defaultImageTaskTTL              = 24 * time.Hour
 	defaultImageTaskExecutionTimeout = 30 * time.Minute
+	defaultImageTaskStorageTimeout   = 10 * time.Minute
+	localImageTaskTTL                = time.Hour
 )
 
 var (
@@ -32,33 +35,37 @@ var (
 // ImageTaskRecord is the private Redis representation of an asynchronous image
 // request. Ownership fields are intentionally omitted from the public view.
 type ImageTaskRecord struct {
-	StorageObject *ImageStorageReference `json:"storage_object,omitempty"`
-	ID            string                 `json:"id"`
-	UserID        int64                  `json:"user_id"`
-	APIKeyID      int64                  `json:"api_key_id"`
-	Status        string                 `json:"status"`
-	HTTPStatus    int                    `json:"http_status,omitempty"`
-	Result        json.RawMessage        `json:"result,omitempty"`
-	Error         json.RawMessage        `json:"error,omitempty"`
-	CreatedAt     int64                  `json:"created_at"`
-	CompletedAt   *int64                 `json:"completed_at,omitempty"`
-	ExpiresAt     int64                  `json:"expires_at"`
+	BillingRequestID     string                 `json:"billing_request_id,omitempty"`
+	LocalOnly            bool                   `json:"local_only,omitempty"`
+	ProcessingDeadlineAt int64                  `json:"processing_deadline_at,omitempty"`
+	StorageObject        *ImageStorageReference `json:"storage_object,omitempty"`
+	ID                   string                 `json:"id"`
+	UserID               int64                  `json:"user_id"`
+	APIKeyID             int64                  `json:"api_key_id"`
+	Status               string                 `json:"status"`
+	HTTPStatus           int                    `json:"http_status,omitempty"`
+	Result               json.RawMessage        `json:"result,omitempty"`
+	Error                json.RawMessage        `json:"error,omitempty"`
+	CreatedAt            int64                  `json:"created_at"`
+	CompletedAt          *int64                 `json:"completed_at,omitempty"`
+	ExpiresAt            int64                  `json:"expires_at"`
 }
 
 // ImageTask is the API-safe task representation returned to callers.
 type ImageTask struct {
-	StorageObject *ImageStorageReference `json:"-"`
-	ID            string                 `json:"id"`
-	TaskID        string                 `json:"task_id"`
-	Object        string                 `json:"object"`
-	Status        string                 `json:"status"`
-	HTTPStatus    int                    `json:"http_status,omitempty"`
-	ImageURL      string                 `json:"image_url,omitempty"`
-	Result        json.RawMessage        `json:"result,omitempty"`
-	Error         json.RawMessage        `json:"error,omitempty"`
-	CreatedAt     int64                  `json:"created_at"`
-	CompletedAt   *int64                 `json:"completed_at,omitempty"`
-	ExpiresAt     int64                  `json:"expires_at"`
+	BillingRequestID string                 `json:"-"`
+	StorageObject    *ImageStorageReference `json:"-"`
+	ID               string                 `json:"id"`
+	TaskID           string                 `json:"task_id"`
+	Object           string                 `json:"object"`
+	Status           string                 `json:"status"`
+	HTTPStatus       int                    `json:"http_status,omitempty"`
+	ImageURL         string                 `json:"image_url,omitempty"`
+	Result           json.RawMessage        `json:"result,omitempty"`
+	Error            json.RawMessage        `json:"error,omitempty"`
+	CreatedAt        int64                  `json:"created_at"`
+	CompletedAt      *int64                 `json:"completed_at,omitempty"`
+	ExpiresAt        int64                  `json:"expires_at"`
 }
 
 type ImageTaskOwner struct {
@@ -73,6 +80,12 @@ type ImageTaskStore interface {
 	Get(ctx context.Context, id string) (*ImageTaskRecord, error)
 }
 
+// ImageTaskAtomicStore makes terminal updates first-writer-wins across workers
+// and polling requests. Production stores must implement this capability.
+type ImageTaskAtomicStore interface {
+	FinishIfProcessing(ctx context.Context, task *ImageTaskRecord, ttl time.Duration) (*ImageTaskRecord, error)
+}
+
 // ImageStorageResolver reports the currently effective object-storage binding.
 // It exists so the async image feature can be switched on and off from the admin
 // UI without a restart: the wiring below is fixed at startup, but the answer to
@@ -80,12 +93,22 @@ type ImageTaskStore interface {
 type ImageStorageResolver func() (uploader *ImageResultUploader, enabled bool)
 
 type ImageTaskService struct {
+	localOnly        bool
 	store            ImageTaskStore
 	uploader         *ImageResultUploader
 	enabled          bool
 	resolve          ImageStorageResolver
 	ttl              time.Duration
 	executionTimeout time.Duration
+}
+
+// ForLocalResults shares only the short-lived task store. It deliberately does
+// not retain the uploader/resolver: a local request must never publish bytes.
+func (s *ImageTaskService) ForLocalResults() *ImageTaskService {
+	if s == nil {
+		return nil
+	}
+	return &ImageTaskService{store: s.store, enabled: true, localOnly: true, ttl: localImageTaskTTL, executionTimeout: s.ExecutionTimeout()}
 }
 
 func NewImageTaskService(store ImageTaskStore) *ImageTaskService {
@@ -154,18 +177,37 @@ func (s *ImageTaskService) ExecutionTimeout() time.Duration {
 	return s.executionTimeout
 }
 
+// ProcessingDeadline includes the bounded object-storage phase after generation.
+// History can use this deadline when the ephemeral task record has expired.
+func (s *ImageTaskService) ProcessingDeadline(createdAt time.Time) time.Time {
+	return createdAt.Add(s.ExecutionTimeout() + defaultImageTaskStorageTimeout).Truncate(time.Second).Add(time.Second)
+}
+
+func (s *ImageTaskService) processingDeadline(task *ImageTaskRecord) time.Time {
+	if task.ProcessingDeadlineAt > 0 {
+		return time.Unix(task.ProcessingDeadlineAt, 0)
+	}
+	return s.ProcessingDeadline(time.Unix(task.CreatedAt, 0))
+}
+
 func (s *ImageTaskService) Create(ctx context.Context, owner ImageTaskOwner) (*ImageTask, error) {
 	if s == nil || s.store == nil {
 		return nil, ErrImageTaskUnavailable
 	}
 	now := time.Now().UTC()
 	task := &ImageTaskRecord{
-		ID:        "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-		UserID:    owner.UserID,
-		APIKeyID:  owner.APIKeyID,
-		Status:    ImageTaskStatusProcessing,
-		CreatedAt: now.Unix(),
-		ExpiresAt: now.Add(s.ttl).Unix(),
+		LocalOnly:            s.localOnly,
+		ProcessingDeadlineAt: s.ProcessingDeadline(now).Unix(),
+		ID:                   "imgtask_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		UserID:               owner.UserID,
+		APIKeyID:             owner.APIKeyID,
+		Status:               ImageTaskStatusProcessing,
+		CreatedAt:            now.Unix(),
+		ExpiresAt:            now.Add(s.ttl).Unix(),
+	}
+	// Only capture trusted middleware context, never a client-supplied header.
+	if requestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(requestID) != "" {
+		task.BillingRequestID = "client:" + strings.TrimSpace(requestID)
 	}
 	if err := s.store.Save(ctx, task, s.ttl); err != nil {
 		return nil, ErrImageTaskUnavailable.WithCause(err)
@@ -182,6 +224,10 @@ func (s *ImageTaskService) Get(ctx context.Context, owner ImageTaskOwner, id str
 		// Do not reveal whether a random task ID exists for another caller.
 		return nil, ErrImageTaskNotFound
 	}
+	task, err = s.reconcileExpired(ctx, task)
+	if err != nil {
+		return nil, err
+	}
 	return imageTaskToPublic(task), nil
 }
 
@@ -195,7 +241,21 @@ func (s *ImageTaskService) GetByIDForUser(ctx context.Context, userID int64, id 
 	if task.UserID != userID {
 		return nil, ErrImageTaskNotFound
 	}
+	task, err = s.reconcileExpired(ctx, task)
+	if err != nil {
+		return nil, err
+	}
 	return imageTaskToPublic(task), nil
+}
+
+func (s *ImageTaskService) reconcileExpired(ctx context.Context, task *ImageTaskRecord) (*ImageTaskRecord, error) {
+	if task.Status != ImageTaskStatusProcessing || time.Now().Before(s.processingDeadline(task)) {
+		return task, nil
+	}
+	if err := s.Fail(ctx, task.ID, http.StatusGatewayTimeout, imageTaskErrorJSON("timeout_error", "image generation task timed out")); err != nil {
+		return nil, err
+	}
+	return s.load(ctx, task.ID)
 }
 
 func (s *ImageTaskService) load(ctx context.Context, id string) (*ImageTaskRecord, error) {
@@ -209,16 +269,50 @@ func (s *ImageTaskService) load(ctx context.Context, id string) (*ImageTaskRecor
 		}
 		return nil, ErrImageTaskUnavailable.WithCause(err)
 	}
+	if s.localOnly != task.LocalOnly {
+		return nil, ErrImageTaskNotFound
+	}
 	return task, nil
 }
 
 func (s *ImageTaskService) Complete(ctx context.Context, id string, statusCode int, result json.RawMessage, observers ...ImageTaskCompletionObserver) error {
+	if s == nil || s.store == nil {
+		return ErrImageTaskUnavailable
+	}
 	if !json.Valid(result) {
 		return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "upstream returned a non-JSON image response"), observers...)
 	}
+	deadline := time.Now().Add(defaultImageTaskStorageTimeout)
+	if task, err := s.store.Get(ctx, id); err == nil {
+		if s.localOnly != task.LocalOnly {
+			return ErrImageTaskNotFound
+		}
+		if task.Status != ImageTaskStatusProcessing {
+			return s.finish(ctx, id, task.Status, task.HTTPStatus, task.Result, task.Error, task.StorageObject, observers)
+		}
+		if taskDeadline := s.processingDeadline(task); taskDeadline.Before(deadline) {
+			deadline = taskDeadline
+		}
+	}
+	if !time.Now().Before(deadline) {
+		return s.Fail(ctx, id, http.StatusGatewayTimeout, imageTaskErrorJSON("timeout_error", "image generation task timed out"), observers...)
+	}
 	var reference *ImageStorageReference
-	if uploader, _ := s.current(); uploader != nil {
-		rewritten, stored, err := uploader.rewrite(ctx, id, result)
+	if s.localOnly {
+		resultCtx, cancel := context.WithDeadline(ctx, deadline)
+		defer cancel()
+		materialized, err := materializeLocalImageResult(resultCtx, result, nil)
+		if err != nil {
+			return s.Fail(ctx, id, http.StatusBadGateway, imageTaskErrorJSON("api_error", "failed to prepare generated image for local download"), observers...)
+		}
+		result = materialized
+	} else if uploader, _ := s.current(); uploader != nil {
+		storageCtx, cancel := context.WithDeadline(ctx, deadline)
+		defer cancel()
+		rewritten, stored, err := uploader.rewrite(storageCtx, id, result)
+		if storageCtx.Err() != nil {
+			return s.Fail(ctx, id, http.StatusGatewayTimeout, imageTaskErrorJSON("timeout_error", "image storage task timed out"), observers...)
+		}
 		if err != nil {
 			// 转存失败不回退存 base64，避免大 blob 撑爆 Redis：直接把任务标记为失败。
 			logger.L().Error("image_task.offload_failed", zap.String("task_id", id), zap.Error(err))
@@ -242,6 +336,9 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		return ErrImageTaskUnavailable
 	}
 	task, err := s.store.Get(ctx, id)
+	if err == nil && s.localOnly != task.LocalOnly {
+		return ErrImageTaskNotFound
+	}
 	var readErr error
 	if err != nil {
 		if errors.Is(err, ErrImageTaskNotFound) {
@@ -256,15 +353,29 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 		// not discard an uploaded object or prevent its durable terminal update.
 		task = &ImageTaskRecord{ID: id}
 	}
-	now := time.Now().UTC()
-	completedAt := now.Unix()
-	task.Status = status
-	task.HTTPStatus = statusCode
-	task.Result = result
-	task.StorageObject = reference
-	task.Error = taskErr
-	task.CompletedAt = &completedAt
-	task.ExpiresAt = now.Add(s.ttl).Unix()
+	if task.Status == ImageTaskStatusProcessing || readErr != nil {
+		now := time.Now().UTC()
+		completedAt := now.Unix()
+		task.Status = status
+		task.HTTPStatus = statusCode
+		task.Result = result
+		task.StorageObject = reference
+		task.Error = taskErr
+		task.CompletedAt = &completedAt
+		task.ExpiresAt = now.Add(s.ttl).Unix()
+	}
+	var writeErr error
+	if readErr == nil {
+		if atomicStore, ok := s.store.(ImageTaskAtomicStore); ok {
+			var current *ImageTaskRecord
+			current, writeErr = atomicStore.FinishIfProcessing(ctx, task, s.ttl)
+			if writeErr == nil {
+				task = current
+			}
+		} else {
+			writeErr = s.store.Save(ctx, task, s.ttl)
+		}
+	}
 	var persistErr error
 	for _, observer := range observers {
 		if observer != nil {
@@ -274,8 +385,8 @@ func (s *ImageTaskService) finish(ctx context.Context, id, status string, status
 	if readErr != nil {
 		return errors.Join(readErr, persistErr)
 	}
-	if err := s.store.Save(ctx, task, s.ttl); err != nil {
-		return errors.Join(persistErr, ErrImageTaskUnavailable.WithCause(err))
+	if writeErr != nil {
+		return errors.Join(persistErr, ErrImageTaskUnavailable.WithCause(writeErr))
 	}
 	return persistErr
 }
@@ -297,18 +408,19 @@ func imageTaskToPublic(task *ImageTaskRecord) *ImageTask {
 		return nil
 	}
 	return &ImageTask{
-		StorageObject: task.StorageObject,
-		ID:            task.ID,
-		TaskID:        task.ID,
-		Object:        "image.generation.task",
-		Status:        task.Status,
-		HTTPStatus:    task.HTTPStatus,
-		ImageURL:      firstImageTaskURL(task.Result),
-		Result:        task.Result,
-		Error:         task.Error,
-		CreatedAt:     task.CreatedAt,
-		CompletedAt:   task.CompletedAt,
-		ExpiresAt:     task.ExpiresAt,
+		BillingRequestID: task.BillingRequestID,
+		StorageObject:    task.StorageObject,
+		ID:               task.ID,
+		TaskID:           task.ID,
+		Object:           "image.generation.task",
+		Status:           task.Status,
+		HTTPStatus:       task.HTTPStatus,
+		ImageURL:         firstImageTaskURL(task.Result),
+		Result:           task.Result,
+		Error:            task.Error,
+		CreatedAt:        task.CreatedAt,
+		CompletedAt:      task.CompletedAt,
+		ExpiresAt:        task.ExpiresAt,
 	}
 }
 

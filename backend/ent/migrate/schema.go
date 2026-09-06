@@ -974,6 +974,7 @@ var (
 	// CreationMessagesColumns holds the columns for the "creation_messages" table.
 	CreationMessagesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "exchange_request_id", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "role", Type: field.TypeString, Size: 32},
 		{Name: "content", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "model", Type: field.TypeString, Nullable: true, Size: 100},
@@ -990,7 +991,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "creation_messages_creation_sessions_messages",
-				Columns:    []*schema.Column{CreationMessagesColumns[7]},
+				Columns:    []*schema.Column{CreationMessagesColumns[8]},
 				RefColumns: []*schema.Column{CreationSessionsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -999,12 +1000,17 @@ var (
 			{
 				Name:    "creationmessage_session_id",
 				Unique:  false,
-				Columns: []*schema.Column{CreationMessagesColumns[7]},
+				Columns: []*schema.Column{CreationMessagesColumns[8]},
 			},
 			{
 				Name:    "creationmessage_session_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{CreationMessagesColumns[7], CreationMessagesColumns[6]},
+				Columns: []*schema.Column{CreationMessagesColumns[8], CreationMessagesColumns[7]},
+			},
+			{
+				Name:    "creationmessage_session_id_exchange_request_id_role",
+				Unique:  true,
+				Columns: []*schema.Column{CreationMessagesColumns[8], CreationMessagesColumns[1], CreationMessagesColumns[2]},
 			},
 		},
 	}

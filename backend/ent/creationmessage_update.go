@@ -44,6 +44,26 @@ func (_u *CreationMessageUpdate) SetNillableSessionID(v *int64) *CreationMessage
 	return _u
 }
 
+// SetExchangeRequestID sets the "exchange_request_id" field.
+func (_u *CreationMessageUpdate) SetExchangeRequestID(v string) *CreationMessageUpdate {
+	_u.mutation.SetExchangeRequestID(v)
+	return _u
+}
+
+// SetNillableExchangeRequestID sets the "exchange_request_id" field if the given value is not nil.
+func (_u *CreationMessageUpdate) SetNillableExchangeRequestID(v *string) *CreationMessageUpdate {
+	if v != nil {
+		_u.SetExchangeRequestID(*v)
+	}
+	return _u
+}
+
+// ClearExchangeRequestID clears the value of the "exchange_request_id" field.
+func (_u *CreationMessageUpdate) ClearExchangeRequestID() *CreationMessageUpdate {
+	_u.mutation.ClearExchangeRequestID()
+	return _u
+}
+
 // SetRole sets the "role" field.
 func (_u *CreationMessageUpdate) SetRole(v string) *CreationMessageUpdate {
 	_u.mutation.SetRole(v)
@@ -189,6 +209,11 @@ func (_u *CreationMessageUpdate) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *CreationMessageUpdate) check() error {
+	if v, ok := _u.mutation.ExchangeRequestID(); ok {
+		if err := creationmessage.ExchangeRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "exchange_request_id", err: fmt.Errorf(`ent: validator failed for field "CreationMessage.exchange_request_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Role(); ok {
 		if err := creationmessage.RoleValidator(v); err != nil {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "CreationMessage.role": %w`, err)}
@@ -216,6 +241,12 @@ func (_u *CreationMessageUpdate) sqlSave(ctx context.Context) (_node int, err er
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.ExchangeRequestID(); ok {
+		_spec.SetField(creationmessage.FieldExchangeRequestID, field.TypeString, value)
+	}
+	if _u.mutation.ExchangeRequestIDCleared() {
+		_spec.ClearField(creationmessage.FieldExchangeRequestID, field.TypeString)
 	}
 	if value, ok := _u.mutation.Role(); ok {
 		_spec.SetField(creationmessage.FieldRole, field.TypeString, value)
@@ -312,6 +343,26 @@ func (_u *CreationMessageUpdateOne) SetNillableSessionID(v *int64) *CreationMess
 	if v != nil {
 		_u.SetSessionID(*v)
 	}
+	return _u
+}
+
+// SetExchangeRequestID sets the "exchange_request_id" field.
+func (_u *CreationMessageUpdateOne) SetExchangeRequestID(v string) *CreationMessageUpdateOne {
+	_u.mutation.SetExchangeRequestID(v)
+	return _u
+}
+
+// SetNillableExchangeRequestID sets the "exchange_request_id" field if the given value is not nil.
+func (_u *CreationMessageUpdateOne) SetNillableExchangeRequestID(v *string) *CreationMessageUpdateOne {
+	if v != nil {
+		_u.SetExchangeRequestID(*v)
+	}
+	return _u
+}
+
+// ClearExchangeRequestID clears the value of the "exchange_request_id" field.
+func (_u *CreationMessageUpdateOne) ClearExchangeRequestID() *CreationMessageUpdateOne {
+	_u.mutation.ClearExchangeRequestID()
 	return _u
 }
 
@@ -473,6 +524,11 @@ func (_u *CreationMessageUpdateOne) ExecX(ctx context.Context) {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *CreationMessageUpdateOne) check() error {
+	if v, ok := _u.mutation.ExchangeRequestID(); ok {
+		if err := creationmessage.ExchangeRequestIDValidator(v); err != nil {
+			return &ValidationError{Name: "exchange_request_id", err: fmt.Errorf(`ent: validator failed for field "CreationMessage.exchange_request_id": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Role(); ok {
 		if err := creationmessage.RoleValidator(v); err != nil {
 			return &ValidationError{Name: "role", err: fmt.Errorf(`ent: validator failed for field "CreationMessage.role": %w`, err)}
@@ -517,6 +573,12 @@ func (_u *CreationMessageUpdateOne) sqlSave(ctx context.Context) (_node *Creatio
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.ExchangeRequestID(); ok {
+		_spec.SetField(creationmessage.FieldExchangeRequestID, field.TypeString, value)
+	}
+	if _u.mutation.ExchangeRequestIDCleared() {
+		_spec.ClearField(creationmessage.FieldExchangeRequestID, field.TypeString)
 	}
 	if value, ok := _u.mutation.Role(); ok {
 		_spec.SetField(creationmessage.FieldRole, field.TypeString, value)

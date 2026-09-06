@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,8 +79,9 @@ func (s *handlerCreationSessionRepo) Delete(ctx context.Context, userID, id int6
 }
 
 type handlerCreationMessageRepo struct {
-	items []service.CreationMessage
-	next  int64
+	items         []service.CreationMessage
+	next          int64
+	exchangeInput *service.CreateCreationExchangeInput
 }
 
 func (s *handlerCreationMessageRepo) Create(ctx context.Context, msg *service.CreationMessage) error {
@@ -87,6 +90,15 @@ func (s *handlerCreationMessageRepo) Create(ctx context.Context, msg *service.Cr
 	copy := *msg
 	s.items = append(s.items, copy)
 	return nil
+}
+func (s *handlerCreationMessageRepo) CreateExchange(_ context.Context, input service.CreateCreationExchangeInput) (*service.CreationExchange, error) {
+	s.exchangeInput = &input
+	userContent, _ := json.Marshal(input.UserContent)
+	assistantContent, _ := json.Marshal(input.AssistantContent)
+	return &service.CreationExchange{
+		User:      service.CreationMessage{ID: 101, SessionID: input.SessionID, Role: "user", Content: userContent},
+		Assistant: service.CreationMessage{ID: 102, SessionID: input.SessionID, Role: "assistant", Content: assistantContent, Model: &input.Model, InputTokens: input.InputTokens, OutputTokens: input.OutputTokens},
+	}, nil
 }
 func (s *handlerCreationMessageRepo) ListBySession(ctx context.Context, sessionID int64) ([]service.CreationMessage, error) {
 	out := make([]service.CreationMessage, 0)
@@ -255,6 +267,79 @@ func TestCreationHandler_CreateAndGetSession(t *testing.T) {
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCreationHandlerExchangePersistsDisplayTokens(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	messages := &handlerCreationMessageRepo{}
+	svc := service.NewCreationService(&handlerCreationSessionRepo{items: map[int64]*service.CreationSession{1: {ID: 1, UserID: 7}}}, messages, nil, nil, nil, nil)
+	h := NewCreationHandler(svc, nil, nil, nil, nil, nil, nil)
+	r := gin.New()
+	r.Use(func(c *gin.Context) { c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 7}) })
+	r.POST("/sessions/:id/exchanges", h.CreateSessionExchange)
+	request := httptest.NewRequest(http.MethodPost, "/sessions/1/exchanges", strings.NewReader(`{"request_id":"request-1","user_content":"question","assistant_content":"answer","model":"gpt-4o","input_tokens":123,"output_tokens":45}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	r.ServeHTTP(recorder, request)
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+	require.NotNil(t, messages.exchangeInput)
+	require.Equal(t, 7, int(messages.exchangeInput.UserID))
+	require.Equal(t, 123, *messages.exchangeInput.InputTokens)
+	require.Equal(t, 45, *messages.exchangeInput.OutputTokens)
+	var response struct {
+		Data service.CreationExchange `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	require.Equal(t, "user", response.Data.User.Role)
+	require.Equal(t, "assistant", response.Data.Assistant.Role)
+	require.Equal(t, 123, *response.Data.Assistant.InputTokens)
+	require.Equal(t, 45, *response.Data.Assistant.OutputTokens)
+}
+
+func TestCreationHandlerReconcilesOrphanImageJobsWithoutExpiringLiveTasks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, endpoint := range []string{"/images", "/tasks/imgtask_orphan"} {
+		for _, expired := range []bool{false, true} {
+			for _, cached := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/expired=%t/cached=%t", endpoint, expired, cached), func(t *testing.T) {
+					createdAt := time.Now()
+					if expired {
+						createdAt = createdAt.Add(-time.Hour)
+					}
+					taskID := "imgtask_orphan"
+					jobs := &handlerCreationImageJobRepo{}
+					job := &service.CreationImageJob{UserID: 7, GroupID: 3, ProviderTaskID: &taskID, Status: service.CreationImageJobStatusProcessing, CreatedAt: createdAt}
+					require.NoError(t, jobs.Create(context.Background(), job))
+					store := &asyncImageMemoryStore{tasks: map[string]*service.ImageTaskRecord{}}
+					if cached {
+						store.tasks[taskID] = &service.ImageTaskRecord{ID: taskID, UserID: 7, APIKeyID: 9, Status: service.ImageTaskStatusProcessing, CreatedAt: createdAt.Unix(), ExpiresAt: time.Now().Add(23 * time.Hour).Unix()}
+					}
+					tasks := service.NewImageTaskServiceWithOptions(store, 24*time.Hour, 30*time.Minute)
+					h := NewCreationHandler(service.NewCreationService(nil, nil, jobs, nil, nil, nil), nil, nil, nil, nil, &AsyncImageHandler{tasks: tasks}, nil)
+					r := gin.New()
+					r.Use(func(c *gin.Context) {
+						c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 7})
+						groupID := int64(3)
+						c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{ID: 9, UserID: 7, GroupID: &groupID})
+						c.Set(creationGatewayPreparedKey, true)
+					})
+					r.GET("/images", h.ListImages)
+					r.GET("/tasks/:task_id", h.ImageTask)
+					recorder := httptest.NewRecorder()
+					r.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, endpoint, nil))
+					require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+					want := service.CreationImageJobStatusProcessing
+					if expired {
+						want = service.CreationImageJobStatusFailed
+					}
+					persisted, err := jobs.GetForUser(context.Background(), 7, job.ID)
+					require.NoError(t, err)
+					require.Equal(t, want, persisted.Status)
+					require.Contains(t, recorder.Body.String(), `"status":"`+want+`"`)
+				})
+			}
+		}
+	}
 }
 
 func TestCreationHandler_ImagesAsyncPersistsJobAndImageTaskForwardsTaskID(t *testing.T) {

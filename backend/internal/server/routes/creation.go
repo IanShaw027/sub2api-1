@@ -22,6 +22,7 @@ func RegisterCreationRoutes(
 	creation.Use(panelRateLimiter.Global())
 	{
 		gateway := creation.Group("")
+		gateway.Use(middleware.ClientRequestID())
 		gateway.Use(creationHandler.GatewayContext)
 		gateway.Use(compositeTargetPlatformMiddleware(compositeResolver))
 		gateway.POST("/chat/completions", creationHandler.ChatCompletions)
@@ -30,6 +31,17 @@ func RegisterCreationRoutes(
 		gateway.POST("/images/generations/async", creationHandler.ImagesAsync)
 		gateway.GET("/images/tasks/:task_id", creationHandler.ImageTask)
 		gateway.GET("/models", creationHandler.Models)
+		gateway.POST("/audio/speech", creationHandler.Speech)
+		gateway.POST("/audio/transcriptions", creationHandler.Transcribe)
+		gateway.POST("/audio/realtime-ticket", creationHandler.RealtimeTicket)
+		gateway.POST("/local/images/generations/async", creationHandler.LocalImagesAsync)
+		gateway.POST("/local/images/edits/async", creationHandler.LocalImagesAsync)
+		gateway.GET("/local/images/tasks/:task_id", creationHandler.LocalImageTask)
+		gateway.POST("/local/videos/generations", creationHandler.LocalVideoGeneration)
+		gateway.POST("/local/videos/edits", creationHandler.LocalVideoEdit)
+		gateway.POST("/local/videos/extensions", creationHandler.LocalVideoExtension)
+		gateway.GET("/local/videos/:request_id", creationHandler.LocalVideoStatus)
+		gateway.GET("/local/videos/:request_id/content", creationHandler.LocalVideoContent)
 
 		creation.GET("/sessions", creationHandler.ListSessions)
 		creation.POST("/sessions", creationHandler.CreateSession)
@@ -38,8 +50,16 @@ func RegisterCreationRoutes(
 		creation.DELETE("/sessions/:id", creationHandler.DeleteSession)
 		creation.GET("/sessions/:id/messages", creationHandler.ListSessionMessages)
 		creation.POST("/sessions/:id/messages", creationHandler.CreateSessionMessage)
+		creation.POST("/sessions/:id/exchanges", creationHandler.CreateSessionExchange)
 
 		creation.GET("/images", creationHandler.ListImages)
 		creation.GET("/images/:id", creationHandler.GetImage)
 	}
+
+	voice := v1.Group("/creation/audio")
+	voice.Use(creationHandler.RealtimeVoiceAuth)
+	voice.Use(middleware.BackendModeUserGuard(settingService))
+	voice.Use(middleware.CreationFeatureGuard(settingService))
+	voice.Use(panelRateLimiter.Global())
+	voice.GET("/realtime", creationHandler.RealtimeVoice)
 }
