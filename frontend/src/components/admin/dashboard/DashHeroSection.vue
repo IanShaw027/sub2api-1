@@ -1,10 +1,5 @@
 <template>
   <section class="glass-card dash-hero">
-    <span class="dash-hero-deco" aria-hidden="true">
-      <span class="dash-hero-dots"></span>
-      <span class="dash-hero-orb dash-hero-orb-accent"></span>
-      <span class="dash-hero-orb dash-hero-orb-success"></span>
-    </span>
     <span class="dash-hero-ring" aria-hidden="true"></span>
 
     <div class="dash-hero-copy">
@@ -25,13 +20,13 @@
     <!-- Mobile (<=767px) hero variant: big today-requests figure + 48px bars -->
     <div class="dash-hero-mobile">
       <div class="dash-hero-mobile-top">
-        <span class="dash-mini-label">{{ t('admin.dashboard.todayRequests') }}</span>
+        <span class="dash-mini-label">{{ t('admin.dashboard.periodRequests') }}</span>
         <span class="dash-hero-chip" :class="`dash-hero-chip-${serviceTone}`">
           <span class="dash-pulse" :class="`dash-pulse-${serviceTone}`"></span>{{ serviceStatusLabel }}
         </span>
       </div>
       <div class="dash-hero-mobile-value">
-        <span class="dash-hero-figure">{{ formatNumber(stats.today_requests) }}</span>
+        <span class="dash-hero-figure">{{ formatNumber(stats.total_requests) }}</span>
         <span v-if="requestsDelta" class="dash-hero-figure-delta" :class="`dash-delta-${requestsDelta.tone}`">
           {{ requestsDelta.text }}
         </span>
@@ -40,6 +35,7 @@
         <span
           v-for="bar in trendBars"
           :key="`m-${bar.key}`"
+          :title="bar.title"
           :style="{ height: bar.height, background: bar.fill }"
         ></span>
       </div>
@@ -85,10 +81,7 @@
         <div class="dash-hero-mini glass-inset">
           <span class="dash-mini-label">{{ t('admin.dashboard.realtimeRpm') }}</span>
           <span class="dash-mini-value">{{ formatNumber(stats.rpm) }}</span>
-          <span v-if="requestsDelta" class="dash-mini-sub" :class="`dash-delta-${requestsDelta.tone}`">
-            {{ requestsDelta.text }} {{ t('admin.dashboard.vsPrevPeriod') }}
-          </span>
-          <span v-else class="dash-mini-sub">TPM {{ formatTokens(stats.tpm) }}</span>
+          <span class="dash-mini-sub">{{ t('admin.dashboard.currentSnapshot') }}</span>
         </div>
         <div class="dash-hero-mini glass-inset">
           <span class="dash-mini-label">{{ t('admin.dashboard.realtimeTpm') }}</span>
@@ -284,13 +277,12 @@ const router = useRouter()
 }
 
 .dash-hero-tools {
-  position: absolute;
-  top: 0;
-  right: 0;
+  position: static;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .dash-daterange :deep(.date-picker-trigger) {

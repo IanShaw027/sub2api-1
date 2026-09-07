@@ -1,12 +1,15 @@
 <template>
   <HelpTooltip class="dash-breakdown-trigger" width-class="w-56">
     <template #trigger>
-      <DashSparkline :path="path" />
+      <span :aria-label="t('admin.dashboard.expandDetails')" :title="t('admin.dashboard.expandDetails')" tabindex="0">
+        <DashSparkline v-if="path?.line" :path="path" />
+        <Icon v-else name="infoCircle" size="sm" />
+      </span>
     </template>
     <div class="dash-breakdown">
       <div v-for="item in items" :key="item.key" class="dash-breakdown-row">
         <span>{{ item.label }}</span>
-        <span class="dash-breakdown-value" :class="item.textClass">${{ format(item.value) }}</span>
+        <span class="dash-breakdown-value" :class="item.textClass">{{ unit }}{{ format(item.value) }}</span>
       </div>
     </div>
   </HelpTooltip>
@@ -18,14 +21,18 @@
  * so the card keeps the prototype's shape while retaining the breakdown data.
  */
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
+import Icon from '@/components/icons/Icon.vue'
+import { useI18n } from 'vue-i18n'
 import DashSparkline from './DashSparkline.vue'
 import type { BreakdownItem, SparkPath } from './types'
 
-defineProps<{
-  path: SparkPath
+withDefaults(defineProps<{
+  path?: SparkPath
   items: BreakdownItem[]
   format: (value: number) => string
-}>()
+  unit?: string
+}>(), { unit: '$' })
+const { t } = useI18n()
 </script>
 
 <style scoped>

@@ -10,3 +10,15 @@ export interface BreakdownItem {
   value: number
   textClass: string
 }
+export interface DistributionRow {
+  key: string
+  name: string
+  cost: string
+  pct: number
+  requests: number
+  tokens: number
+  userId?: number
+  model?: string
+  standardCost?: number
+  accountCost?: number
+}

@@ -21,10 +21,12 @@
           </button>
         </div>
       </header>
-      <div v-if="trendBars.length" ref="barsRef" class="dash-bars">
+      <div v-if="trendBars.length" class="dash-bars-scroll">
+        <div ref="barsRef" class="dash-bars">
         <div v-for="(bar, index) in trendBars" :key="bar.key" class="dash-bar-col">
           <div class="dash-bar" :title="bar.title" :style="{ height: bar.height, background: bar.fill }"></div>
           <span class="dash-bar-label" :class="{ 'is-skipped': !visibleTicks.has(index) }">{{ bar.label }}</span>
+        </div>
         </div>
       </div>
       <div v-else class="empty-state dash-empty">
@@ -62,33 +64,8 @@
       </header>
 
       <div v-if="distRowsLoading" class="dash-panel-loading"><LoadingSpinner size="md" /></div>
-      <div v-else-if="distRows.length" class="dash-dist">
-        <component
-          :is="row.userId ? 'button' : 'div'"
-          v-for="(row, index) in distRows"
-          :key="row.key"
-          :type="row.userId ? 'button' : undefined"
-          class="dash-dist-row"
-          :class="{ 'dash-dist-row-action': !!row.userId }"
-          @click="row.userId ? $emit('userRowClick', row.userId) : undefined"
-        >
-          <span class="dash-dist-tile" :style="{ background: row.tile }">
-            <PlatformIcon :platform="row.platform" size="xs" />
-          </span>
-          <span class="dash-dist-body">
-            <span class="dash-dist-line">
-              <span class="dash-dist-name">{{ row.name }}</span>
-              <span class="dash-dist-meta">${{ row.cost }} · {{ row.pct }}%</span>
-            </span>
-            <span class="dash-dist-track">
-              <span
-                class="dash-dist-fill"
-                :style="{ width: `${row.pct}%`, opacity: Math.max(0.24, 1 - index * 0.16) }"
-              ></span>
-            </span>
-          </span>
-        </component>
-      </div>
+      <DashboardDistribution v-else-if="distRows.length" :rows="distRows" :view="distView"
+        :start-date="startDate" :end-date="endDate" @user-row-click="$emit('userRowClick', $event)" />
       <div v-else class="empty-state dash-empty">
         <span class="empty-state-title">{{ t('admin.dashboard.noDataAvailable') }}</span>
       </div>
@@ -106,8 +83,8 @@ import { useI18n } from 'vue-i18n'
 import { computed, ref } from 'vue'
 import { useElementSize } from '@vueuse/core'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
-import PlatformIcon from '@/components/common/PlatformIcon.vue'
-import type { GroupPlatform } from '@/types'
+import DashboardDistribution from './DashboardDistribution.vue'
+import type { DistributionRow } from './types'
 
 interface TrendBar {
   key: string
@@ -117,22 +94,14 @@ interface TrendBar {
   fill: string
 }
 
-interface DistRow {
-  key: string
-  name: string
-  cost: string
-  pct: number
-  platform: GroupPlatform
-  tile: string
-  userId?: number
-}
-
 const props = defineProps<{
   trendBars: TrendBar[]
   trendSubtitle: string
   trendMetricOptions: { value: 'requests' | 'tokens' | 'cost'; label: string }[]
   distRowsLoading: boolean
-  distRows: DistRow[]
+  distRows: DistributionRow[]
+  startDate: string
+  endDate: string
 }>()
 
 const barsRef = ref<HTMLElement | null>(null)
@@ -179,6 +148,7 @@ const { t } = useI18n()
 
 .dash-panel-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -226,13 +196,20 @@ const { t } = useI18n()
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  height: 150px;
+  height: 280px;
   padding-top: 6px;
   margin-top: 2px;
+  min-width: 0;
+}
+
+.dash-bars-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .dash-bar-col {
-  flex: 1;
+  flex: 1 0 28px;
   min-width: 0;
   display: flex;
   flex-direction: column;

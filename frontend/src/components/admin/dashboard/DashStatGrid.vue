@@ -6,8 +6,8 @@
       :sub="`${t('admin.dashboard.activeUsers')} ${formatNumber(stats.active_users)}`"
       :delta="t('admin.dashboard.todayNew', { count: formatNumber(stats.today_new_users) })"
       :delta-tone="stats.today_new_users > 0 ? 'up' : 'neutral'"
+      :title="t('admin.dashboard.currentInventory')"
     >
-      <template #sparkline><DashSparkline :path="flatSpark" /></template>
     </StatCard>
 
     <StatCard
@@ -16,8 +16,8 @@
       :sub="`${t('admin.dashboard.activeApiKeys')} ${formatNumber(stats.active_api_keys)}`"
       :delta="t('admin.dashboard.activeRatio', { rate: activeKeyRatio })"
       delta-tone="neutral"
+      :title="t('admin.dashboard.currentInventory')"
     >
-      <template #sparkline><DashSparkline :path="flatSpark" /></template>
     </StatCard>
 
     <StatCard
@@ -26,41 +26,41 @@
       :sub="accountsSubLabel"
       :delta="accountsDelta.text"
       :delta-tone="accountsDelta.tone"
+      :title="t('admin.dashboard.currentInventory')"
     >
-      <template #sparkline><DashSparkline :path="flatSpark" /></template>
     </StatCard>
 
     <StatCard
-      :label="t('admin.dashboard.todayRequests')"
-      :value="formatNumber(stats.today_requests)"
-      :sub="`${t('admin.dashboard.totalRequests')} ${formatNumber(stats.total_requests)}`"
+      :label="t('admin.dashboard.periodRequests')"
+      :title="rangeLabel"
+      :value="formatNumber(stats.total_requests)"
+      :sub="`${t('admin.dashboard.todayRequests')} ${formatNumber(stats.today_requests)}`"
       :delta="requestsDelta?.text"
       :delta-tone="requestsDelta?.tone ?? 'neutral'"
     >
-      <template #sparkline><DashSparkline :path="requestsSpark" /></template>
+      <template v-if="requestsSpark.line" #sparkline><DashSparkline :path="requestsSpark" /></template>
     </StatCard>
 
     <StatCard
       :label="t('admin.dashboard.todayTokens')"
       :value="formatTokens(stats.today_tokens)"
       :sub="t('admin.dashboard.cacheHitRate', { rate: cacheHitRate })"
-      :delta="tokensDelta?.text"
-      :delta-tone="tokensDelta?.tone ?? 'neutral'"
     >
       <template #sparkline>
-        <DashBreakdownSpark :path="tokensSpark" :items="todayTokenBreakdownItems" :format="formatCost" />
+        <DashBreakdownSpark :items="todayTokenBreakdownItems" :format="formatTokens" unit="" />
       </template>
     </StatCard>
 
     <StatCard
-      :label="t('admin.dashboard.totalTokens')"
+      :label="t('admin.dashboard.periodTokens')"
+      :title="rangeLabel"
       :value="formatTokens(stats.total_tokens)"
       :sub="`${t('admin.dashboard.input')} ${formatTokens(stats.total_input_tokens)}`"
-      :delta="t('common.total')"
-      delta-tone="neutral"
+      :delta="tokensDelta?.text"
+      :delta-tone="tokensDelta?.tone ?? 'neutral'"
     >
       <template #sparkline>
-        <DashBreakdownSpark :path="tokensSpark" :items="totalTokenBreakdownItems" :format="formatCost" />
+        <DashBreakdownSpark :path="tokensSpark" :items="totalTokenBreakdownItems" :format="formatTokens" unit="" />
       </template>
     </StatCard>
 
@@ -68,20 +68,19 @@
       :label="t('admin.dashboard.todayCost')"
       :value="`$${formatCost(stats.today_actual_cost)}`"
       :sub="`${t('admin.dashboard.standard')} $${formatCost(stats.today_cost)}`"
-      :delta="costDelta?.text"
-      :delta-tone="costDelta?.tone ?? 'neutral'"
     >
       <template #sparkline>
-        <DashBreakdownSpark :path="costSpark" :items="todayFinancialBreakdownItems" :format="formatCost" />
+        <DashBreakdownSpark :items="todayFinancialBreakdownItems" :format="formatCost" />
       </template>
     </StatCard>
 
     <StatCard
-      :label="t('admin.dashboard.totalCost')"
+      :label="t('admin.dashboard.periodCost')"
+      :title="rangeLabel"
       :value="`$${formatCost(stats.total_actual_cost)}`"
       :sub="`${t('admin.dashboard.standard')} $${formatCost(stats.total_cost)}`"
-      :delta="t('common.total')"
-      delta-tone="neutral"
+      :delta="costDelta?.text"
+      :delta-tone="costDelta?.tone ?? 'neutral'"
     >
       <template #sparkline>
         <DashBreakdownSpark :path="costSpark" :items="totalFinancialBreakdownItems" :format="formatCost" />
@@ -107,7 +106,7 @@ type Delta = { text: string; tone: 'up' | 'down' } | null
 
 defineProps<{
   stats: DashboardStats
-  flatSpark: SparkPath
+  rangeLabel: string
   requestsSpark: SparkPath
   tokensSpark: SparkPath
   costSpark: SparkPath

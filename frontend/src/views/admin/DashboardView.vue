@@ -1,13 +1,11 @@
 <template>
   <AppLayout>
     <div class="dash-page">
-      <div v-if="snapshotError && !stats" class="notice notice-warning" role="alert">
+      <div v-if="snapshotError" class="notice notice-warning" role="alert">
         <span>{{ t('admin.dashboard.failedToLoad') }}</span>
         <button type="button" class="dash-panel-link" @click="loadDashboardStats">{{ t('common.refresh') }}</button>
       </div>
-      <div v-if="loading && !stats" class="dash-loading">
-        <LoadingSpinner />
-      </div>
+      <DashboardSkeleton v-if="loading && !stats" hero />
 
       <template v-else-if="stats">
         <DashHeroSection
@@ -19,7 +17,7 @@
           :service-tone="serviceTone"
           :service-status-label="serviceStatusLabel"
           :requests-delta="requestsDelta"
-          :trend-bars="trendBars"
+          :trend-bars="heroTrendBars"
           :trend-axis-labels="trendAxisLabels"
           :granularity-options="granularityOptions"
           :charts-loading="chartsLoading"
@@ -33,10 +31,10 @@
 
         <DashStatGrid
           :stats="stats"
-          :flat-spark="flatSpark"
           :requests-spark="requestsSpark"
           :tokens-spark="tokensSpark"
           :cost-spark="costSpark"
+          :range-label="`${startDate} - ${endDate}`"
           :active-key-ratio="activeKeyRatio"
           :cache-hit-rate="cacheHitRate"
           :accounts-sub-label="accountsSubLabel"
@@ -58,6 +56,8 @@
           v-model:dist-view="distView"
           :dist-rows-loading="distRowsLoading"
           :dist-rows="distRows"
+          :start-date="startDate"
+          :end-date="endDate"
           @user-row-click="goToUserUsageById"
         />
 
@@ -86,7 +86,7 @@ import type {
   UserUsageTrendPoint
 } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import DashboardSkeleton from '@/components/admin/dashboard/DashboardSkeleton.vue'
 import DashHeroSection from '@/components/admin/dashboard/DashHeroSection.vue'
 import DashStatGrid from '@/components/admin/dashboard/DashStatGrid.vue'
 import DashTrendDistRow from '@/components/admin/dashboard/DashTrendDistRow.vue'
@@ -102,7 +102,7 @@ import {
   formatNumber,
   formatTokens
 } from '@/components/admin/dashboard/useDashboardFormat'
-import { platformFromModel, platformTileBackground } from '@/utils/platformTile'
+import type { DistributionRow } from '@/components/admin/dashboard/types'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 import { useTheme } from '@/composables/useTheme'
 
@@ -137,6 +137,7 @@ const { granularity, startDate, endDate, granularityOptions, applyRangeGranulari
 // Stats/chart data loading
 const {
   stats,
+  comparisonStats,
   loading,
   chartsLoading,
   userTrendLoading,
@@ -147,12 +148,11 @@ const {
   modelStats,
   userTrend,
   rankingItems,
+  rankingTotalActualCost,
   platformHealthRaw,
   recentEvents,
   loadDashboardStats,
-  loadChartData,
-  loadPlatformHealth,
-  loadRecentEvents
+  loadChartData
 } = useDashboardStats({ startDate, endDate, granularity })
 
 const trendMetric = ref<'requests' | 'tokens' | 'cost'>('requests')
@@ -363,10 +363,10 @@ const heroTitleLead = computed(() =>
 )
 
 const heroDescription = computed(() => {
-  const summary = t('admin.dashboard.heroSummary', {
-    requests: formatNumber(stats.value?.today_requests),
-    tokens: formatTokens(stats.value?.today_tokens),
-    cost: formatCost(stats.value?.today_actual_cost),
+  const summary = t('admin.dashboard.heroRangeSummary', {
+    requests: formatNumber(stats.value?.total_requests),
+    tokens: formatTokens(stats.value?.total_tokens),
+    cost: formatCost(stats.value?.total_actual_cost),
     duration: formatDuration(asNumber(stats.value?.average_duration_ms))
   })
   const errors = asNumber(stats.value?.error_accounts)
@@ -405,18 +405,16 @@ const accountsDelta = computed<{ text: string; tone: 'up' | 'down' | 'neutral' }
 })
 
 // ------------------------------------------------------- trend derived data
-const sparkPoints = computed(() => trendData.value.slice(-12))
+const sparkPoints = computed(() => trendData.value)
 
-const flatSpark = computed(() => buildSpark(sparkPoints.value.map(() => 1)))
 const requestsSpark = computed(() => buildSpark(sparkPoints.value.map((point) => asNumber(point.requests))))
 const tokensSpark = computed(() => buildSpark(sparkPoints.value.map((point) => asNumber(point.total_tokens))))
 const costSpark = computed(() => buildSpark(sparkPoints.value.map((point) => asNumber(point.actual_cost))))
 
-const periodDelta = (pick: (point: TrendDataPoint) => number) => {
-  const points = trendData.value
-  if (points.length < 2) return null
-  const current = pick(points[points.length - 1])
-  const previous = pick(points[points.length - 2])
+const periodDelta = (key: 'total_requests' | 'total_tokens' | 'total_actual_cost') => {
+  if (!stats.value || !comparisonStats.value) return null
+  const current = asNumber(stats.value[key])
+  const previous = asNumber(comparisonStats.value[key])
   if (!Number.isFinite(previous) || previous <= 0) return null
   const change = ((current - previous) / previous) * 100
   const rounded = Math.round(change * 10) / 10
@@ -426,9 +424,9 @@ const periodDelta = (pick: (point: TrendDataPoint) => number) => {
   }
 }
 
-const requestsDelta = computed(() => periodDelta((point) => asNumber(point.requests)))
-const tokensDelta = computed(() => periodDelta((point) => asNumber(point.total_tokens)))
-const costDelta = computed(() => periodDelta((point) => asNumber(point.actual_cost)))
+const requestsDelta = computed(() => periodDelta('total_requests'))
+const tokensDelta = computed(() => periodDelta('total_tokens'))
+const costDelta = computed(() => periodDelta('total_actual_cost'))
 
 const trendMetricOptions = computed(() => [
   { value: 'requests' as const, label: t('admin.dashboard.requestsShort') },
@@ -436,9 +434,9 @@ const trendMetricOptions = computed(() => [
   { value: 'cost' as const, label: t('admin.dashboard.costShort') }
 ])
 
-const trendMetricValue = (point: TrendDataPoint): number => {
-  if (trendMetric.value === 'tokens') return asNumber(point.total_tokens)
-  if (trendMetric.value === 'cost') return asNumber(point.actual_cost)
+const trendMetricValue = (point: TrendDataPoint, metric = trendMetric.value): number => {
+  if (metric === 'tokens') return asNumber(point.total_tokens)
+  if (metric === 'cost') return asNumber(point.actual_cost)
   return asNumber(point.requests)
 }
 
@@ -451,9 +449,9 @@ const formatTrendLabel = (date: string): string => {
   return date
 }
 
-const formatMetricValue = (value: number): string => {
-  if (trendMetric.value === 'cost') return `$${formatCost(value)}`
-  if (trendMetric.value === 'tokens') return formatTokens(value)
+const formatMetricValue = (value: number, metric = trendMetric.value): string => {
+  if (metric === 'cost') return `$${formatCost(value)}`
+  if (metric === 'tokens') return formatTokens(value)
   return formatNumber(value)
 }
 
@@ -461,30 +459,38 @@ const BAR_LAST = 'linear-gradient(180deg,var(--accent),color-mix(in oklch,var(--
 const BAR_REST =
   'linear-gradient(180deg,color-mix(in oklch,var(--accent) 50%,transparent),color-mix(in oklch,var(--accent) 16%,transparent))'
 
-const trendBars = computed(() => {
-  const points = trendData.value.slice(-14)
-  const max = Math.max(1, ...points.map(trendMetricValue))
+const buildTrendBars = (metric: 'requests' | 'tokens' | 'cost') => {
+  const all = trendData.value
+  const size = 1
+  const points = []
+  for (let index = 0; index < all.length; index += size) {
+    const bucket = all.slice(index, index + size)
+    points.push({ date: bucket[0].date, end: bucket[bucket.length - 1].date, value: bucket.reduce((sum, point) => sum + trendMetricValue(point, metric), 0) })
+  }
+  const max = Math.max(1, ...points.map(point => point.value))
   return points.map((point, index) => ({
     key: point.date || String(index),
-    height: `${Math.max(4, Math.round((trendMetricValue(point) / max) * 100))}%`,
+    height: `${Math.round((point.value / max) * 100)}%`,
     label: formatTrendLabel(point.date),
-    title: formatMetricValue(trendMetricValue(point)),
+    title: `${point.date}${point.end === point.date ? '' : ` - ${point.end}`} · ${formatMetricValue(point.value, metric)}`,
     fill: index === points.length - 1 ? BAR_LAST : BAR_REST
   }))
-})
+}
+const trendBars = computed(() => buildTrendBars(trendMetric.value))
+const heroTrendBars = computed(() => buildTrendBars('requests'))
 
 const trendAxisLabels = computed(() => {
   const bars = trendBars.value
-  if (!bars.length) return ['', '', t('admin.dashboard.todayLabel')]
+  if (!bars.length) return ['', '', '']
   return [
     bars[0].label,
     bars[Math.floor(bars.length / 2)].label,
-    t('admin.dashboard.todayLabel')
+    bars[bars.length - 1].label
   ]
 })
 
 const trendSubtitle = computed(() => {
-  const points = trendData.value.slice(-14)
+  const points = trendData.value
   const total = points.reduce((sum, point) => sum + trendMetricValue(point), 0)
   return t('admin.dashboard.trendSubtitle', {
     count: points.length,
@@ -497,66 +503,43 @@ const trendSubtitle = computed(() => {
 })
 
 // -------------------------------------------------- model / spending split
-interface DistRow {
-  key: string
-  name: string
-  cost: string
-  pct: number
-  platform: GroupPlatform
-  tile: string
-  userId?: number
-}
-
 const distRowsLoading = computed(() =>
   distView.value === 'users' ? rankingLoading.value : chartsLoading.value
 )
 
-const distRows = computed<DistRow[]>(() => {
+const distRows = computed<DistributionRow[]>(() => {
   if (distView.value === 'users') {
     if (rankingError.value) return []
     const items = [...rankingItems.value]
       .sort((a, b) => asNumber(b.actual_cost) - asNumber(a.actual_cost))
-      .slice(0, 5)
-    const total = items.reduce((sum, item) => sum + asNumber(item.actual_cost), 0) || 1
+    const total = rankingTotalActualCost.value || items.reduce((sum, item) => sum + asNumber(item.actual_cost), 0) || 1
     return items.map((item) => ({
       key: `user-${item.user_id}`,
       name: item.username?.trim() || item.email?.trim() || `#${item.user_id}`,
       cost: formatCost(item.actual_cost),
       pct: Math.round((asNumber(item.actual_cost) / total) * 100),
-      platform: 'openai' as GroupPlatform,
-      tile: 'var(--accent)',
-      userId: item.user_id
+      userId: item.user_id,
+      requests: item.requests,
+      tokens: item.tokens
     }))
   }
 
   const sorted = [...modelStats.value].sort((a, b) => asNumber(b.actual_cost) - asNumber(a.actual_cost))
   if (!sorted.length) return []
   const total = sorted.reduce((sum, item) => sum + asNumber(item.actual_cost), 0) || 1
-  const top = sorted.slice(0, 4)
-  const rest = sorted.slice(4)
-  const rows: DistRow[] = top.map((item) => {
-    const platform = platformFromModel(item.model) as GroupPlatform
+  return sorted.map((item) => {
     return {
       key: item.model,
+      model: item.model,
       name: item.model,
       cost: formatCost(item.actual_cost),
       pct: Math.round((asNumber(item.actual_cost) / total) * 100),
-      platform,
-      tile: platformTileBackground(platform)
+      standardCost: item.cost,
+      accountCost: item.account_cost,
+      requests: item.requests,
+      tokens: item.total_tokens
     }
   })
-  if (rest.length) {
-    const restCost = rest.reduce((sum, item) => sum + asNumber(item.actual_cost), 0)
-    rows.push({
-      key: '__other__',
-      name: t('admin.dashboard.spendingRankingOther'),
-      cost: formatCost(restCost),
-      pct: Math.round((restCost / total) * 100),
-      platform: 'openai' as GroupPlatform,
-      tile: 'var(--surface-tertiary)'
-    })
-  }
-  return rows
 })
 
 // ------------------------------------------------------------ health/events
@@ -601,47 +584,54 @@ const goToUserUsageById = (userId: number) => {
 // Breakdown tooltips (kept from the previous dashboard, surfaced on the sparkline)
 const todayTokenBreakdownItems = computed(() => [
   {
-    key: 'actual',
-    label: t('admin.dashboard.actual'),
-    value: asNumber(stats.value?.today_actual_cost),
+    key: 'input',
+    label: t('admin.dashboard.input'),
+    value: asNumber(stats.value?.today_input_tokens),
     textClass: 'dash-tone-success'
   },
   {
-    key: 'account',
-    label: t('admin.dashboard.accountCost'),
-    value: asNumber(stats.value?.today_account_cost),
+    key: 'output',
+    label: t('admin.dashboard.output'),
+    value: asNumber(stats.value?.today_output_tokens),
     textClass: 'dash-tone-warning'
   },
   {
-    key: 'standard',
-    label: t('admin.dashboard.standard'),
-    value: asNumber(stats.value?.today_cost),
+    key: 'cache',
+    label: t('admin.dashboard.cache'),
+    value: asNumber(stats.value?.today_cache_creation_tokens) + asNumber(stats.value?.today_cache_read_tokens),
     textClass: 'dash-tone-muted'
   }
 ])
 
 const totalTokenBreakdownItems = computed(() => [
   {
-    key: 'actual',
-    label: t('admin.dashboard.actual'),
-    value: asNumber(stats.value?.total_actual_cost),
+    key: 'input',
+    label: t('admin.dashboard.input'),
+    value: asNumber(stats.value?.total_input_tokens),
     textClass: 'dash-tone-success'
   },
   {
-    key: 'account',
-    label: t('admin.dashboard.accountCost'),
-    value: asNumber(stats.value?.total_account_cost),
+    key: 'output',
+    label: t('admin.dashboard.output'),
+    value: asNumber(stats.value?.total_output_tokens),
     textClass: 'dash-tone-warning'
   },
   {
-    key: 'standard',
-    label: t('admin.dashboard.standard'),
-    value: asNumber(stats.value?.total_cost),
+    key: 'cache',
+    label: t('admin.dashboard.cache'),
+    value: asNumber(stats.value?.total_cache_creation_tokens) + asNumber(stats.value?.total_cache_read_tokens),
     textClass: 'dash-tone-muted'
   }
 ])
 
 const financialBreakdownItems = computed(() => [
+  {
+    key: 'account',
+    label: t('admin.dashboard.accountCost'),
+    todayValue: asNumber(stats.value?.today_account_cost),
+    totalValue: asNumber(stats.value?.total_account_cost),
+    textClass: 'dash-tone-warning'
+  },
   {
     key: 'balance',
     label: t('admin.dashboard.balanceCost'),
@@ -704,8 +694,6 @@ const onDateRangeChange = (range: {
 onMounted(() => {
   void refreshBatchImageAccess()
   loadDashboardStats()
-  void loadPlatformHealth()
-  void loadRecentEvents()
 })
 </script>
 
@@ -715,13 +703,6 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.dash-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 0;
 }
 
 @media (max-width: 767px) {

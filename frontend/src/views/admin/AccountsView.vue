@@ -281,16 +281,15 @@
  </template>
  </DataTable>
  </div>
- <div v-if="pagination.total > 0" class="acct-table-footer">
+ </template>
+ <template v-if="pagination.total > 0" #pagination>
  <Pagination
- class="acct-pagination"
  :page="pagination.page"
  :total="pagination.total"
  :page-size="pagination.page_size"
  @update:page="handlePageChange"
  @update:pageSize="handlePageSizeChange"
  />
- </div>
  </template>
  </TablePageLayout>
  <Fab class="acct-fab" data-tour="accounts-create-btn" :label="t('admin.accounts.createAccount')" @click="showCreate = true">
@@ -887,16 +886,13 @@ onUnmounted(() => {
   box-shadow: var(--shadow);
 }
 
-/* Fixed layout + explicit per-column widths so the 11 default columns fit the 1440 content width
- * without a horizontal scrollbar (matches prototype 04). */
+/* Let real capacity badges and usage windows determine minimum widths; extra columns scroll. */
 .acct-layout :deep(.table-scroll-container table) {
-  table-layout: fixed;
+  table-layout: auto;
   width: 100%;
 }
 
-/* Column widths = prototype target + 12px (td/th now use 6px symmetric padding in place of the
- * prototype grid's 12px column gap). Name/usage columns intentionally have no explicit width so
- * they absorb the table's remaining space, matching the prototype grid's fr-tracks. */
+/* Preferred column widths; shared DataTable bounds long text without shrinking numeric controls. */
 .acct-layout :deep(.acct-col-select) { width: 44px; }
 .acct-layout :deep(.acct-col-id) { width: 110px; }
 .acct-layout :deep(.acct-col-platform) { width: 112px; }
@@ -974,74 +970,6 @@ onUnmounted(() => {
 .acct-layout :deep(.data-table-th-sortable svg) {
   width: 10px;
   height: 10px;
-}
-
-/* ---------- Table footer ---------- */
-.acct-table-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex: none;
-  padding: 10px 16px;
-  font-size: var(--fs-12-5);
-  color: var(--muted);
-  border-top: 1px solid var(--border);
-}
-
-/* Pagination · 28×28 radius 8, current page solid accent */
-.acct-pagination {
-  flex: 1 1 auto;
-  min-width: 0;
-  width: 100%;
-  padding: 0;
-  border-top: 0;
-  background: transparent;
-}
-
-.acct-pagination :deep(nav) {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  border-radius: unset; /* = 0: the nav is a bare flex row, not a pill */
-  box-shadow: none;
-  margin: 0;
-}
-
-.acct-pagination :deep(nav > button) {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
-  padding: 0;
-  margin: 0;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--muted);
-  font-size: var(--fs-12-5);
-  font-weight: var(--fw-medium);
-  justify-content: center;
-}
-
-.acct-pagination :deep(nav > button:hover:not(:disabled)) {
-  background: color-mix(in oklch, var(--foreground) 6%, transparent);
-  color: var(--foreground);
-}
-
-.acct-pagination :deep(nav > button[aria-current='page']) {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-tone);
-  font-weight: var(--fw-semibold);
-}
-
-.acct-pagination :deep(nav > button:disabled) {
-  opacity: 0.45;
-}
-
-/* the "…" separator keeps no border */
-.acct-pagination :deep(nav > button.cursor-default) {
-  border-color: transparent;
 }
 
 /* ---------- Cells ---------- */
@@ -1334,10 +1262,5 @@ onUnmounted(() => {
     background: color-mix(in oklch, var(--surface) 80%, transparent);
   }
 
-  .acct-table-footer {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 8px;
-  }
 }
 </style>

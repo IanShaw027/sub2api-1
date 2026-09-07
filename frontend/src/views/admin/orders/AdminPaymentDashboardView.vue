@@ -19,9 +19,7 @@
         </PageHeader>
       </div>
 
-      <div v-if="loading && !stats" class="dash-loading">
-        <LoadingSpinner />
-      </div>
+      <DashboardSkeleton v-if="loading && !stats" />
 
       <template v-else-if="stats">
         <OrderStatsCards :stats="stats" />
@@ -72,7 +70,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
 import Button from '@/components/ui/Button.vue'
 import SegmentedControl from '@/components/ui/SegmentedControl.vue'
-import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import DashboardSkeleton from '@/components/admin/dashboard/DashboardSkeleton.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderStatsCards from '@/components/admin/payment/OrderStatsCards.vue'
 import DailyRevenueChart from '@/components/admin/payment/DailyRevenueChart.vue'
@@ -123,13 +121,6 @@ onMounted(() => loadDashboard())
 
 .dash-hero :deep(.ui-page-header) {
   margin-bottom: 0;
-}
-
-.dash-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 0;
 }
 
 .dash-row {

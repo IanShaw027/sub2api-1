@@ -1,35 +1,30 @@
 <template>
- <!-- Usage Records Settings -->
- <div class="glass-card settings-card">
- <div class="settings-card-head">
- <h2 class="settings-card-title">
- {{ t('admin.settings.usageRecords.title') }}
- </h2>
- <p class="settings-card-desc">
- {{ t('admin.settings.usageRecords.description') }}
- </p>
- </div>
- <div class="settings-card-body">
- <!-- User error requests visibility -->
- <div class="settings-flex-row settings-control-row flex items-center justify-between">
- <div>
- <label class="text-sm font-medium text-foreground ">
- {{ t('admin.settings.user_error_view.label') }}
- </label>
- <p class="text-xs text-muted ">
- {{ t('admin.settings.user_error_view.description') }}
- </p>
- </div>
- <label class="toggle">
- <input v-model="form.allow_user_view_error_requests" type="checkbox" />
- <span class="toggle-slider"></span>
- </label>
- </div>
- </div>
- </div>
+  <!-- Usage Records Settings -->
+  <SettingsSection
+    :title="t('admin.settings.usageRecords.title')"
+    :description="t('admin.settings.usageRecords.description')"
+  >
+    <div class="settings-rows">
+      <!-- User error requests visibility -->
+      <SettingRow
+        :label="t('admin.settings.user_error_view.label')"
+        :description="t('admin.settings.user_error_view.description')"
+      >
+        <label class="toggle">
+          <input
+            v-model="form.allow_user_view_error_requests"
+            type="checkbox"
+          />
+          <span class="toggle-slider"></span>
+        </label>
+      </SettingRow>
+    </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
+import SettingRow from "@/components/ui/SettingRow.vue";
+import SettingsSection from "@/components/ui/SettingsSection.vue";
 import { inject } from "vue";
 import { SettingsFormKey } from "../useSettingsForm";
 

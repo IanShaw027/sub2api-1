@@ -134,7 +134,8 @@
           </DataTable>
         </div>
 
-        <div v-if="pagination.total > 0" class="tickets-table-footer">
+      </template>
+      <template v-if="pagination.total > 0" #pagination>
           <Pagination
             :page="pagination.page"
             :total="pagination.total"
@@ -142,7 +143,6 @@
             @update:page="handlePageChange"
             @update:pageSize="handlePageSizeChange"
           />
-        </div>
       </template>
     </TablePageLayout>
   </AppLayout>
@@ -390,12 +390,6 @@ onMounted(() => {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-}
-
-.tickets-table-footer {
-  flex-shrink: 0;
-  padding: 10px 16px;
-  border-top: 1px solid var(--border);
 }
 
 .cell-stack {

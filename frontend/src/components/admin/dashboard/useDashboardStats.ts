@@ -15,7 +15,7 @@ import type {
   UserSpendingRankingItem,
   UserUsageTrendPoint
 } from '@/types'
-import { asNumber, formatEventTime } from './useDashboardFormat'
+import { asNumber, formatEventTime, previousDateRange } from './useDashboardFormat'
 
 interface PlatformHealthRawItem {
   platform: string
@@ -49,6 +49,8 @@ export function useDashboardStats(range: {
   const appStore = useAppStore()
 
   const stats = ref<DashboardStats | null>(null)
+  const comparisonStats = ref<DashboardStats | null>(null)
+  let comparisonSeq = 0
   const loading = ref(false)
   const chartsLoading = ref(false)
   const userTrendLoading = ref(false)
@@ -71,6 +73,7 @@ export function useDashboardStats(range: {
 
   const platformHealthRaw = ref<PlatformHealthRawItem[]>([])
   const recentEvents = ref<EventRow[]>([])
+  let eventsSeq = 0
 
   // Load data
   const loadDashboardSnapshot = async (includeStats: boolean) => {
@@ -133,6 +136,25 @@ export function useDashboardStats(range: {
     }
   }
 
+  const loadComparison = async () => {
+    const seq = ++comparisonSeq
+    comparisonStats.value = null
+    try {
+      const response = await adminAPI.dashboard.getSnapshotV2({
+        ...previousDateRange(range.startDate.value, range.endDate.value),
+        include_stats: true,
+        include_trend: false,
+        include_model_stats: false,
+        include_group_stats: false,
+        include_users_trend: false
+      })
+      if (seq === comparisonSeq) comparisonStats.value = response.stats || null
+    } catch {
+      // Missing comparison data must not fabricate a delta or discard the current range.
+      if (seq === comparisonSeq) comparisonStats.value = null
+    }
+  }
+
   const loadUserSpendingRanking = async () => {
     const currentSeq = ++rankingLoadSeq
     rankingLoading.value = true
@@ -179,14 +201,21 @@ export function useDashboardStats(range: {
 
   /** Latest unresolved ops errors power the "recent events" panel. */
   const loadRecentEvents = async () => {
+    const seq = ++eventsSeq
+    const start = new Date(`${range.startDate.value}T00:00:00`)
+    const end = new Date(`${range.endDate.value}T00:00:00`)
+    end.setDate(end.getDate() + 1)
     try {
       const response = await adminAPI.ops.listErrorLogs({
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
         page: 1,
         page_size: 6,
         sort_by: 'created_at',
         sort_order: 'desc'
       })
       const items = response?.items || []
+      if (seq !== eventsSeq) return
       recentEvents.value = items.map((item) => ({
         id: item.id,
         time: formatEventTime(item.created_at),
@@ -194,6 +223,7 @@ export function useDashboardStats(range: {
         message: [item.account_name || item.platform, item.message].filter(Boolean).join(' · ')
       }))
     } catch (error) {
+      if (seq !== eventsSeq) return
       console.error('Error loading recent events:', error)
       recentEvents.value = []
     }
@@ -202,21 +232,27 @@ export function useDashboardStats(range: {
   const loadDashboardStats = async () => {
     await Promise.all([
       loadDashboardSnapshot(true),
+      loadComparison(),
       loadUsersTrend(),
-      loadUserSpendingRanking()
+      loadUserSpendingRanking(),
+      loadPlatformHealth(),
+      loadRecentEvents()
     ])
   }
 
   const loadChartData = async () => {
     await Promise.all([
-      loadDashboardSnapshot(false),
+      loadDashboardSnapshot(true),
+      loadComparison(),
       loadUsersTrend(),
-      loadUserSpendingRanking()
+      loadUserSpendingRanking(),
+      loadRecentEvents()
     ])
   }
 
   return {
     stats,
+    comparisonStats,
     loading,
     chartsLoading,
     userTrendLoading,

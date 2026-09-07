@@ -1,92 +1,73 @@
 <template>
- <!-- Upstream Billing Probe Settings -->
- <div class="glass-card settings-card" data-testid="upstream-billing-probe-settings">
- <div
- class="settings-card-head"
- >
- <h2 class="settings-card-title">
- {{ t("admin.settings.upstreamBillingProbe.title") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.upstreamBillingProbe.description") }}
- </p>
- </div>
- <div class="settings-card-body">
- <div
- v-if="upstreamBillingProbeLoading"
- class="settings-flex-row flex items-center gap-2 text-muted"
- >
- <div
- class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
- ></div>
- {{ t("common.loading") }}
- </div>
+  <!-- Upstream Billing Probe Settings -->
+  <SettingsSection
+    data-testid="upstream-billing-probe-settings"
+    :title="t('admin.settings.upstreamBillingProbe.title')"
+    :description="t('admin.settings.upstreamBillingProbe.description')"
+  >
+    <div class="settings-rows">
+      <div
+        v-if="upstreamBillingProbeLoading"
+        class="settings-flex-row flex items-center gap-2 text-muted settings-block"
+      >
+        <div
+          class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
+        ></div>
+        {{ t("common.loading") }}
+      </div>
+      <template v-else>
+        <SettingRow
+          :label="t('admin.settings.upstreamBillingProbe.enabled')"
+          :description="t('admin.settings.upstreamBillingProbe.enabledHint')"
+        >
+          <Toggle
+            v-model="upstreamBillingProbeForm.enabled"
+            :aria-label="t('admin.settings.upstreamBillingProbe.enabled')"
+            data-testid="upstream-billing-probe-enabled"
+          />
+        </SettingRow>
 
- <template v-else>
- <div class="settings-flex-row settings-control-row flex items-center justify-between gap-4">
- <div>
- <label class="font-medium text-foreground ">
- {{ t("admin.settings.upstreamBillingProbe.enabled") }}
- </label>
- <p class="text-sm text-muted ">
- {{ t("admin.settings.upstreamBillingProbe.enabledHint") }}
- </p>
- </div>
- <Toggle
- v-model="upstreamBillingProbeForm.enabled"
- :aria-label="t('admin.settings.upstreamBillingProbe.enabled')"
- data-testid="upstream-billing-probe-enabled"
- />
- </div>
+        <SettingRow
+          v-if="upstreamBillingProbeForm.enabled"
+          :label="t('admin.settings.upstreamBillingProbe.intervalMinutes')"
+          label-for="upstream-billing-probe-interval"
+          :description="t('admin.settings.upstreamBillingProbe.intervalHint')"
+        >
+          <input
+            id="upstream-billing-probe-interval"
+            v-model.number="upstreamBillingProbeForm.interval_minutes"
+            type="number"
+            min="5"
+            max="1440"
+            class="input w-32"
+            data-testid="upstream-billing-probe-interval"
+            @keydown.enter.prevent="saveUpstreamBillingProbeSettings"
+          />
+        </SettingRow>
 
- <div
- v-if="upstreamBillingProbeForm.enabled"
- class="settings-row border-t border-line pt-4 "
- >
- <label
- class="settings-row-label"
- for="upstream-billing-probe-interval"
- >
- {{ t("admin.settings.upstreamBillingProbe.intervalMinutes") }}
- </label>
- <input
- id="upstream-billing-probe-interval"
- v-model.number="upstreamBillingProbeForm.interval_minutes"
- type="number"
- min="5"
- max="1440"
- class="input w-32"
- data-testid="upstream-billing-probe-interval"
- @keydown.enter.prevent="saveUpstreamBillingProbeSettings"
- />
- <p class="settings-row-hint">
- {{ t("admin.settings.upstreamBillingProbe.intervalHint") }}
- </p>
- </div>
-
- <div
- class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 "
- >
- <button
- type="button"
- class="btn-glass-primary"
- :disabled="upstreamBillingProbeSaving"
- data-testid="upstream-billing-probe-save"
- @click="saveUpstreamBillingProbeSettings"
- >
- {{
- upstreamBillingProbeSaving
- ? t("common.saving")
- : t("common.save")
- }}
- </button>
- </div>
- </template>
- </div>
- </div>
+        <div
+          class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 settings-block"
+        >
+          <button
+            type="button"
+            class="btn-glass-primary"
+            :disabled="upstreamBillingProbeSaving"
+            data-testid="upstream-billing-probe-save"
+            @click="saveUpstreamBillingProbeSettings"
+          >
+            {{
+              upstreamBillingProbeSaving ? t("common.saving") : t("common.save")
+            }}
+          </button>
+        </div>
+      </template>
+    </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
+import SettingRow from "@/components/ui/SettingRow.vue";
+import SettingsSection from "@/components/ui/SettingsSection.vue";
 import { inject, ref } from "vue";
 import { SettingsFormKey } from "../useSettingsForm";
 import { adminAPI } from "@/api";

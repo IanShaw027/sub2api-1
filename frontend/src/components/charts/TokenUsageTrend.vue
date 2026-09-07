@@ -3,6 +3,12 @@
  <h3 v-if="!bare" class="mb-4 text-sm font-semibold text-foreground">
  {{ t('admin.dashboard.tokenUsageTrend') }}
  </h3>
+ <div v-if="!loading && trendData.length" class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+   <div v-for="item in trendKpis" :key="item.label" class="trend-kpi">
+     <span class="trend-kpi-label">{{ item.label }}</span>
+     <span class="trend-kpi-value">{{ item.value }}</span>
+   </div>
+ </div>
  <div v-if="loading" class="h-48" role="status" :aria-label="t('common.loading')" aria-busy="true">
  <Skeleton height="100%" />
  </div>
@@ -58,6 +64,19 @@ const props = defineProps<{
 }>()
 
 const theme = useChartTheme()
+
+const trendKpis = computed(() => {
+ const rows = props.trendData ?? []
+ const sum = (key: 'input_tokens' | 'output_tokens' | 'cache_read_tokens') => rows.reduce((total, row) => total + Number(row[key] || 0), 0)
+ const hitTokens = sum('cache_read_tokens')
+ const promptTokens = rows.reduce((total, row) => total + Number(row.input_tokens || 0) + Number(row.cache_read_tokens || 0) + Number(row.cache_creation_tokens || 0), 0)
+ return [
+   { label: t('admin.dashboard.input'), value: formatTokens(sum('input_tokens')) },
+   { label: t('admin.dashboard.output'), value: formatTokens(sum('output_tokens')) },
+   { label: t('admin.dashboard.trendCacheRead'), value: formatTokens(hitTokens) },
+   { label: t('admin.dashboard.trendCacheHitRate'), value: `${promptTokens ? ((hitTokens / promptTokens) * 100).toFixed(1) : '0.0'}%` }
+ ]
+})
 
 const chartData = computed(() => {
  if (!props.trendData?.length) return null
@@ -211,3 +230,17 @@ const formatCost = (value: number): string => {
  return value.toFixed(4)
 }
 </script>
+
+<style scoped>
+.trend-kpi {
+ display: flex;
+ min-width: 0;
+ flex-direction: column;
+ gap: 2px;
+ border-radius: 10px;
+ background: var(--surface-2);
+ padding: 8px 10px;
+}
+.trend-kpi-label { color: var(--muted); font-size: 11px; }
+.trend-kpi-value { color: var(--foreground); font-family: var(--font-display, Inter, sans-serif); font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
+</style>

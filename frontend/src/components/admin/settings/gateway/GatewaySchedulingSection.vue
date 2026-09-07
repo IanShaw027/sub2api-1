@@ -1,287 +1,250 @@
 <template>
- <!-- Gateway Scheduling Settings -->
- <div class="glass-card settings-card">
- <div
- class="settings-card-head"
- >
- <h2 class="settings-card-title">
- {{ t("admin.settings.scheduling.title") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.scheduling.description") }}
- </p>
- </div>
- <div class="settings-card-body">
- <div class="settings-flex-row settings-control-row flex items-center justify-between">
- <div>
- <label
- class="text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.scheduling.allowUngroupedKey") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t("admin.settings.scheduling.allowUngroupedKeyHint") }}
- </p>
- </div>
- <Toggle v-model="form.allow_ungrouped_key_scheduling" />
- </div>
-
- <div class="border-t border-line pt-4 ">
- <div class="mb-3">
- <label class="font-medium text-foreground ">
- {{
- t(
- "admin.settings.scheduling.accountSchedulingThresholdsTitle",
- )
- }}
- </label>
- <p class="settings-card-desc">
- {{
- t(
- "admin.settings.scheduling.accountSchedulingThresholdsDescription",
- )
- }}
- </p>
- <p class="mt-0.5 text-xs text-muted ">
- {{
- t(
- "admin.settings.scheduling.accountSchedulingThresholdsGlobalHint",
- )
- }}
- </p>
- <p class="mt-0.5 text-xs text-warning-600 ">
- {{
- t(
- "admin.settings.scheduling.accountSchedulingThresholdsDisabledHint",
- )
- }}
- </p>
- </div>
- <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
- <div
- v-for="platform in schedulingThresholdPlatforms"
- :key="platform"
- class="rounded-lg border border-line p-4 "
- >
- <div class="settings-flex-row settings-control-row-start flex items-start justify-between gap-3">
- <div>
- <label
- class="font-mono text-sm font-medium text-foreground "
- >
- {{ platform }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{
- t(
- "admin.settings.scheduling.accountSchedulingThresholdsRangeHint",
- )
- }}
- </p>
- </div>
- <span
- class="rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted "
- >
- %
- </span>
- </div>
- <input
- v-model.number="form.account_scheduling_thresholds[platform]"
- type="number"
- min="1"
- max="100"
- step="1"
- class="input mt-3"
- :data-testid="`account-scheduling-threshold-${platform}`"
- placeholder="100"
- />
- </div>
- </div>
- </div>
-
- <div
- v-if="!form.openai_advanced_scheduler_enabled"
- class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 "
- >
- <div>
- <label
- class="text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.openaiExperimentalScheduler.lowRatePriorityTitle") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{
- t("admin.settings.openaiExperimentalScheduler.lowRatePriorityDescription")
- }}
- </p>
- </div>
- <Toggle
- v-model="form.openai_low_upstream_rate_priority_enabled"
- data-testid="openai-low-rate-priority-toggle"
- />
- </div>
-
- <div
- v-if="!form.openai_advanced_scheduler_enabled && form.openai_low_upstream_rate_priority_enabled"
- class="settings-flex-row settings-divider-row flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 "
- >
- <div class="min-w-0">
- <label
- class="text-sm font-medium text-foreground "
- for="openai-oauth-scheduling-rate-multiplier"
- >
- {{ t("admin.settings.openaiExperimentalScheduler.oauthRateTitle") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t("admin.settings.openaiExperimentalScheduler.oauthRatePriorityDescription") }}
- </p>
- </div>
- <div class="relative w-full shrink-0 sm:w-32">
- <input
- id="openai-oauth-scheduling-rate-multiplier"
- v-model.number="form.openai_oauth_scheduling_rate_multiplier"
- class="input pr-8"
- data-testid="openai-oauth-scheduling-rate-multiplier"
- min="0"
- required
- step="0.01"
- type="number"
- />
- <span
- class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted"
- >x</span>
- </div>
- </div>
-
- <div class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 ">
- <div>
- <label
- class="text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.openaiExperimentalScheduler.title") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{
- t("admin.settings.openaiExperimentalScheduler.description")
- }}
- </p>
- </div>
- <Toggle
- v-model="form.openai_advanced_scheduler_enabled"
- data-testid="openai-advanced-scheduler-toggle"
- />
- </div>
-
- <div
- v-if="form.openai_advanced_scheduler_enabled"
- class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 "
- >
- <div>
- <label
- class="text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.openaiExperimentalScheduler.stickyWeightedTitle") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{
- t("admin.settings.openaiExperimentalScheduler.stickyWeightedDescription")
- }}
- </p>
- </div>
- <Toggle v-model="form.openai_advanced_scheduler_sticky_weighted_enabled" />
- </div>
-
- <div
- v-if="form.openai_advanced_scheduler_enabled"
- class="settings-flex-row settings-control-row settings-divider-row flex items-center justify-between border-t border-line pt-5 "
- >
- <div>
- <label
- class="text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.openaiExperimentalScheduler.subscriptionPriorityTitle") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{
- t("admin.settings.openaiExperimentalScheduler.subscriptionPriorityDescription")
- }}
- </p>
- </div>
- <Toggle v-model="form.openai_advanced_scheduler_subscription_priority_enabled" />
- </div>
-
- <div
- v-if="form.openai_advanced_scheduler_enabled"
- class="settings-flex-row settings-divider-row flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 "
- >
- <div class="min-w-0">
- <label
- class="text-sm font-medium text-foreground "
- for="openai-oauth-scheduling-rate-multiplier"
- >
- {{ t("admin.settings.openaiExperimentalScheduler.oauthRateTitle") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{ t("admin.settings.openaiExperimentalScheduler.oauthRateWeightedDescription") }}
- </p>
- </div>
- <div class="relative w-full shrink-0 sm:w-32">
- <input
- id="openai-oauth-scheduling-rate-multiplier"
- v-model.number="form.openai_oauth_scheduling_rate_multiplier"
- class="input pr-8"
- data-testid="openai-oauth-scheduling-rate-multiplier"
- min="0"
- required
- step="0.01"
- type="number"
- />
- <span
- class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted"
- >x</span>
- </div>
- </div>
-
- <div
- v-if="form.openai_advanced_scheduler_enabled"
- class="border-t border-line pt-5 "
- >
- <div>
- <label
- class="text-sm font-medium text-foreground "
- >
- {{ t("admin.settings.openaiExperimentalScheduler.weightsTitle") }}
- </label>
- <p class="mt-0.5 text-xs text-muted ">
- {{
- t("admin.settings.openaiExperimentalScheduler.weightsDescription")
- }}
- </p>
- </div>
-
- <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
- <label
- v-for="field in openAIAdvancedSchedulerWeightFields"
- :key="field.key"
- class="block"
- >
- <span class="text-xs font-medium text-muted ">
- {{ field.label }}
- </span>
- <input
- v-model="form[field.key]"
- class="input mt-1"
- inputmode="decimal"
- :placeholder="field.placeholder"
- type="text"
- />
- </label>
- </div>
- </div>
- </div>
- </div>
+  <!-- Gateway Scheduling Settings -->
+  <SettingsSection
+    :title="t('admin.settings.scheduling.title')"
+    :description="t('admin.settings.scheduling.description')"
+  >
+    <div class="settings-rows">
+      <SettingRow
+        :label="t('admin.settings.scheduling.allowUngroupedKey')"
+        :description="t('admin.settings.scheduling.allowUngroupedKeyHint')"
+      >
+        <Toggle v-model="form.allow_ungrouped_key_scheduling" />
+      </SettingRow>
+      <div class="border-t border-line pt-4 settings-block">
+        <div class="mb-3">
+          <label class="font-medium text-foreground">
+            {{
+              t("admin.settings.scheduling.accountSchedulingThresholdsTitle")
+            }}
+          </label>
+          <p class="settings-card-desc">
+            {{
+              t(
+                "admin.settings.scheduling.accountSchedulingThresholdsDescription",
+              )
+            }}
+          </p>
+          <p class="mt-0.5 text-xs text-muted">
+            {{
+              t(
+                "admin.settings.scheduling.accountSchedulingThresholdsGlobalHint",
+              )
+            }}
+          </p>
+          <p class="mt-0.5 text-xs text-warning-600">
+            {{
+              t(
+                "admin.settings.scheduling.accountSchedulingThresholdsDisabledHint",
+              )
+            }}
+          </p>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            v-for="platform in schedulingThresholdPlatforms"
+            :key="platform"
+            class="rounded-lg border border-line p-4"
+          >
+            <SettingRow
+              :label="platform"
+              :description="
+                t(
+                  'admin.settings.scheduling.accountSchedulingThresholdsRangeHint',
+                )
+              "
+            >
+              <span
+                class="rounded bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted"
+              >
+                %
+              </span>
+            </SettingRow>
+            <input
+              v-model.number="form.account_scheduling_thresholds[platform]"
+              type="number"
+              min="1"
+              max="100"
+              step="1"
+              class="input mt-3"
+              :data-testid="`account-scheduling-threshold-${platform}`"
+              placeholder="100"
+            />
+          </div>
+        </div>
+      </div>
+      <SettingRow
+        v-if="!form.openai_advanced_scheduler_enabled"
+        :label="
+          t('admin.settings.openaiExperimentalScheduler.lowRatePriorityTitle')
+        "
+        :description="
+          t(
+            'admin.settings.openaiExperimentalScheduler.lowRatePriorityDescription',
+          )
+        "
+      >
+        <Toggle
+          v-model="form.openai_low_upstream_rate_priority_enabled"
+          data-testid="openai-low-rate-priority-toggle"
+        />
+      </SettingRow>
+      <div
+        v-if="
+          !form.openai_advanced_scheduler_enabled &&
+          form.openai_low_upstream_rate_priority_enabled
+        "
+        class="settings-flex-row settings-divider-row flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 settings-block"
+      >
+        <div class="min-w-0">
+          <label
+            class="text-sm font-medium text-foreground"
+            for="openai-oauth-scheduling-rate-multiplier"
+          >
+            {{ t("admin.settings.openaiExperimentalScheduler.oauthRateTitle") }}
+          </label>
+          <p class="mt-0.5 text-xs text-muted">
+            {{
+              t(
+                "admin.settings.openaiExperimentalScheduler.oauthRatePriorityDescription",
+              )
+            }}
+          </p>
+        </div>
+        <div class="relative w-full shrink-0 sm:w-32">
+          <input
+            id="openai-oauth-scheduling-rate-multiplier"
+            v-model.number="form.openai_oauth_scheduling_rate_multiplier"
+            class="input pr-8"
+            data-testid="openai-oauth-scheduling-rate-multiplier"
+            min="0"
+            required
+            step="0.01"
+            type="number"
+          />
+          <span
+            class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted"
+            >x</span
+          >
+        </div>
+      </div>
+      <SettingRow
+        :label="t('admin.settings.openaiExperimentalScheduler.title')"
+        :description="
+          t('admin.settings.openaiExperimentalScheduler.description')
+        "
+      >
+        <Toggle
+          v-model="form.openai_advanced_scheduler_enabled"
+          data-testid="openai-advanced-scheduler-toggle"
+        /> </SettingRow
+      ><SettingRow
+        v-if="form.openai_advanced_scheduler_enabled"
+        :label="
+          t('admin.settings.openaiExperimentalScheduler.stickyWeightedTitle')
+        "
+        :description="
+          t(
+            'admin.settings.openaiExperimentalScheduler.stickyWeightedDescription',
+          )
+        "
+      >
+        <Toggle
+          v-model="form.openai_advanced_scheduler_sticky_weighted_enabled"
+        /> </SettingRow
+      ><SettingRow
+        v-if="form.openai_advanced_scheduler_enabled"
+        :label="
+          t(
+            'admin.settings.openaiExperimentalScheduler.subscriptionPriorityTitle',
+          )
+        "
+        :description="
+          t(
+            'admin.settings.openaiExperimentalScheduler.subscriptionPriorityDescription',
+          )
+        "
+      >
+        <Toggle
+          v-model="form.openai_advanced_scheduler_subscription_priority_enabled"
+        />
+      </SettingRow>
+      <div
+        v-if="form.openai_advanced_scheduler_enabled"
+        class="settings-flex-row settings-divider-row flex flex-col items-stretch gap-3 border-t border-line pt-5 sm:flex-row sm:items-start sm:justify-between sm:gap-6 settings-block"
+      >
+        <div class="min-w-0">
+          <label
+            class="text-sm font-medium text-foreground"
+            for="openai-oauth-scheduling-rate-multiplier"
+          >
+            {{ t("admin.settings.openaiExperimentalScheduler.oauthRateTitle") }}
+          </label>
+          <p class="mt-0.5 text-xs text-muted">
+            {{
+              t(
+                "admin.settings.openaiExperimentalScheduler.oauthRateWeightedDescription",
+              )
+            }}
+          </p>
+        </div>
+        <div class="relative w-full shrink-0 sm:w-32">
+          <input
+            id="openai-oauth-scheduling-rate-multiplier"
+            v-model.number="form.openai_oauth_scheduling_rate_multiplier"
+            class="input pr-8"
+            data-testid="openai-oauth-scheduling-rate-multiplier"
+            min="0"
+            required
+            step="0.01"
+            type="number"
+          />
+          <span
+            class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted"
+            >x</span
+          >
+        </div>
+      </div>
+      <div
+        v-if="form.openai_advanced_scheduler_enabled"
+        class="border-t border-line pt-5 settings-block"
+      >
+        <div>
+          <label class="text-sm font-medium text-foreground">
+            {{ t("admin.settings.openaiExperimentalScheduler.weightsTitle") }}
+          </label>
+          <p class="mt-0.5 text-xs text-muted">
+            {{
+              t("admin.settings.openaiExperimentalScheduler.weightsDescription")
+            }}
+          </p>
+        </div>
+        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+          <label
+            v-for="field in openAIAdvancedSchedulerWeightFields"
+            :key="field.key"
+            class="block"
+          >
+            <span class="text-xs font-medium text-muted">
+              {{ field.label }}
+            </span>
+            <input
+              v-model="form[field.key]"
+              class="input mt-1"
+              inputmode="decimal"
+              :placeholder="field.placeholder"
+              type="text"
+            />
+          </label>
+        </div>
+      </div>
+    </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
+import SettingRow from "@/components/ui/SettingRow.vue";
+import SettingsSection from "@/components/ui/SettingsSection.vue";
 import { inject, computed } from "vue";
 import { SettingsFormKey } from "../useSettingsForm";
 import { SCHEDULING_THRESHOLD_PLATFORMS } from "@/api/admin/settings";

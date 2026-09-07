@@ -11,56 +11,110 @@
     </SettingRow>
     <template v-if="form.enabled">
       <SettingRow :label="t('admin.settings.ipSecurity.windowMinutes')">
-        <input v-model.number="form.window_minutes" type="number" min="1" max="1440" class="input" />
+        <input
+          v-model.number="form.window_minutes"
+          type="number"
+          min="1"
+          max="1440"
+          class="input"
+        />
       </SettingRow>
       <SettingRow :label="t('admin.settings.ipSecurity.accountThreshold')">
-        <input v-model.number="form.account_threshold" type="number" min="2" max="100" class="input" />
+        <input
+          v-model.number="form.account_threshold"
+          type="number"
+          min="2"
+          max="100"
+          class="input"
+        />
       </SettingRow>
       <SettingRow :label="t('admin.settings.ipSecurity.window2Minutes')">
-        <input v-model.number="form.window2_minutes" type="number" min="0" max="10080" class="input" />
+        <input
+          v-model.number="form.window2_minutes"
+          type="number"
+          min="0"
+          max="10080"
+          class="input"
+        />
       </SettingRow>
       <SettingRow :label="t('admin.settings.ipSecurity.accountThreshold2')">
-        <input v-model.number="form.account_threshold2" type="number" min="2" max="100" class="input" />
+        <input
+          v-model.number="form.account_threshold2"
+          type="number"
+          min="2"
+          max="100"
+          class="input"
+        />
       </SettingRow>
       <SettingRow :label="t('admin.settings.ipSecurity.learningUntil')">
-        <input v-model="form.learning_until" type="text" placeholder="2026-08-16T00:00:00Z" class="input" />
+        <input
+          v-model="form.learning_until"
+          type="text"
+          placeholder="2026-08-16T00:00:00Z"
+          class="input"
+        />
       </SettingRow>
     </template>
     <SettingRow
       :label="t('admin.settings.ipSecurity.blockDatacenterRegistration')"
-      :description="t('admin.settings.ipSecurity.blockDatacenterRegistrationHint')"
+      :description="
+        t('admin.settings.ipSecurity.blockDatacenterRegistrationHint')
+      "
     >
       <Toggle v-model="form.block_datacenter_registration" />
     </SettingRow>
-    <div class="settings-card-body">
-      <div class="settings-flex-row flex justify-end">
-        <button type="button" class="btn btn-primary btn-sm" :disabled="saving" @click="saveConfig">
-          {{ t('common.save') }}
+    <div class="settings-rows">
+      <div class="settings-flex-row flex justify-end settings-block">
+        <button
+          type="button"
+          class="btn btn-primary btn-sm"
+          :disabled="saving"
+          @click="saveConfig"
+        >
+          {{ t("common.save") }}
         </button>
       </div>
-
-      <div class="settings-flex-row mt-4 flex flex-wrap items-center gap-3">
+      <div
+        class="settings-flex-row mt-4 flex flex-wrap items-center gap-3 settings-block"
+      >
         <select v-model="status" class="input w-auto" @change="loadBans(1)">
-          <option value="active">{{ t('admin.settings.ipSecurity.statusActive') }}</option>
-          <option value="whitelisted">{{ t('admin.settings.ipSecurity.statusWhitelisted') }}</option>
-          <option value="released">{{ t('admin.settings.ipSecurity.statusReleased') }}</option>
-          <option value="">{{ t('common.all') }}</option>
-        </select>
-        <button type="button" class="btn btn-secondary btn-sm" :disabled="loading" @click="loadBans(page)">
+          <option value="active">
+            {{ t("admin.settings.ipSecurity.statusActive") }}
+          </option>
+          <option value="whitelisted">
+            {{ t("admin.settings.ipSecurity.statusWhitelisted") }}
+          </option>
+          <option value="released">
+            {{ t("admin.settings.ipSecurity.statusReleased") }}
+          </option>
+          <option value="">{{ t("common.all") }}</option></select
+        ><button
+          type="button"
+          class="btn btn-secondary btn-sm"
+          :disabled="loading"
+          @click="loadBans(page)"
+        >
           <Icon name="search" size="sm" />
-          {{ t('common.refresh') }}
-        </button>
-        <span class="text-xs text-muted">{{ t('admin.settings.ipSecurity.listHint') }}</span>
+          {{ t("common.refresh") }}</button
+        ><span class="text-xs text-muted">{{
+          t("admin.settings.ipSecurity.listHint")
+        }}</span>
       </div>
-
-      <div v-if="bans.length" class="overflow-x-auto rounded border border-line">
+      <div
+        v-if="bans.length"
+        class="overflow-x-auto rounded border border-line settings-block"
+      >
         <table class="min-w-full text-left text-sm">
           <thead class="bg-surface-2">
             <tr>
               <th class="px-3 py-2">IP</th>
-              <th class="px-3 py-2">{{ t('common.status') }}</th>
-              <th class="px-3 py-2">{{ t('admin.settings.ipSecurity.accounts') }}</th>
-              <th class="px-3 py-2">{{ t('admin.settings.ipSecurity.createdAt') }}</th>
+              <th class="px-3 py-2">{{ t("common.status") }}</th>
+              <th class="px-3 py-2">
+                {{ t("admin.settings.ipSecurity.accounts") }}
+              </th>
+              <th class="px-3 py-2">
+                {{ t("admin.settings.ipSecurity.createdAt") }}
+              </th>
               <th class="px-3 py-2"></th>
             </tr>
           </thead>
@@ -68,35 +122,63 @@
             <tr v-for="ban in bans" :key="ban.id" class="border-t border-line">
               <td class="px-3 py-2 font-mono">{{ ban.ip_address }}</td>
               <td class="px-3 py-2">{{ formatStatus(ban.status) }}</td>
-              <td class="px-3 py-2">{{ ban.detected_account_count }} / {{ ban.account_threshold }}</td>
-              <td class="px-3 py-2 text-xs">{{ formatTime(ban.created_at) }}</td>
+              <td class="px-3 py-2">
+                {{ ban.detected_account_count }} / {{ ban.account_threshold }}
+              </td>
+              <td class="px-3 py-2 text-xs">
+                {{ formatTime(ban.created_at) }}
+              </td>
               <td class="px-3 py-2 text-right">
-                <button type="button" class="btn btn-secondary btn-xs" @click="openBan(ban.id)">
-                  {{ t('admin.settings.ipSecurity.details') }}
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-xs"
+                  @click="openBan(ban.id)"
+                >
+                  {{ t("admin.settings.ipSecurity.details") }}
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div v-if="total" class="settings-flex-row settings-control-row flex items-center justify-between text-sm text-muted">
-        <span>{{ t('admin.settings.ipSecurity.total', { count: total }) }}</span>
+      <div
+        v-if="total"
+        class="settings-flex-row settings-control-row flex items-center justify-between text-sm text-muted settings-block"
+      >
+        <span>{{
+          t("admin.settings.ipSecurity.total", { count: total })
+        }}</span>
         <div class="settings-flex-row flex items-center gap-2">
-          <button type="button" class="btn btn-secondary btn-xs" :disabled="page <= 1 || loading" @click="loadBans(page - 1)">
+          <button
+            type="button"
+            class="btn btn-secondary btn-xs"
+            :disabled="page <= 1 || loading"
+            @click="loadBans(page - 1)"
+          >
             <Icon name="chevronLeft" size="sm" />
           </button>
           <span>{{ page }} / {{ pages }}</span>
-          <button type="button" class="btn btn-secondary btn-xs" :disabled="page >= pages || loading" @click="loadBans(page + 1)">
+          <button
+            type="button"
+            class="btn btn-secondary btn-xs"
+            :disabled="page >= pages || loading"
+            @click="loadBans(page + 1)"
+          >
             <Icon name="chevronRight" size="sm" />
           </button>
         </div>
       </div>
-
-      <div v-if="detail" class="rounded border border-line p-4">
-        <div class="settings-flex-row settings-control-row flex flex-wrap items-center justify-between gap-3">
+      <div v-if="detail" class="rounded border border-line p-4 settings-block">
+        <div
+          class="settings-flex-row settings-control-row flex flex-wrap items-center justify-between gap-3"
+        >
           <div>
-            <div class="font-mono font-semibold">{{ detail.ban.ip_address }}</div>
-            <div class="text-xs text-muted">{{ formatStatus(detail.ban.status) }} · {{ detail.ban.reason }}</div>
+            <div class="font-mono font-semibold">
+              {{ detail.ban.ip_address }}
+            </div>
+            <div class="text-xs text-muted">
+              {{ formatStatus(detail.ban.status) }} · {{ detail.ban.reason }}
+            </div>
           </div>
           <button
             v-if="detail.ban.status === 'active'"
@@ -104,7 +186,7 @@
             class="btn btn-danger btn-sm"
             @click="releaseBan(detail.ban.id)"
           >
-            {{ t('admin.settings.ipSecurity.releaseAndWhitelist') }}
+            {{ t("admin.settings.ipSecurity.releaseAndWhitelist") }}
           </button>
           <button
             v-else-if="detail.ban.status === 'whitelisted'"
@@ -112,7 +194,7 @@
             class="btn btn-secondary btn-sm"
             @click="removeWhitelist(detail.ban.id)"
           >
-            {{ t('admin.settings.ipSecurity.restoreDetection') }}
+            {{ t("admin.settings.ipSecurity.restoreDetection") }}
           </button>
         </div>
         <div class="mt-3 space-y-2 text-sm">
@@ -122,16 +204,26 @@
             class="rounded bg-surface-2 p-2"
           >
             <div class="settings-flex-row flex flex-wrap justify-between gap-2">
-              <span>{{ activity.user_email || activity.user_username || `#${activity.user_id}` }}</span>
+              <span>{{
+                activity.user_email ||
+                activity.user_username ||
+                `#${activity.user_id}`
+              }}</span>
               <span class="font-mono text-xs">
                 {{ activity.source }}
-                <span v-if="activity.api_key_id"> · key #{{ activity.api_key_id }}</span>
+                <span v-if="activity.api_key_id">
+                  · key #{{ activity.api_key_id }}</span
+                >
               </span>
             </div>
-            <div class="mt-1 break-all font-mono text-xs text-muted">{{ activity.method }} {{ activity.path }}</div>
+            <div class="mt-1 break-all font-mono text-xs text-muted">
+              {{ activity.method }} {{ activity.path }}
+            </div>
             <div class="mt-1 text-[11px] text-muted">
-              {{ t('admin.settings.ipSecurity.calls') }}: {{ activity.request_count }} ·
-              {{ formatTime(activity.first_seen_at) }} - {{ formatTime(activity.last_seen_at) }}
+              {{ t("admin.settings.ipSecurity.calls") }}:
+              {{ activity.request_count }} ·
+              {{ formatTime(activity.first_seen_at) }} -
+              {{ formatTime(activity.last_seen_at) }}
             </div>
           </div>
         </div>

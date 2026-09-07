@@ -4,9 +4,21 @@ import type { SparkPath } from './types'
 const SPARK_W = 100
 const SPARK_H = 28
 
+export function previousDateRange(startDate: string, endDate: string) {
+  const start = Date.parse(`${startDate}T00:00:00Z`)
+  const end = Date.parse(`${endDate}T00:00:00Z`)
+  const day = 86400000
+  const duration = end - start + day
+  return {
+    start_date: new Date(start - duration).toISOString().slice(0, 10),
+    end_date: new Date(start - day).toISOString().slice(0, 10)
+  }
+}
+
 /** Build the prototype's 100×28 area + line sparkline geometry for a series. */
 export const buildSpark = (values: number[]): SparkPath => {
-  const points = values.length >= 2 ? values : [0, 0]
+  if (values.length < 2) return { line: '', area: '' }
+  const points = values
   const min = Math.min(...points)
   const max = Math.max(...points)
   const span = max - min
@@ -67,5 +79,5 @@ export const formatEventTime = (value: string): string => {
   if (!value) return '--:--'
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return '--:--'
-  return `${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
+  return `${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')} ${String(parsed.getHours()).padStart(2, '0')}:${String(parsed.getMinutes()).padStart(2, '0')}`
 }

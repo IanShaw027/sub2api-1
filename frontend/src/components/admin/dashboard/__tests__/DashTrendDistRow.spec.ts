@@ -6,6 +6,7 @@ import DashTrendDistRow from '../DashTrendDistRow.vue'
 const { dimensions } = vi.hoisted(() => ({ dimensions: { width: undefined as unknown } }))
 vi.mock('@vueuse/core', () => ({ useElementSize: () => ({ width: dimensions.width }) }))
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('@/api/admin/dashboard', () => ({ getModelStats: vi.fn(), getUserBreakdown: vi.fn() }))
 
 describe('DashTrendDistRow axis labels', () => {
   it('sparsifies narrow labels without removing bars and restores labels on resize', async () => {
@@ -18,7 +19,7 @@ describe('DashTrendDistRow axis labels', () => {
     const wrapper = mount(DashTrendDistRow, {
       props: {
         trendBars, trendSubtitle: 'Today', trendMetricOptions: [], trendMetric: 'requests',
-        distRows: [], distRowsLoading: false, distView: 'models'
+        distRows: [], distRowsLoading: false, distView: 'models', startDate: '2026-09-01', endDate: '2026-09-07'
       }
     })
 

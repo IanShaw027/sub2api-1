@@ -39,6 +39,8 @@ const COLOR_WHITELIST = [
 ]
 const SCOPED_WHITELIST = [/^views\/HomeView\.vue$/, /^views\/auth\//]
 const SCOPED_PROPS = /^\s*(color|background(?:-color)?|border-radius|box-shadow|font-size|font-weight)\s*:/
+// Icon-layout compatibility belongs to StatCard, never to page-owned markup.
+const LEGACY_STAT = /(?<![\w-])stat-(?:card|icon(?:-(?:primary|success|warning|danger))?)(?![\w-])/g
 
 function walk(dir, out = []) {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -58,6 +60,9 @@ for (const file of files) {
   const text = fs.readFileSync(file, 'utf8')
   const lines = text.split('\n')
   lines.forEach((line, i) => {
+    if (r.startsWith('views/')) {
+      for (const m of line.matchAll(LEGACY_STAT)) hits.legacy.push({ file: r, line: i + 1, match: m[0] })
+    }
     for (const re of LEGACY) { const m = line.match(re); if (m) hits.legacy.push({ file: r, line: i + 1, match: m[0] }) }
     if (palette) { for (const m of line.matchAll(PALETTE)) hits.palette.push({ file: r, line: i + 1, match: m[0] }) }
     // block-comment continuation lines (` * …`) carry prose such as issue refs (`#4607`), not colours

@@ -1,107 +1,84 @@
 <template>
- <!-- Overload Cooldown (529) Settings -->
- <div class="glass-card settings-card">
- <div
- class="settings-card-head"
- >
- <h2 class="settings-card-title">
- {{ t("admin.settings.overloadCooldown.title") }}
- </h2>
- <p class="settings-card-desc">
- {{ t("admin.settings.overloadCooldown.description") }}
- </p>
- </div>
- <div class="settings-card-body">
- <div
- v-if="overloadCooldownLoading"
- class="settings-flex-row flex items-center gap-2 text-muted"
- >
- <div
- class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
- ></div>
- {{ t("common.loading") }}
- </div>
+  <!-- Overload Cooldown (529) Settings -->
+  <SettingsSection
+    :title="t('admin.settings.overloadCooldown.title')"
+    :description="t('admin.settings.overloadCooldown.description')"
+  >
+    <div class="settings-rows">
+      <div
+        v-if="overloadCooldownLoading"
+        class="settings-flex-row flex items-center gap-2 text-muted settings-block"
+      >
+        <div
+          class="h-4 w-4 animate-spin rounded-full border-b-2 border-accent"
+        ></div>
+        {{ t("common.loading") }}
+      </div>
+      <template v-else>
+        <SettingRow
+          :label="t('admin.settings.overloadCooldown.enabled')"
+          :description="t('admin.settings.overloadCooldown.enabledHint')"
+        >
+          <Toggle v-model="overloadCooldownForm.enabled" />
+        </SettingRow>
 
- <template v-else>
- <div class="settings-flex-row settings-control-row flex items-center justify-between">
- <div>
- <label class="font-medium text-foreground ">{{
- t("admin.settings.overloadCooldown.enabled")
- }}</label>
- <p class="text-sm text-muted ">
- {{ t("admin.settings.overloadCooldown.enabledHint") }}
- </p>
- </div>
- <Toggle v-model="overloadCooldownForm.enabled" />
- </div>
+        <div v-if="overloadCooldownForm.enabled" class="settings-rows">
+          <SettingRow
+            :label="t('admin.settings.overloadCooldown.cooldownMinutes')"
+            :description="
+              t('admin.settings.overloadCooldown.cooldownMinutesHint')
+            "
+          >
+            <input
+              v-model.number="overloadCooldownForm.cooldown_minutes"
+              type="number"
+              min="1"
+              max="120"
+              class="input w-32"
+            />
+          </SettingRow>
+        </div>
 
- <div
- v-if="overloadCooldownForm.enabled"
- class="space-y-4 border-t border-line pt-4 "
- >
- <div class="settings-row">
- <label
- class="settings-row-label"
- >
- {{ t("admin.settings.overloadCooldown.cooldownMinutes") }}
- </label>
- <input
- v-model.number="overloadCooldownForm.cooldown_minutes"
- type="number"
- min="1"
- max="120"
- class="input w-32"
- />
- <p class="settings-row-hint">
- {{
- t("admin.settings.overloadCooldown.cooldownMinutesHint")
- }}
- </p>
- </div>
- </div>
-
- <div
- class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 "
- >
- <button
- type="button"
- @click="saveOverloadCooldownSettings"
- :disabled="overloadCooldownSaving"
- class="btn-glass-primary"
- >
- <svg
- v-if="overloadCooldownSaving"
- class="mr-1 h-4 w-4 animate-spin"
- fill="none"
- viewBox="0 0 24 24"
- >
- <circle
- class="opacity-25"
- cx="12"
- cy="12"
- r="10"
- stroke="currentColor"
- stroke-width="4"
- ></circle>
- <path
- class="opacity-75"
- fill="currentColor"
- d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
- ></path>
- </svg>
- {{
- overloadCooldownSaving
- ? t("common.saving")
- : t("common.save")
- }}
- </button>
- </div>
- </template>
- </div>
- </div>
+        <div
+          class="settings-flex-row settings-divider-row flex justify-end border-t border-line pt-4 settings-block"
+        >
+          <button
+            type="button"
+            @click="saveOverloadCooldownSettings"
+            :disabled="overloadCooldownSaving"
+            class="btn-glass-primary"
+          >
+            <svg
+              v-if="overloadCooldownSaving"
+              class="mr-1 h-4 w-4 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              ></circle>
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              ></path>
+            </svg>
+            {{ overloadCooldownSaving ? t("common.saving") : t("common.save") }}
+          </button>
+        </div>
+      </template>
+    </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
+import SettingRow from "@/components/ui/SettingRow.vue";
+import SettingsSection from "@/components/ui/SettingsSection.vue";
 import { inject, ref } from "vue";
 import { SettingsFormKey } from "../useSettingsForm";
 import { adminAPI } from "@/api";

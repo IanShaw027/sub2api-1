@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
 import type { DashboardStats } from '@/types'
@@ -97,6 +97,26 @@ const createDashboardStats = (): DashboardStats => ({
 })
 
 describe('admin DashboardView', () => {
+  it('compares range totals, not today fields, and keeps Hero bars on requests', async () => {
+    setActivePinia(createPinia())
+    getSnapshotV2.mockImplementation(params => Promise.resolve({
+      stats: { ...createDashboardStats(), total_requests: params.include_trend ? 120 : 60, today_requests: 999 },
+      trend: [{ date: '2026-08-01', requests: 1, total_tokens: 9 }, { date: '2026-08-02', requests: 9, total_tokens: 1 }],
+      models: []
+    }))
+    const wrapper = shallowMount(DashboardView, { global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } } })
+    await flushPromises()
+    const hero = wrapper.findComponent({ name: 'DashHeroSection' })
+    expect(hero.props('requestsDelta').text).toContain('100%')
+    const originalBars = hero.props('trendBars')
+    const chart = wrapper.findComponent({ name: 'DashTrendDistRow' })
+    chart.vm.$emit('update:trendMetric', 'tokens')
+    await flushPromises()
+    expect(hero.props('trendBars')).toEqual(originalBars)
+    expect(chart.props('trendBars')[0].height).toBe('100%')
+    expect(hero.props('trendBars')[1].height).toBe('100%')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     setActivePinia(createPinia())
 
@@ -125,6 +145,30 @@ describe('admin DashboardView', () => {
     })
   })
 
+  it('shows a skeleton only before the first snapshot and retains data while refreshing', async () => {
+    let resolveSnapshot!: (value: unknown) => void
+    getSnapshotV2.mockImplementationOnce(() => new Promise(resolve => { resolveSnapshot = resolve }))
+    const wrapper = shallowMount(DashboardView, {
+      global: { stubs: { AppLayout: { template: '<div><slot /></div>' } } }
+    })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'DashboardSkeleton' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'DashHeroSection' }).exists()).toBe(false)
+    resolveSnapshot({ stats: createDashboardStats(), trend: [], models: [] })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'DashboardSkeleton' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'DashHeroSection' }).exists()).toBe(true)
+    getSnapshotV2.mockImplementationOnce(() => new Promise(resolve => { resolveSnapshot = resolve }))
+    wrapper.findComponent({ name: 'DashHeroSection' }).vm.$emit('loadDashboardStats')
+    await flushPromises()
+    expect(getSnapshotV2).toHaveBeenCalledTimes(4)
+    expect(wrapper.findComponent({ name: 'DashboardSkeleton' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'DashHeroSection' }).exists()).toBe(true)
+    resolveSnapshot({ stats: createDashboardStats(), trend: [], models: [] })
+    await flushPromises()
+    wrapper.unmount()
+  })
+
   it('uses last 24 hours as default dashboard range', async () => {
     mount(DashboardView, {
       global: {
@@ -147,7 +191,7 @@ describe('admin DashboardView', () => {
     const now = new Date()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
 
-    expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
     expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
       start_date: formatLocalDate(yesterday),
       end_date: formatLocalDate(now),
@@ -176,16 +220,21 @@ describe('admin DashboardView', () => {
     })
 
     await flushPromises()
-    expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
 
     await wrapper.get('[data-test="date-range"]').trigger('click')
     await flushPromises()
 
-    expect(getSnapshotV2).toHaveBeenCalledTimes(2)
-    expect(getSnapshotV2).toHaveBeenLastCalledWith(expect.objectContaining({
+    expect(getSnapshotV2).toHaveBeenCalledTimes(4)
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
       start_date: '2026-08-01',
       end_date: '2026-08-07',
       include_stats: true
     }))
+    expect(getSnapshotV2).toHaveBeenCalledWith(expect.objectContaining({
+      start_date: '2026-07-25', end_date: '2026-07-31', include_trend: false
+    }))
+    expect(getUserUsageTrend).toHaveBeenLastCalledWith(expect.objectContaining({ start_date: '2026-08-01', end_date: '2026-08-07' }))
+    expect(getUserSpendingRanking).toHaveBeenLastCalledWith(expect.objectContaining({ start_date: '2026-08-01', end_date: '2026-08-07' }))
   })
 })
