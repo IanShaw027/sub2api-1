@@ -1,5 +1,5 @@
 <template>
-  <button type="button" class="ui-fab btn-glass-primary" :aria-label="label" @click="$emit('click', $event)">
+  <button type="button" class="ui-fab btn-glass-primary" :title="label" :aria-label="label" @click="$emit('click', $event)">
     <slot />
   </button>
 </template>

@@ -2,6 +2,12 @@
  <div class="relative" ref="containerRef">
  <button
  type="button"
+ ref="triggerRef"
+ :aria-expanded="isOpen"
+ aria-haspopup="dialog"
+ :aria-controls="isOpen ? popupId : undefined"
+ :aria-label="t('dates.selectDateRange')"
+ :title="t('dates.selectDateRange')"
  @click="toggle"
  :class="['date-picker-trigger', isOpen && 'date-picker-trigger-open']"
  >
@@ -20,12 +26,14 @@
  </span>
  </button>
 
+ <Teleport to="body">
  <Transition name="date-picker-dropdown">
- <div v-if="isOpen" class="date-picker-dropdown">
+ <div v-if="isOpen" :id="popupId" ref="dropdownRef" class="date-picker-dropdown" :style="dropdownStyle" role="dialog" :aria-label="t('dates.selectDateRange')">
  <!-- Quick presets -->
  <div class="date-picker-presets">
  <button
  v-for="preset in presets"
+ type="button"
  :key="preset.value"
  @click="selectPreset(preset)"
  :class="['date-picker-preset', isPresetActive(preset) && 'date-picker-preset-active']"
@@ -39,9 +47,10 @@
  <!-- Custom date range inputs -->
  <div class="date-picker-custom">
  <div class="date-picker-field">
- <label class="date-picker-label">{{ t('dates.startDate') }}</label>
+ <label :for="`${popupId}-start`" class="date-picker-label">{{ t('dates.startDate') }}</label>
  <input
  type="date"
+ :id="`${popupId}-start`"
  v-model="localStartDate"
  :max="localEndDate || tomorrow"
  class="date-picker-input"
@@ -52,9 +61,10 @@
  <Icon name="arrowRight" size="sm" class="text-muted" />
  </div>
  <div class="date-picker-field">
- <label class="date-picker-label">{{ t('dates.endDate') }}</label>
+ <label :for="`${popupId}-end`" class="date-picker-label">{{ t('dates.endDate') }}</label>
  <input
  type="date"
+ :id="`${popupId}-end`"
  v-model="localEndDate"
  :min="localStartDate"
  :max="tomorrow"
@@ -66,17 +76,18 @@
 
  <!-- Apply button -->
  <div class="date-picker-actions">
- <button @click="apply" class="date-picker-apply">
+ <button type="button" @click="apply" class="date-picker-apply" :disabled="!validRange">
  {{ t('dates.apply') }}
  </button>
  </div>
  </div>
  </Transition>
+ </Teleport>
  </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, useId, type CSSProperties } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 
@@ -104,6 +115,30 @@ const { t, locale } = useI18n()
 
 const isOpen = ref(false)
 const containerRef = ref<HTMLElement | null>(null)
+const triggerRef = ref<HTMLButtonElement | null>(null)
+const dropdownRef = ref<HTMLElement | null>(null)
+const popupId = `date-range-${useId()}`
+const dropdownStyle = ref<CSSProperties>({})
+const validRange = computed(() => Boolean(localStartDate.value && localEndDate.value && localStartDate.value <= localEndDate.value && localEndDate.value <= tomorrow.value))
+
+function updatePosition() {
+ if (!isOpen.value || !triggerRef.value) return
+ const rect = triggerRef.value.getBoundingClientRect()
+ const padding = 8
+ const width = Math.min(360, window.innerWidth - padding * 2)
+ const below = window.innerHeight - rect.bottom - padding
+ const above = rect.top - padding
+ const height = dropdownRef.value?.scrollHeight || 320
+ const openAbove = below < height && above > below
+ const maxHeight = Math.max(100, (openAbove ? above : below) - padding)
+ dropdownStyle.value = {
+   width: `${width}px`,
+   left: `${Math.max(padding, Math.min(rect.left, window.innerWidth - width - padding))}px`,
+   top: openAbove ? undefined : `${Math.max(padding, rect.bottom + padding)}px`,
+   bottom: openAbove ? `${Math.max(padding, window.innerHeight - rect.top + padding)}px` : undefined,
+   maxHeight: `${Math.min(maxHeight, window.innerHeight - padding * 2)}px`
+ }
+}
 const localStartDate = ref(props.startDate)
 const localEndDate = ref(props.endDate)
 const activePreset = ref<string | null>('last24Hours')
@@ -268,6 +303,7 @@ const toggle = () => {
 }
 
 const apply = () => {
+ if (!validRange.value) return
  emit('update:startDate', localStartDate.value)
  emit('update:endDate', localEndDate.value)
  emit('change', {
@@ -276,10 +312,12 @@ const apply = () => {
  preset: activePreset.value
  })
  isOpen.value = false
+ triggerRef.value?.focus()
 }
 
 const handleClickOutside = (event: MouseEvent) => {
- if (containerRef.value && !containerRef.value.contains(event.target as Node)) {
+ if (!isOpen.value) return
+ if (containerRef.value && !containerRef.value.contains(event.target as Node) && !dropdownRef.value?.contains(event.target as Node)) {
  isOpen.value = false
  }
 }
@@ -287,6 +325,7 @@ const handleClickOutside = (event: MouseEvent) => {
 const handleEscape = (event: KeyboardEvent) => {
  if (event.key === 'Escape' && isOpen.value) {
  isOpen.value = false
+ triggerRef.value?.focus()
  }
 }
 
@@ -308,6 +347,8 @@ watch(
 )
 
 onMounted(() => {
+ window.addEventListener('resize', updatePosition)
+ window.addEventListener('scroll', updatePosition, true)
  document.addEventListener('click', handleClickOutside)
  document.addEventListener('keydown', handleEscape)
  // Initialize active preset detection
@@ -315,8 +356,18 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+ window.removeEventListener('resize', updatePosition)
+ window.removeEventListener('scroll', updatePosition, true)
  document.removeEventListener('click', handleClickOutside)
  document.removeEventListener('keydown', handleEscape)
+})
+
+watch(isOpen, async open => {
+ if (!open) return
+ updatePosition()
+ await nextTick()
+ updatePosition()
+ dropdownRef.value?.querySelector<HTMLButtonElement>('button')?.focus()
 })
 </script>
 
@@ -358,11 +409,8 @@ onUnmounted(() => {
 }
 
 .date-picker-dropdown {
- position: absolute;
- left: 0;
- z-index: 100;
- margin-top: 8px;
- min-width: 320px;
+ position: fixed;
+ z-index: 100000020;
  padding: 6px;
  border-radius: 12px;
  background: color-mix(in oklch, var(--surface) 92%, transparent);
@@ -370,7 +418,8 @@ onUnmounted(() => {
  box-shadow: var(--shadow-pop);
  backdrop-filter: blur(20px);
  -webkit-backdrop-filter: blur(20px);
- overflow: hidden;
+ overflow-y: auto;
+ overscroll-behavior: contain;
 }
 
 .date-picker-presets {
@@ -386,7 +435,7 @@ onUnmounted(() => {
 
 .date-picker-preset-active {
  @apply bg-[color-mix(in_oklch,var(--accent)_16%,transparent)];
- @apply text-accent;
+ color: var(--info-text);
 }
 
 .date-picker-divider {
@@ -398,7 +447,7 @@ onUnmounted(() => {
 }
 
 .date-picker-field {
- @apply flex-1;
+ @apply min-w-0 flex-1;
 }
 
 .date-picker-label {

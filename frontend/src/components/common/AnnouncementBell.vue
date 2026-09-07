@@ -6,6 +6,7 @@
  class="header-icon-btn relative"
  :class="{ 'text-accent': unreadCount > 0 }"
  :aria-label="t('announcements.title')"
+ :title="t('announcements.title')"
  >
  <Icon name="bell" size="md" />
  <!-- 未读计数徽章 -->

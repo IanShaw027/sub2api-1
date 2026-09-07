@@ -9,6 +9,7 @@ import AppSidebar from '@/components/layout/AppSidebar.vue'
 import { ensureSidebarSectionForSelector } from '@/composables/ensureSidebarSectionForSelector'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { useOnboardingStore } from '@/stores/onboarding'
 import type { User } from '@/types'
 
 vi.mock('vue-i18n', async (importOriginal) => {
@@ -130,25 +131,26 @@ describe('ensureSidebarSectionForSelector', () => {
     localStorage.clear()
   })
 
-  it('force-opens admin My Account for sidebar-my-keys without persisting preference', async () => {
+  it('temporarily selects user navigation for the keys tour and restores admin mode when it ends', async () => {
     const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
     const setOpen = vi.spyOn(appStore, 'setSidebarSectionOpen')
 
-    const myAccount = wrapper.find('[data-section="myAccount"]')
-    expect(myAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
+    expect(wrapper.find('[data-section="workspace"]').exists()).toBe(false)
 
     await ensureSidebarSectionForSelector('[data-tour="sidebar-my-keys"]')
     await nextTick()
 
     expect(setOpen).not.toHaveBeenCalled()
-    expect(appStore.sidebarSectionsForceOpen.myAccount).toBe(true)
-    expect(appStore.sidebarSectionsOpen.myAccount).toBeUndefined()
+    expect(appStore.sidebarSectionsForceOpen.workspace).toBe(true)
+    expect(appStore.sidebarSectionsOpen.workspace).toBeUndefined()
     expect(localStorage.getItem('sidebar-sections-open')).toBeNull()
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
+    expect(wrapper.find('[data-section="workspace"] .sidebar-section-items').classes()).not.toContain('hidden')
 
     appStore.clearSidebarSectionsForceOpen()
+    useOnboardingStore().setDriverActive(false)
     await nextTick()
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
+    expect(wrapper.find('[data-section="workspace"]').exists()).toBe(false)
+    expect(wrapper.find('[data-section="overview"]').exists()).toBe(true)
 
     wrapper.unmount()
   })
@@ -173,7 +175,7 @@ describe('ensureSidebarSectionForSelector', () => {
 
     await ensureSidebarSectionForSelector('[data-tour="sidebar-my-keys"]')
 
-    expect(appStore.sidebarSectionsForceOpen.myAccount).toBe(true)
-    expect(appStore.sidebarSectionsOpen.myAccount).toBeUndefined()
+    expect(appStore.sidebarSectionsForceOpen.workspace).toBe(true)
+    expect(appStore.sidebarSectionsOpen.workspace).toBeUndefined()
   })
 })

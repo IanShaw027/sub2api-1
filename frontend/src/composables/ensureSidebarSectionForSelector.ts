@@ -2,6 +2,7 @@ import { nextTick } from 'vue'
 import { sectionKeyForSelector } from '@/constants/sidebar'
 import { TABLET_UP_MEDIA_QUERY } from '@/composables/useIsMobile'
 import { useAppStore } from '@/stores/app'
+import { useOnboardingStore } from '@/stores/onboarding'
 
 function isMobileViewport(): boolean {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
@@ -19,6 +20,11 @@ function isMobileViewport(): boolean {
  */
 export async function ensureSidebarSectionForSelector(selector: string): Promise<void> {
   const appStore = useAppStore()
+  const targetSection = sectionKeyForSelector(selector)
+  if (targetSection) {
+    useOnboardingStore().setSidebarMode(targetSection === 'workspace' ? 'user' : 'admin')
+    await nextTick()
+  }
   if (isMobileViewport()) {
     appStore.setMobileOpen(true)
     await nextTick()

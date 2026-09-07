@@ -50,7 +50,7 @@ Pages MUST reach for these instead of writing colour/radius/shadow in
 - Cards: `.glass-card`, `.glass-card-solid`, `.glass-card-flat`, `.glass-ring`,
   `.glass-inset`, `.card-header`, `.card-title`, `.card-subtitle`,
   `.card-body`, `.card-footer`
-- Stats/summaries: `.stat-card`, `.summary-chip`, `.summary-row` (5/3/1-col
+- Stats/summaries: `StatCard`, `.summary-chip`, `.summary-row` (5/3/1-col
   responsive grid)
 - Filters: `.filter-row`, `.filter-search` (260px, 100% <768px), `.filter-count`
 - Tables: `.table*`, `.table-footer`

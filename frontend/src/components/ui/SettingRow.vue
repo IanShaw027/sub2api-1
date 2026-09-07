@@ -1,8 +1,14 @@
 <template>
   <div class="ui-setting-row">
     <div class="ui-setting-row-label">
-      <p :id="titleId" class="ui-setting-row-title">{{ label }}</p>
-      <p v-if="description" class="ui-setting-row-description">{{ description }}</p>
+      <div :id="titleId" class="ui-setting-row-title">
+        <slot name="label">
+          <component :is="labelFor ? 'label' : 'span'" :for="labelFor">{{ label }}</component>
+        </slot>
+      </div>
+      <div v-if="description || $slots.description" class="ui-setting-row-description">
+        <slot name="description">{{ description }}</slot>
+      </div>
     </div>
     <div class="ui-setting-row-control" :aria-labelledby="titleId">
       <slot />
@@ -14,7 +20,8 @@
 import { useId } from 'vue'
 
 defineProps<{
-  label: string
+  label?: string
+  labelFor?: string
   description?: string
 }>()
 
@@ -58,7 +65,17 @@ const titleId = `ui-setting-row-${useId()}`
   max-width: 420px;
 }
 
-@media (max-width: 767px) {
+.ui-setting-row-control :deep(input[type="number"].input),
+.ui-setting-row-control :deep(input[type="number"].field) {
+  max-width: 120px;
+}
+
+.ui-setting-row-control :deep(textarea.input),
+.ui-setting-row-control :deep(textarea.field) {
+  max-width: 100%;
+}
+
+@media (max-width: 900px) {
   .ui-setting-row {
     grid-template-columns: 1fr;
     gap: 8px;

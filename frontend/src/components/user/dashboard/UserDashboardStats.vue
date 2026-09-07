@@ -8,9 +8,9 @@
  :sub="`${stats?.active_api_keys || 0} ${t('common.active')}`"
  />
  <StatCard
- :label="t('dashboard.todayRequests')"
- :value="stats?.today_requests || 0"
- :sub="`${t('common.total')}: ${formatNumber(stats?.total_requests || 0)}`"
+ :label="t('dashboard.periodRequests')"
+ :value="formatNumber(period.requests)"
+ :sub="`${t('dashboard.todayRequests')}: ${formatNumber(stats?.today_requests || 0)}`"
  >
  <template v-if="requestsSpark" #sparkline>
  <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
@@ -20,9 +20,9 @@
  </template>
  </StatCard>
  <StatCard
- :label="t('dashboard.todayTokens')"
- :value="formatTokens(stats?.today_tokens || 0)"
- :sub="`${t('dashboard.input')}: ${formatTokens(stats?.today_input_tokens || 0)} / ${t('dashboard.output')}: ${formatTokens(stats?.today_output_tokens || 0)}\n${t('dashboard.cache')}: ${formatTokens((stats?.today_cache_creation_tokens || 0) + (stats?.today_cache_read_tokens || 0))}`"
+ :label="t('dashboard.periodTokens')"
+ :value="formatTokens(period.tokens)"
+ :sub="`${t('dashboard.input')}: ${formatTokens(period.input)} / ${t('dashboard.output')}: ${formatTokens(period.output)}\n${t('dashboard.cache')}: ${formatTokens(period.cache)}\n${t('dashboard.todayTokens')}: ${formatTokens(stats?.today_tokens || 0)} (${t('dashboard.cache')}: ${formatTokens((stats?.today_cache_creation_tokens || 0) + (stats?.today_cache_read_tokens || 0))})`"
  >
  <template v-if="tokensSpark" #sparkline>
  <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
@@ -32,9 +32,9 @@
  </template>
  </StatCard>
  <StatCard
- :label="t('dashboard.todayCost')"
- :value="`$${formatCost(stats?.today_actual_cost || 0)}`"
- :sub="`${t('dashboard.standard')}: $${formatCost(stats?.today_cost || 0)}`"
+ :label="t('dashboard.periodCost')"
+ :value="`$${formatCost(period.actualCost)}`"
+ :sub="`${t('dashboard.standard')}: $${formatCost(period.cost)}\n${t('dashboard.todayCost')}: $${formatCost(stats?.today_actual_cost || 0)} (${t('dashboard.standard')}: $${formatCost(stats?.today_cost || 0)})`"
  >
  <template v-if="costSpark" #sparkline>
  <svg viewBox="0 0 100 28" preserveAspectRatio="none" class="dash-spark">
@@ -175,6 +175,15 @@ const props = defineProps<{
  trend?: TrendDataPoint[]
 }>()
 const { t } = useI18n()
+const period = computed(() => (props.trend ?? []).reduce((sum, point) => ({
+ requests: sum.requests + point.requests,
+ tokens: sum.tokens + point.total_tokens,
+ input: sum.input + point.input_tokens,
+ output: sum.output + point.output_tokens,
+ cache: sum.cache + point.cache_creation_tokens + point.cache_read_tokens,
+ actualCost: sum.actualCost + point.actual_cost,
+ cost: sum.cost + point.cost
+}), { requests: 0, tokens: 0, input: 0, output: 0, cache: 0, actualCost: 0, cost: 0 }))
 
 const PLATFORM_LABELS: Record<string, string> = {
  anthropic: 'Claude',

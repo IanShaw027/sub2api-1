@@ -34,6 +34,27 @@ const formatLocalDate = (date: Date): string => {
 }
 
 describe('DateRangePicker', () => {
+  it('teleports the dialog and only restores focus on Escape, not outside clicks', async () => {
+    const wrapper = mount(DateRangePicker, { attachTo: document.body, props: { startDate: '2026-01-01', endDate: '2026-01-07' } })
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    outside.focus()
+    outside.click()
+    expect(document.activeElement).toBe(outside)
+    await wrapper.get('.date-picker-trigger').trigger('click')
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(wrapper.get('.date-picker-trigger').element)
+    await wrapper.get('.date-picker-trigger').trigger('click')
+    outside.focus()
+    outside.click()
+    await wrapper.vm.$nextTick()
+    expect(document.activeElement).toBe(outside)
+    wrapper.unmount()
+    outside.remove()
+  })
   it('uses last 24 hours as the default recognized preset', () => {
     const now = new Date()
     const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
@@ -45,7 +66,8 @@ describe('DateRangePicker', () => {
       },
       global: {
         stubs: {
-          Icon: true
+          Icon: true,
+          Teleport: true
         }
       }
     })
@@ -64,7 +86,8 @@ describe('DateRangePicker', () => {
       },
       global: {
         stubs: {
-          Icon: true
+          Icon: true,
+          Teleport: true
         }
       }
     })

@@ -204,6 +204,9 @@ export default {
       support: '支持'
     },
     breadcrumbAdmin: '管理后台',
+    navigationMode: '菜单模式',
+    adminView: '管理员',
+    userView: '用户',
     breadcrumbUser: '控制台',
     search: '搜索',
     searchPlaceholder: '搜索账号、密钥、用户…',

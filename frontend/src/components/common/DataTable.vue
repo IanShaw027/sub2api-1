@@ -124,7 +124,7 @@
  ]"
  @click="column.sortable && handleSort(column.key)"
  >
- <div :class="['flex items-center space-x-1', getHeaderContentAlignmentClass(column)]">
+ <div :style="columnContentStyle(column)" :class="['data-table-cell-content flex items-center space-x-1', getHeaderContentAlignmentClass(column)]">
  <slot
  :name="`header-${column.key}`"
  :column="column"
@@ -224,6 +224,7 @@
  column.class
  ]"
  >
+ <div class="data-table-cell-content" :style="columnContentStyle(column)">
  <slot :name="`cell-${column.key}`"
  :row="item.row"
  :value="item.row[column.key]"
@@ -232,6 +233,7 @@
  ? column.formatter(item.row[column.key], item.row)
  : item.row[column.key] }}
  </slot>
+ </div>
  </td>
  </tr>
  <tr v-if="virtualPaddingBottom > 0" aria-hidden="true">
@@ -253,6 +255,9 @@ import type { Column } from './types'
 import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
+const columnContentStyle = (column: Column) => ({
+ maxWidth: typeof column.maxWidth === 'number' ? `${column.maxWidth}px` : column.maxWidth || (column.key === 'actions' ? '240px' : '360px')
+})
 
 const desktopViewportQuery = '(min-width: 768px)'
 const isDesktopViewport = ref(
@@ -971,6 +976,13 @@ defineExpose({
  font-size: 13px;
 }
 
+.data-table-cell-content {
+ width: max-content;
+ min-width: 0;
+ white-space: normal;
+ overflow-wrap: anywhere;
+}
+
 .data-table-row > td {
  height: 58px;
 }
@@ -1114,12 +1126,12 @@ defineExpose({
 
 /* 表体 sticky 列背景 */
 tbody .sticky-col {
- background-color: var(--surface);
+ background-color: var(--surface) !important;
 }
 
 /* hover 状态保持 */
 tbody tr:hover .sticky-col {
- background: color-mix(in oklch, var(--accent) 5%, var(--surface));
+ background: color-mix(in oklch, var(--accent) 5%, var(--surface)) !important;
 }
 
 /* 阴影只在可滚动时显示 */

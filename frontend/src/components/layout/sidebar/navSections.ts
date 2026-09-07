@@ -74,12 +74,11 @@ export function adminSectionKey(item: NavItem): string {
 
 export function userSectionKey(item: NavItem): string {
   const path = item.path
-  if (path === '/studio' || path.startsWith('/studio/')) return 'creation'
+  if (path === '/studio' || path.startsWith('/studio/') || path === '/batch-image') return 'creation'
   if (path === '/profile' || path === '/affiliate') return 'account'
   if (
     path === '/dashboard' ||
     path === '/keys' ||
-    path === '/batch-image' ||
     path === '/usage' ||
     path === '/available-channels' ||
     path === '/monitor'
@@ -119,22 +118,8 @@ function groupBySection(items: NavItem[], order: readonly string[], keyOf: (item
     .filter((section) => section.items.length > 0)
 }
 
-export function groupAdminNav(adminItems: NavItem[], personalItems: NavItem[]): NavSection[] {
-  const sections = groupBySection(adminItems, ADMIN_SECTION_ORDER, adminSectionKey)
-  const creation = personalItems.filter(item => userSectionKey(item) === 'creation')
-  const account = personalItems.filter(item => userSectionKey(item) !== 'creation')
-  if (creation.length) {
-    const overviewIndex = sections.findIndex(section => section.key === 'overview')
-    sections.splice(overviewIndex + 1, 0, { key: 'creation', titleKey: 'nav.section.creation', items: creation })
-  }
-  if (account.length > 0) {
-    sections.push({
-      key: 'myAccount',
-      titleKey: 'nav.section.myAccount',
-      items: account
-    })
-  }
-  return sections
+export function groupAdminNav(adminItems: NavItem[]): NavSection[] {
+  return groupBySection(adminItems, ADMIN_SECTION_ORDER, adminSectionKey)
 }
 
 export function groupUserNav(userItems: NavItem[]): NavSection[] {

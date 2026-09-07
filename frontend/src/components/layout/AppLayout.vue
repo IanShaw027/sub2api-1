@@ -67,7 +67,7 @@ defineExpose({ replayTour })
 
 @media (min-width: 1024px) {
  .app-shell-main {
- margin-left: 224px;
+ margin-left: 208px;
  }
 
  .app-shell-main.is-collapsed {

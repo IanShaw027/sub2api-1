@@ -1,5 +1,5 @@
 <template>
-  <header ref="headerRef" class="app-header" :class="{ 'is-compact': compactHeader }">
+  <header ref="headerRef" class="app-header" :class="{ 'is-compact': compactHeader }" :style="{ '--header-scroll-progress': scrollProgress }">
     <!-- ===== Mobile top bar (<768) — design 08 ===== -->
     <div class="topbar-mobile">
       <router-link :to="homePath" class="brand-mark" :aria-label="siteName">
@@ -16,6 +16,7 @@
           type="button"
           class="topbar-mobile-btn"
           :aria-label="t('common.toggleMenu')"
+          :title="t('common.toggleMenu')"
           :aria-expanded="appStore.mobileOpen"
           aria-controls="mobile-drawer"
           @click="toggleMobileSidebar"
@@ -28,13 +29,15 @@
     <!-- ===== Desktop top bar (≥768) — design 03/04/05/06 ===== -->
     <div class="topbar">
       <nav class="topbar-crumbs" aria-label="breadcrumb">
-        <span>{{ breadcrumbRoot }}</span>
-        <template v-for="crumb in parentCrumbs" :key="crumb">
-          <span class="topbar-crumb-sep">/</span>
-          <span>{{ crumb }}</span>
+        <router-link v-if="route.path !== breadcrumbRootPath" :to="breadcrumbRootPath" class="topbar-crumb-link">{{ breadcrumbRoot }}</router-link>
+        <span v-else>{{ breadcrumbRoot }}</span>
+        <template v-for="crumb in parentCrumbs" :key="crumb.path || crumb.label">
+          <span class="topbar-crumb-sep" aria-hidden="true">/</span>
+          <router-link v-if="crumb.path" :to="crumb.path" class="topbar-crumb-link">{{ crumb.label }}</router-link>
+          <span v-else>{{ crumb.label }}</span>
         </template>
-        <span class="topbar-crumb-sep">/</span>
-        <span class="topbar-crumb-current">{{ pageTitle }}</span>
+        <span class="topbar-crumb-sep" aria-hidden="true">/</span>
+        <span class="topbar-crumb-current" aria-current="page">{{ pageTitle }}</span>
       </nav>
 
       <div class="topbar-actions">
@@ -243,6 +246,7 @@ import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { useTheme } from '@/composables/useTheme'
 import { useIsMobile } from '@/composables/useIsMobile'
+import { parentBreadcrumbs } from './breadcrumbs'
 
 const router = useRouter()
 const route = useRoute()
@@ -259,6 +263,10 @@ const dropdownOpen = ref(false)
 const paletteOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const headerRef = ref<HTMLElement | null>(null)
+const scrollProgress = ref(0)
+function updateScrollProgress() {
+  scrollProgress.value = Math.min(1, Math.max(0, window.scrollY / 48))
+}
 const userButtonRef = ref<HTMLButtonElement | null>(null)
 const moreRef = ref<HTMLElement | null>(null)
 const moreButtonRef = ref<HTMLButtonElement | null>(null)
@@ -275,7 +283,11 @@ const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteName = computed(() => appStore.siteName)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
-const homePath = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
+const inAdminWorkspace = computed(() => route.path.startsWith('/admin/') || (
+  authStore.isAdmin && route.name === 'CustomPage' &&
+  adminSettingsStore.customMenuItems.some(item => item.visibility === 'admin' && item.id === route.params.id)
+))
+const homePath = computed(() => inAdminWorkspace.value ? '/admin/dashboard' : '/dashboard')
 const availableBalance = computed(() => Number(user.value?.balance || 0))
 const frozenBalance = computed(() => Number(user.value?.frozen_balance || 0))
 const totalBalance = computed(() => availableBalance.value + frozenBalance.value)
@@ -326,29 +338,17 @@ const pageDescription = computed(() => {
 })
 
 // Intermediate crumbs from nested/parent routes (e.g. 系统设置 / 通用设置)
-const parentCrumbs = computed(() => {
-  const crumbs: string[] = []
-  const matched = route.matched.slice(0, -1)
-  for (const record of matched) {
-    const key = record.meta?.titleKey as string | undefined
-    if (key) {
-      const label = t(key)
-      if (label && label !== pageTitle.value) crumbs.push(label)
-    }
-  }
-  const parentKey = route.meta.parentTitleKey as string | undefined
-  if (parentKey) crumbs.push(t(parentKey))
-  return crumbs
-})
+const parentCrumbs = computed(() => parentBreadcrumbs(router, route, t))
 
 const mobileSubtitle = computed(() => pageDescription.value || user.value?.email || '')
 
 const breadcrumbRoot = computed(() => {
-  if (route.path.startsWith('/admin')) {
+  if (inAdminWorkspace.value) {
     return t('nav.breadcrumbAdmin')
   }
   return t('nav.breadcrumbUser')
 })
+const breadcrumbRootPath = homePath
 
 function toggleMobileSidebar() {
   appStore.toggleMobileSidebar()
@@ -419,6 +419,8 @@ function onGlobalKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
+  updateScrollProgress()
+  window.addEventListener('scroll', updateScrollProgress, { passive: true })
   if (typeof ResizeObserver !== 'undefined' && headerRef.value) {
     headerObserver = new ResizeObserver(([entry]) => {
       if (entry) compactHeader.value = entry.contentRect.width < 1040
@@ -430,6 +432,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('scroll', updateScrollProgress)
   headerObserver?.disconnect()
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('keydown', onGlobalKeydown)
@@ -450,6 +453,19 @@ watch(compactHeader, () => closeMore())
   top: 0;
   z-index: 30;
   background: transparent;
+  isolation: isolate;
+}
+
+.app-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  opacity: var(--header-scroll-progress, 0);
+  transition: opacity 120ms ease;
 }
 
 /* ---------- Mobile (<768) ---------- */
@@ -551,6 +567,16 @@ watch(compactHeader, () => closeMore())
 
 .topbar-crumb-sep {
   opacity: 0.5;
+}
+
+.topbar-crumb-link {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.topbar-crumb-link:hover {
+  color: var(--info-text);
+  text-decoration: underline;
 }
 
 .topbar-crumb-current {
@@ -656,7 +682,7 @@ watch(compactHeader, () => closeMore())
   display: none;
   right: 0;
   top: calc(100% + 6px);
-  width: 224px;
+  width: 208px;
   font-size: 12px;
 }
 

@@ -204,6 +204,9 @@ export default {
       support: 'Support'
     },
     breadcrumbAdmin: 'Console',
+    navigationMode: 'Navigation mode',
+    adminView: 'Admin',
+    userView: 'User',
     breadcrumbUser: 'Dashboard',
     search: 'Search',
     searchPlaceholder: 'Search accounts, keys, users…',

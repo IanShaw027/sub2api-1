@@ -20,6 +20,11 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   const driverInstance = shallowRef<Driver | null>(null)
   /** Reactive tour flag — `driver.isActive()` is not tracked by Vue. */
   const driverActive = ref(false)
+  const sidebarMode = ref<'admin' | 'user' | null>(null)
+
+  function setSidebarMode(mode: 'admin' | 'user' | null): void {
+    sidebarMode.value = mode
+  }
 
   function setReplayCallback(callback: VoidCallback | null): void {
     replayCallback.value = callback
@@ -42,11 +47,13 @@ export const useOnboardingStore = defineStore('onboarding', () => {
     driverInstance.value = driver ? markRaw(driver) : null
     if (!driver) {
       driverActive.value = false
+      sidebarMode.value = null
     }
   }
 
   function setDriverActive(active: boolean): void {
     driverActive.value = active
+    if (!active) sidebarMode.value = null
   }
 
   function getDriverInstance(): Driver | null {
@@ -84,6 +91,8 @@ export const useOnboardingStore = defineStore('onboarding', () => {
   }
 
   return {
+    sidebarMode,
+    setSidebarMode,
     setReplayCallback,
     setControlMethods,
     clearControlMethods,

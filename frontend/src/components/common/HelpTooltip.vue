@@ -53,7 +53,6 @@ function onDocumentClick(event: MouseEvent) {
 }
 
 function onDocumentKeydown(event: KeyboardEvent) {
- if (props.trigger !== 'click') return
  if (event.key === 'Escape') {
  closeTooltip()
  }
@@ -68,9 +67,12 @@ function updatePosition() {
  const el = triggerRef.value
  if (!el) return
  const rect = el.getBoundingClientRect()
+ const width = Math.min(tooltipRef.value?.offsetWidth || 256, window.innerWidth - 16)
+ const height = tooltipRef.value?.offsetHeight || 80
+ const top = rect.top >= height + 8 ? rect.top - height - 8 : rect.bottom + 8
  tooltipStyle.value = {
- top: `${rect.top + window.scrollY}px`,
- left: `${rect.left + rect.width / 2 + window.scrollX}px`,
+ top: `${Math.max(8, Math.min(top, window.innerHeight - height - 8))}px`,
+ left: `${Math.max(8, Math.min(rect.left + rect.width / 2 - width / 2, window.innerWidth - width - 8))}px`,
  }
 }
 
@@ -96,6 +98,8 @@ onBeforeUnmount(() => {
     @mouseenter="onEnter"
     @mouseleave="onLeave"
     @click="onClick"
+    @focusin="openTooltip"
+    @focusout="closeTooltip"
   >
     <!-- Trigger · 15px circle, 1.5px muted ring, 10px/700 "?" -->
     <slot name="trigger">
@@ -109,13 +113,14 @@ onBeforeUnmount(() => {
         v-show="show"
         role="tooltip"
         :class="['help-tooltip-bubble tooltip-bubble', props.widthClass]"
-        :style="{ top: `calc(${tooltipStyle.top} - 8px)`, left: tooltipStyle.left }"
+        :style="tooltipStyle"
       >
         <button
           v-if="props.trigger === 'click'"
           type="button"
           class="help-tooltip-close"
           aria-label="Close"
+          title="Close"
           @click.stop="closeTooltip"
         >
           <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -123,7 +128,6 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         <slot>{{ content }}</slot>
-        <span class="help-tooltip-arrow" aria-hidden="true"></span>
       </div>
     </Teleport>
   </div>
@@ -156,8 +160,10 @@ onBeforeUnmount(() => {
    (foreground bg / background text, 11.5/500, padding 6px 10px, radius 8). */
 .help-tooltip-bubble {
   position: fixed;
-  z-index: 99999;
-  transform: translate(-50%, -100%);
+  z-index: 100000060;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
 }
 
 .help-tooltip-arrow {

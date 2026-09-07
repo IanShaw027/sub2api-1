@@ -42,6 +42,18 @@ const stubMobileMatchMedia = () => {
 }
 
 describe('DataTable', () => {
+  it('bounds default columns and honors per-column limits without losing slot content', () => {
+    stubDesktopMatchMedia()
+    const wrapper = mount(DataTable, { props: {
+      columns: [{ key: 'name', label: 'Name', maxWidth: 180 }, { key: 'detail', label: 'Detail' }, { key: 'actions', label: 'Actions' }],
+      data: [{ id: 1, name: 'a'.repeat(500), detail: 'b'.repeat(500) }]
+    }, slots: { 'cell-actions': '<button>Open</button>' } })
+    expect(wrapper.get('td[data-column="name"] > div').attributes('style')).toContain('max-width: 180px')
+    expect(wrapper.get('td[data-column="detail"] > div').attributes('style')).toContain('max-width: 360px')
+    expect(wrapper.get('td[data-column="actions"] > div').attributes('style')).toContain('max-width: 240px')
+    expect(wrapper.get('td[data-column="actions"] button').text()).toBe('Open')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     stubDesktopMatchMedia()
     localStorage.clear()

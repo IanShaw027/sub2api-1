@@ -29,8 +29,8 @@
   --focus-ring-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 18%, transparent);
   --border-hover: color-mix(in oklch, var(--foreground) 18%, transparent);
   --table-sticky-shadow: color-mix(in oklch, black 8%, transparent);
-  --shadow-active: inset 0 1px 0 var(--btn-hi), 0 1px 3px rgba(16, 24, 40, 0.1),
-    0 0 0 1px color-mix(in oklch, var(--border) 80%, transparent);
+  --shadow-active: none;
+  --nav-active-bg: color-mix(in oklch, var(--accent) 10%, transparent);
   --motion-pop: 160ms;
   --success: oklch(73.29% 0.1946 151.55);
   --success-text: oklch(45% 0.15 151.55);
@@ -103,7 +103,7 @@
   --ring-on-tone: color-mix(in oklch, white 14%, transparent);
 
   /* Layout */
-  --sidebar-width: 212px;
+  --sidebar-width: 196px;
   --sidebar-width-collapsed: 60px;
   --sidebar-gutter: 12px;
   --topbar-height: 60px;

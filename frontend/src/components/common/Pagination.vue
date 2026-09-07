@@ -78,6 +78,7 @@
           class="pagination-btn"
           :disabled="page === 1"
           :aria-label="t('pagination.previous')"
+          :title="t('pagination.previous')"
           @click="goToPage(page - 1)"
         >
           <Icon name="chevronLeft" size="sm" :stroke-width="2" />
@@ -103,6 +104,7 @@
           class="pagination-btn"
           :disabled="page === totalPages"
           :aria-label="t('pagination.next')"
+          :title="t('pagination.next')"
           @click="goToPage(page + 1)"
         >
           <Icon name="chevronRight" size="sm" :stroke-width="2" />

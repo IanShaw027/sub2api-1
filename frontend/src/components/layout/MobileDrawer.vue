@@ -48,6 +48,8 @@
  </button>
  </div>
 
+ <slot name="mode-switch" />
+
  <nav class="mobile-drawer-nav scrollbar-hide">
  <SidebarNavContent
  :sections="sections"

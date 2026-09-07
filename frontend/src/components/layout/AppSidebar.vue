@@ -28,6 +28,8 @@
  </div>
  </div>
 
+ <SidebarModeSwitch v-if="isAdmin" :model-value="navigationMode" :collapsed="railCollapsed" @update:model-value="switchNavigationMode" />
+
  <nav ref="sidebarNavRef" class="sidebar-nav scrollbar-hide">
  <SidebarNavContent
  :sections="sections"
@@ -59,7 +61,11 @@
  @toggle="handleSectionToggle"
  @navigate="handleMenuItemClick"
  @group-click="handleGroupClick"
- />
+ >
+ <template v-if="isAdmin" #mode-switch>
+ <SidebarModeSwitch :model-value="navigationMode" @update:model-value="switchNavigationMode" />
+ </template>
+ </MobileDrawer>
 </template>
 
 <script setup lang="ts">
@@ -82,6 +88,7 @@ import { defaultSectionOpen } from '@/constants/sidebar'
 import { useIsMobile } from '@/composables/useIsMobile'
 import SidebarNavContent from './sidebar/SidebarNavContent.vue'
 import SidebarFooter from './sidebar/SidebarFooter.vue'
+import SidebarModeSwitch from './sidebar/SidebarModeSwitch.vue'
 import MobileDrawer from './MobileDrawer.vue'
 import {
  groupAdminNav,
@@ -167,7 +174,20 @@ async function refreshTicketUnread() {
  }
 }
 
-const homePath = computed(() => (isAdmin.value ? '/admin/dashboard' : '/dashboard'))
+const navigationMode = computed((): 'admin' | 'user' => {
+ if (!isAdmin.value) return 'user'
+ if (onboardingStore.sidebarMode) return onboardingStore.sidebarMode
+ if (route.path.startsWith('/admin/')) return 'admin'
+ if (route.name === 'CustomPage' && customMenuItemsForAdmin.value.some(item => item.id === route.params.id)) return 'admin'
+ return 'user'
+})
+const homePath = computed(() => navigationMode.value === 'admin' ? '/admin/dashboard' : '/dashboard')
+
+function switchNavigationMode(mode: 'admin' | 'user') {
+ if (!isAdmin.value || mode === navigationMode.value) return
+ appStore.sidebarScrollTop = 0
+ void router.push(mode === 'admin' ? '/admin/dashboard' : '/dashboard')
+}
 
 // Track which parent nav groups are expanded
 const expandedGroups = ref<Set<string>>(new Set())
@@ -584,11 +604,6 @@ function finalizeNav(items: NavItem[]): NavItem[] {
 // User navigation items (for regular users)
 const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
 
-// Personal navigation items (for admin's "My Account" section, without Dashboard).
-// Admins access 可用渠道 from this section just like regular users — there is no
-// separate admin entry, since the page is purely a user-facing view.
-const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))
-
 // Custom menu items filtered by visibility
 const customMenuItemsForUser = computed(() => {
  const items = appStore.cachedPublicSettings?.custom_menu_items ?? []
@@ -673,10 +688,9 @@ const adminNavItems = computed((): NavItem[] => {
 
  const visible = applyFeatureFlags(baseItems)
 
- // 简单模式下，在系统设置前插入 API密钥
+ // 简单模式隐藏 SaaS 管理项，个人功能统一从用户菜单进入。
  if (authStore.isSimpleMode) {
  const filtered = visible.filter(item => !item.hideInSimpleMode)
- filtered.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
  filtered.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
  for (const cm of customMenuItemsForAdmin.value) {
  filtered.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
@@ -692,12 +706,12 @@ const adminNavItems = computed((): NavItem[] => {
 })
 
 const adminSections = computed((): NavSection[] =>
- groupAdminNav(adminNavItems.value, authStore.isSimpleMode ? personalNavItems.value.filter(item => item.section === 'creation') : personalNavItems.value)
+ groupAdminNav(adminNavItems.value)
 )
 const userSections = computed((): NavSection[] => groupUserNav(userNavItems.value))
 const sections = computed((): NavSection[] => {
- if (isAdmin.value) return adminSections.value
- if (appStore.backendModeEnabled) return []
+ if (navigationMode.value === 'admin') return adminSections.value
+ if (!isAdmin.value && appStore.backendModeEnabled) return []
  return userSections.value
 })
 
@@ -722,8 +736,7 @@ function isSectionOpen(section: NavSection): boolean {
 }
 
 function handleSectionToggle(key: string) {
- const sections = isAdmin.value ? adminSections.value : userSections.value
- const section = sections.find((entry) => entry.key === key)
+ const section = sections.value.find((entry) => entry.key === key)
  if (!section) {
  if (appStore.sidebarSectionsForceOpen[key]) {
  appStore.clearSidebarSectionForceOpen(key)
@@ -853,6 +866,11 @@ watch(
 function onTicketUnreadChanged() {
  void refreshTicketUnread()
 }
+
+watch(navigationMode, () => {
+ appStore.sidebarScrollTop = 0
+ if (sidebarNavRef.value) sidebarNavRef.value.scrollTop = 0
+})
 
 onMounted(() => {
  window.addEventListener(TICKET_UNREAD_CHANGED_EVENT, onTicketUnreadChanged)

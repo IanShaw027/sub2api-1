@@ -159,8 +159,7 @@ describe('AppSidebar section grouping', () => {
       nav('/admin/usage'),
       nav('/admin/settings')
     ]
-    const personal = [nav('/keys'), nav('/profile')]
-    const sections = groupAdminNav(admin, personal)
+    const sections = groupAdminNav(admin)
 
     expect(sections.map((section) => section.key)).toEqual([
       'overview',
@@ -168,8 +167,7 @@ describe('AppSidebar section grouping', () => {
       'channels',
       'operations',
       'securityAudit',
-      'system',
-      'myAccount'
+      'system'
     ])
     expect(sections.find((section) => section.key === 'overview')?.items.map((item) => item.path)).toEqual([
       '/admin/dashboard',
@@ -182,10 +180,7 @@ describe('AppSidebar section grouping', () => {
       '/admin/accounts',
       '/admin/proxies'
     ])
-    expect(sections.find((section) => section.key === 'myAccount')?.items.map((item) => item.path)).toEqual([
-      '/keys',
-      '/profile'
-    ])
+    expect(sections.flatMap(section => section.items)).toHaveLength(admin.length)
   })
 
   it('separates API services, billing, account and support without dropping user items', () => {
@@ -206,13 +201,12 @@ describe('AppSidebar section grouping', () => {
     expect(sections[3].items.map((item) => item.path)).toEqual(['/tickets'])
   })
 
-  it('groups all five creation routes outside the admin personal menu', () => {
+  it('groups creation and batch images only in the user menu', () => {
     const creation = creationModes.map(mode => nav(creationPath(mode)))
-    const sections = groupAdminNav([nav('/admin/dashboard')], [nav('/keys'), ...creation, nav('/profile')])
-    expect(sections.map(section => section.key)).toEqual(['overview', 'creation', 'myAccount'])
-    expect(sections[1].items).toEqual(creation)
-    expect(sections[2].items.map(item => item.path)).toEqual(['/keys', '/profile'])
-    expect(groupUserNav([nav('/keys'), ...creation, nav('/profile')]).map(section => section.key)).toEqual(['workspace', 'creation', 'account'])
+    expect(groupAdminNav([nav('/admin/dashboard')]).map(section => section.key)).toEqual(['overview'])
+    const sections = groupUserNav([nav('/keys'), ...creation, nav('/batch-image'), nav('/profile')])
+    expect(sections.map(section => section.key)).toEqual(['workspace', 'creation', 'account'])
+    expect(sections[1].items.map(item => item.path)).toEqual([...creation.map(item => item.path), '/batch-image'])
   })
 
   it.each(['admin', 'user'] as const)('shows the creation category and active child for %s, respecting the feature switch', async role => {
@@ -227,16 +221,15 @@ describe('AppSidebar section grouping', () => {
     expect(category.get('a[href="/studio/video"]').classes().some(name => name.includes('active'))).toBe(true)
     appStore.cachedPublicSettings = { creation_center_enabled: false } as typeof appStore.cachedPublicSettings
     await flushPromises()
-    expect(wrapper.find('[data-section="creation"]').exists()).toBe(false)
+    expect(wrapper.find('[data-section="creation"] a[href="/studio/image"]').exists()).toBe(false)
+    expect(wrapper.find('[data-section="creation"] a[href="/batch-image"]').exists()).toBe(true)
     wrapper.unmount()
   })
 })
 
 describe('sectionKeyForSelector', () => {
   it('maps tour selectors to the sidebar section that owns the target', () => {
-    // Static fallback only: `/keys` is assumed to be the admin "My Account"
-    // path. Runtime resolution must prefer the live element's `[data-section]`.
-    expect(sectionKeyForSelector('[data-tour="sidebar-my-keys"]')).toBe('myAccount')
+    expect(sectionKeyForSelector('[data-tour="sidebar-my-keys"]')).toBe('workspace')
     expect(sectionKeyForSelector('#sidebar-group-manage')).toBe('usersResources')
     expect(sectionKeyForSelector('#sidebar-channel-manage')).toBe('usersResources')
     expect(sectionKeyForSelector('#sidebar-wallet')).toBe('operations')
@@ -250,13 +243,14 @@ describe('AppSidebar sections render', () => {
     document.documentElement.classList.remove('dark')
   })
 
-  it('renders admin sections including My Account', async () => {
+  it('renders categorized admin-only navigation with a mode switch', async () => {
     const { wrapper } = await mountSidebar('/admin/dashboard', 'admin')
     const keys = wrapper.findAll('[data-section]').map((el) => el.attributes('data-section'))
     expect(keys).toContain('overview')
-    expect(keys).toContain('myAccount')
+    expect(keys).not.toContain('workspace')
+    expect(keys).not.toContain('creation')
     expect(wrapper.find('[data-section="overview"]').exists()).toBe(true)
-    expect(wrapper.find('[data-section="myAccount"]').exists()).toBe(true)
+    expect(wrapper.find('.sidebar-mode-switch').exists()).toBe(true)
     expect(wrapper.find('#sidebar-group-manage').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -266,6 +260,7 @@ describe('AppSidebar sections render', () => {
     const keys = wrapper.findAll('[data-section]').map((el) => el.attributes('data-section'))
     expect(keys).toEqual(expect.arrayContaining(['workspace', 'billing', 'support']))
     expect(keys).not.toContain('overview')
+    expect(wrapper.find('.sidebar-mode-switch').exists()).toBe(false)
     expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -278,62 +273,66 @@ describe('AppSidebar sections render', () => {
     wrapper.unmount()
   })
 
-  it('keeps My Account visible by default and opens it on an active child', async () => {
-    const closed = await mountSidebar('/admin/dashboard', 'admin')
-    const myAccount = closed.wrapper.find('[data-section="myAccount"]')
-    expect(myAccount.exists()).toBe(true)
-    expect(myAccount.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
-    expect(myAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
-    closed.wrapper.unmount()
-
-    const opened = await mountSidebar('/keys', 'admin')
-    const openAccount = opened.wrapper.find('[data-section="myAccount"]')
-    expect(openAccount.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
-    expect(openAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
-    opened.wrapper.unmount()
+  it('switches admin/user routes and synchronizes navigation on back', async () => {
+    const { wrapper, router } = await mountSidebar('/admin/dashboard', 'admin')
+    await wrapper.get('button[aria-label="nav.userView"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/dashboard')
+    expect(wrapper.find('[data-section="overview"]').exists()).toBe(false)
+    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    expect(wrapper.get('button[aria-label="nav.userView"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('button[aria-label="nav.adminView"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/admin/dashboard')
+    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(false)
+    router.back()
+    await flushPromises()
+    expect(wrapper.find('[data-section="workspace"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
-  it('opens My Account via isSectionOpen when the tour highlights sidebar-my-keys', async () => {
+  it('opens user navigation transiently when the tour highlights sidebar-my-keys', async () => {
     const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin', false, ({ onboardingStore }) => {
       vi.spyOn(onboardingStore, 'isDriverActive').mockReturnValue(true)
+      onboardingStore.setSidebarMode('user')
       vi.spyOn(onboardingStore, 'isCurrentStep').mockImplementation(
         (selector) => selector === '[data-tour="sidebar-my-keys"]'
       )
     })
-    expect(appStore.sidebarSectionsOpen.myAccount).toBeUndefined()
-    const myAccount = wrapper.find('[data-section="myAccount"]')
+    expect(appStore.sidebarSectionsOpen.workspace).toBeUndefined()
+    const myAccount = wrapper.find('[data-section="workspace"]')
     expect(myAccount.exists()).toBe(true)
     expect(myAccount.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
     expect(myAccount.find('.sidebar-section-items').classes()).not.toContain('hidden')
     wrapper.unmount()
   })
 
-  it('opens My Account from transient force-open without persisting preference', async () => {
-    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
+  it('opens the user workspace from transient force-open without persisting preference', async () => {
+    const { wrapper, appStore } = await mountSidebar('/keys', 'admin')
+    expect(wrapper.find('[data-section="workspace"] .sidebar-section-items').classes()).not.toContain('hidden')
 
-    appStore.forceOpenSidebarSection('myAccount')
+    appStore.forceOpenSidebarSection('workspace')
     await nextTick()
 
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
-    expect(appStore.sidebarSectionsOpen.myAccount).toBeUndefined()
+    expect(wrapper.find('[data-section="workspace"] .sidebar-section-items').classes()).not.toContain('hidden')
+    expect(appStore.sidebarSectionsOpen.workspace).toBeUndefined()
     expect(localStorage.getItem('sidebar-sections-open')).toBeNull()
     wrapper.unmount()
   })
 
   it('clears force-open on explicit toggle and persists closed', async () => {
-    const { wrapper, appStore } = await mountSidebar('/admin/dashboard', 'admin')
-    appStore.forceOpenSidebarSection('myAccount')
+    const { wrapper, appStore } = await mountSidebar('/keys', 'admin')
+    appStore.forceOpenSidebarSection('workspace')
     await nextTick()
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).not.toContain('hidden')
+    expect(wrapper.find('[data-section="workspace"] .sidebar-section-items').classes()).not.toContain('hidden')
 
-    await wrapper.get('[data-section="myAccount"] .sidebar-section-title').trigger('click')
+    await wrapper.get('[data-section="workspace"] .sidebar-section-title').trigger('click')
     await nextTick()
 
-    expect(appStore.sidebarSectionsForceOpen.myAccount).toBeUndefined()
-    expect(appStore.sidebarSectionsOpen.myAccount).toBe(false)
-    expect(localStorage.getItem('sidebar-sections-open')).toContain('"myAccount":false')
-    expect(wrapper.find('[data-section="myAccount"] .sidebar-section-items').classes()).toContain('hidden')
+    expect(appStore.sidebarSectionsForceOpen.workspace).toBeUndefined()
+    expect(appStore.sidebarSectionsOpen.workspace).toBe(false)
+    expect(localStorage.getItem('sidebar-sections-open')).toContain('"workspace":false')
+    expect(wrapper.find('[data-section="workspace"] .sidebar-section-items').classes()).toContain('hidden')
     wrapper.unmount()
   })
 
@@ -341,7 +340,7 @@ describe('AppSidebar sections render', () => {
     const { wrapper } = await mountSidebar('/admin/dashboard', 'admin')
     expect(wrapper.find('#sidebar-group-manage').exists()).toBe(true)
     expect(wrapper.find('#sidebar-channel-manage').exists()).toBe(true)
-    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -371,7 +370,7 @@ describe('AppSidebar sections render', () => {
     const { wrapper } = await mountSidebar('/admin/dashboard', 'admin', true)
     expect(wrapper.find('#sidebar-group-manage').exists()).toBe(true)
     expect(wrapper.find('#sidebar-channel-manage').exists()).toBe(true)
-    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(true)
+    expect(wrapper.find('[data-tour="sidebar-my-keys"]').exists()).toBe(false)
     const items = wrapper.findAll('.sidebar-section-items')
     expect(items.length).toBeGreaterThan(0)
     for (const item of items) {

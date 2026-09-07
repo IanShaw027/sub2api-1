@@ -75,6 +75,10 @@ onUnmounted(() => {
  border-top: 1px solid var(--border);
 }
 
+.table-pagination-footer :deep(.pagination-bar) {
+ border-top: 0;
+}
+
 .table-scroll-container :deep(.table-wrapper) {
  flex: 1;
  overflow-x: auto;

@@ -14,6 +14,7 @@
       v-if="isMobile && $slots.filters"
       type="button"
       class="ui-filter-bar-toggle"
+      :title="filterLabel"
       :aria-label="filterLabel"
       :aria-expanded="filtersExpanded"
       :aria-controls="filtersId"

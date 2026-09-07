@@ -6,7 +6,7 @@ export function defaultSectionOpen(_key: string): boolean {
 /**
  * Static fallback for which sidebar section owns a driver.js step selector.
  * Runtime resolution should prefer the element's closest `[data-section]`.
- * `/keys` is assumed admin "My Account"; user nav puts it in `workspace`.
+ * `/keys` belongs to the user workspace, including for administrators.
  */
 const SELECTOR_SECTION_KEYS: Record<string, string> = {
   '#sidebar-group-manage': 'usersResources',
@@ -15,8 +15,8 @@ const SELECTOR_SECTION_KEYS: Record<string, string> = {
   'sidebar-channel-manage': 'usersResources',
   '#sidebar-wallet': 'operations',
   'sidebar-wallet': 'operations',
-  '[data-tour="sidebar-my-keys"]': 'myAccount',
-  'sidebar-my-keys': 'myAccount'
+  '[data-tour="sidebar-my-keys"]': 'workspace',
+  'sidebar-my-keys': 'workspace'
 }
 
 export function sectionKeyForSelector(selector: string): string | undefined {

@@ -39,6 +39,7 @@
               type="button"
               @click="removeToast(toast.id)"
               class="toast-close"
+              title="Close notification"
               aria-label="Close notification"
             >
               <Icon name="x" size="sm" :stroke-width="2" />

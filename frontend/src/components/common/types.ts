@@ -7,5 +7,7 @@ export interface Column {
   label: string
   sortable?: boolean
   class?: string
+  /** Maximum content width; long values wrap without hiding actions or data. */
+  maxWidth?: number | string
   formatter?: (value: any, row: any) => string
 }
