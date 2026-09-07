@@ -63,7 +63,7 @@
  />
  </template>
  <template #filters>
- <Select
+ <UiSelect
  variant="pill"
  :pill-label="t('keys.group')"
  :aria-label="t('keys.group')"
@@ -288,7 +288,7 @@ import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
-import Select from '@/components/common/Select.vue'
+import UiSelect from '@/components/ui/UiSelect.vue'
 import SearchInput from '@/components/common/SearchInput.vue'
 import Icon from '@/components/icons/Icon.vue'
 import PageHeader from '@/components/ui/PageHeader.vue'
@@ -1001,15 +1001,6 @@ onUnmounted(() => {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-}
-
-.keys-page .keys-layout :deep(.table-scroll-container) {
-  background: color-mix(in oklch, var(--surface) 70%, transparent);
-  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
 }
 
 .keys-confirm-text {

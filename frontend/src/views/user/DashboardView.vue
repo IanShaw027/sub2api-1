@@ -26,7 +26,7 @@
           <div class="dash-hero-copy">
             <span class="dash-hero-kicker">{{ heroKicker }}</span>
             <h1 class="dash-hero-title">
-              {{ t('dashboard.heroTitleLead') }}<span class="dash-hero-accent">{{ formatNumber(stats.today_requests) }}</span>{{ t('dashboard.heroTitleTail') }}
+              {{ t('dashboard.heroPeriodLead') }}<span class="dash-hero-accent">{{ formatNumber(period.requests) }}</span>{{ t('dashboard.heroTitleTail') }}
             </h1>
             <p class="dash-hero-desc">{{ heroDescription }}</p>
             <div class="dash-hero-actions">
@@ -326,12 +326,16 @@ const heroKicker = computed(() => {
 
 const heroDescription = computed(() => {
   if (!stats.value) return ''
-  return t('dashboard.heroSummary', {
-    tokens: formatTokens(stats.value.today_tokens),
-    cost: formatCost(stats.value.today_actual_cost),
-    duration: formatDuration(stats.value.average_duration_ms),
+  return t('dashboard.heroPeriodSummary', {
+    tokens: formatTokens(period.value.tokens),
+    cost: formatCost(period.value.cost),
   })
 })
+const period = computed(() => trendData.value.reduce((sum, point) => ({
+  requests: sum.requests + point.requests,
+  tokens: sum.tokens + point.total_tokens,
+  cost: sum.cost + point.actual_cost
+}), { requests: 0, tokens: 0, cost: 0 }))
 </script>
 <style scoped>
 .dash-page {

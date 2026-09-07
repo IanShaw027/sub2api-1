@@ -421,6 +421,15 @@ onMounted(async () => {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background:
+    linear-gradient(color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
+    linear-gradient(90deg, color-mix(in oklch, var(--foreground) 2.5%, transparent) 1px, transparent 1px) 0 0 / 48px 48px,
+    var(--background);
+}
+
+.home-page {
+  color: var(--foreground);
+  overflow: hidden;
 }
 
 /* ---------- Nav · 68px ---------- */
@@ -428,6 +437,10 @@ onMounted(async () => {
   height: 68px;
   display: flex;
   align-items: center;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  background: color-mix(in oklch, var(--surface) 58%, transparent);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
 }
 
 .home-nav-inner {
@@ -544,6 +557,7 @@ onMounted(async () => {
   width: 100%;
   max-width: 1440px;
   margin: 0 auto;
+  position: relative;
 }
 
 .home-hero {
@@ -551,7 +565,8 @@ onMounted(async () => {
   grid-template-columns: 1.15fr 1fr;
   gap: 64px;
   align-items: center;
-  padding: 64px 80px 56px;
+  padding: 76px 80px 72px;
+  min-height: 520px;
 }
 
 .home-hero-copy {
@@ -570,11 +585,20 @@ onMounted(async () => {
 .home-hero-title {
   margin: 0;
   font-family: var(--display);
-  font-size: 60px;
+  font-size: clamp(44px, 4.2vw, 64px);
   line-height: 1.06;
   font-weight: 800;
   letter-spacing: -0.035em;
   text-wrap: balance;
+}
+
+.home-hero-copy::before {
+  content: '';
+  width: 56px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  margin-bottom: -8px;
 }
 
 .home-hero-desc {
@@ -647,11 +671,23 @@ onMounted(async () => {
 
 /* ---------- Steps ---------- */
 .home-steps {
-  padding: 24px 80px 64px;
+  padding: 32px 80px 76px;
   display: grid;
   grid-template-columns: 1fr 1.1fr;
   gap: 48px;
   align-items: center;
+}
+
+.home-steps-copy,
+.home-pricing,
+.home-compare {
+  position: relative;
+}
+
+.home-pricing,
+.home-compare {
+  border-top: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  padding-top: 56px;
 }
 
 .home-steps-copy {
@@ -791,7 +827,7 @@ onMounted(async () => {
 /* .home-cta-slot: layout-only margin wrapper for the extracted HomeCtaBanner
    component (see components/home/HomeCtaBanner.vue for the banner's own styles). */
 .home-cta-slot {
-  margin: 0 80px 56px;
+  margin: 8px 80px 72px;
 }
 
 /* ---------- Compact ---------- */

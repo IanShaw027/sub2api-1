@@ -1,5 +1,39 @@
 # 验证记录
 
+## 2026-09-07 全站导航、表格与仪表盘复核
+
+- 全站扫描：`frontend/scripts/ui/routes.txt` 的 73 条路由入口，加创作中心五个实际子路由；管理员 / 用户 / 访客，1440x1000 与 390x844。证据为 `output/playwright/full-route-audit.json` 与同名截图目录。重定向保留 actualRoute；OAuth、支付、外部自定义页仅验证初始/错误状态，不代表外部交易或登录闭环通过。
+- 数据口径按后端 SQL 复核：`usage_log_repo_dashboard.go` 的范围接口将所选区间写入 `total_*`，`today_*` 始终为今天；账号、用户、密钥为当前存量。管理员 Hero、区间请求/Token/费用、上一等长区间环比使用范围字段；今日卡片明确保留今日标签，去掉不匹配的区间折线。用户控制台的区间卡片及 Hero 从同一 trend 响应汇总，累计/配额仍明确保持原口径。
+- 管理员模型 -> 用户调用 `/admin/dashboard/user-breakdown`；用户 -> 模型调用 `/admin/dashboard/models?user_id=...`；均携带当前日期，含加载、空态、重试、缓存及丢弃旧范围响应。用户排行保留 Top 12 标注；模型列表不再截断到前四项。明细包含请求、总/输入/输出/缓存 Token、实际/标准/账号成本。
+- `dashboard-check.cjs` 已用 Playwright 验证 1440/390 日期弹层边界、7 天筛选对 snapshot/users-trend/users-ranking/events 的请求参数联动、两方向展开请求、页面无横向溢出/运行时异常。截图及请求证据：`output/playwright/dashboard-review/`。mock 中部分统计响应是固定样例，不能据截图证明生产账目或不同接口金额一致。
+- 表格：DataTable 默认内容上限 360px、操作列 240px，支持 Column.maxWidth；原生表格有默认单元格上限。账号表取消强制 fixed 布局，容量徽标及用量窗口按内容宽度横向滚动，避免为挤入首屏裁断数字。只给文本换行，不把业务按钮/容量组件强行拆行。
+- 日期弹层 Teleport 到 body，按可用空间上下定位并限制视口宽高；外部点击不抢走其他控件焦点，Escape/应用恢复触发器焦点。HelpTooltip 修正 fixed 坐标叠加 scrollY 的偏移，支持键盘聚焦。共享公告、分页、筛选、浮动按钮及账号刷新/密码/案例入口补充提示。
+- 导航：管理员/用户切换仅管理员可见；创作中心只归用户；管理员按六类分组。选中项为无描边背景。已注册的面包屑祖先可点击；当前项 aria-current。顶部 0/24/48px 滚动进度对应透明/半透明/实底与分隔线，保留暗色主题。
+- 自动测试：23 文件 123 项回归通过；随后新增区间字段、Hero 指标独立性、长单元格、日期焦点、用户区间卡片测试，最新相关子集 6 文件 28 项通过。typecheck/build/ESLint/ui-lint/contrast/i18n 检查通过；ESLint 仍有 mock 原有 16 warning，构建仍有原有动态渐变类与大 chunk 警告。
+
+### 原型信息比对
+
+依据外部 `Sub2API Redesign.dc.html` 的 01 首页、02 登录、03 仪表盘、04 账号、05 密钥、06 设置及 08 手机画板；其余路由按共享壳与现有业务信息巡检，外部原型并未提供每条路由的独立画板。
+
+| 原型信息 | 结果 |
+|---|---|
+| 仪表盘用户/密钥/账号、请求/Token/费用、平均耗时、模型/健康/事件 | 保留；平均耗时位于 Hero，Token 与财务拆分通过明细保留；用户趋势及快捷操作是原功能补充 |
+| 成功率 99.6%、首 Token 620ms、今日新增密钥 +61 | 原型示例值；DashboardStats 缺对应字段，不伪造，待接入有一致区间口径的聚合接口 |
+| 累计费用、近 30 天固定旁注 | 管理员 range API 的 total_* 是时段合计，改为“时段费用”；不冒充全生命周期累计，也不将当前筛选称为固定 30 天 |
+| 存量卡片装饰折线、仅最后 12 点变化率 | 无历史存量序列不画折线；范围趋势用完整序列，环比用上一等长日期区间 |
+| 账号容量、分组、用量窗口、扩展列、操作 | 保留真实字段，宽表可滚动，操作列保持固定；不以原型 11 列宽度压缩实际 16 列 |
+| 密钥端点/额度/过期/IP/用量窗口，设置字段与九个 tab | 保留；设置绑定与事件保真证据见下方复审记录 |
+
+## 2026-09-07 复审收尾（基线 `67fe18ea4`）
+
+- 报告核对修正：基线已有部分 `SettingRow / SettingsSection`，用户仪表盘也已有骨架；本次迁完设置组件中的旧行与分区壳，管理员及支付仪表盘改用共享骨架。复杂列表、配额矩阵保留专用编辑布局。
+- 四处 accent 前景统一 `--info-text`；KeysView 使用 `UiSelect`，删除表格玻璃重复声明；Accounts / Tickets 使用 `#pagination`，共享槽处理分隔线，避免与 Pagination 双描边。
+- `ui-lint` 禁止 views 直接使用 legacy stat 类，兼容外观仍由 `StatCard` 持有。auth README / 使用示例移除旧配色与过期流程；环境光保持单层、随页滚动。
+- 设置迁移涉及 32 个组件。按 TypeScript token 归一化格式差异后，对照基线逐文件核验：双向绑定 281/281、事件 160/160、API 调用 28/28、锚点 81/81、链接 14/14，无删除。源码清单不代替行为测试。
+- 验证：13 个 Vitest 文件、94 项测试通过；`node --test scripts/ui-lint.test.mjs` 1 项通过；typecheck / build / ui-lint / contrast / diff-check 通过。ESLint 0 error，mock server 原有 16 warning；构建保留未改动 `useChannelMonitorFormat.ts` 动态渐变类与既有 chunk 警告。
+- Playwright + 本地 mock：九个设置 tab 的 1440 亮色 / 390 暗色截图及字段边界检查；账号、工单、密钥桌面/手机分页与分组筛选；两类仪表盘桌面/手机延迟响应骨架及内容切换。配额矩阵横向滚动验证通过；支付取消频率限制补充换行，字段不再被卡片裁切。
+- 本地证据：`output/playwright/glass-review/`，包含截图、`settings-preservation.json`、`settings-layout.json`、`mobile-fields.json`、`loading.json`。本轮未重跑全站截图矩阵或生产后端 E2E，未修改外部设计画布与参考图。
+
 ## 门禁执行顺序（每组提交前）
 
 1. `npm run lint:ui`（15.1）→ 0 命中

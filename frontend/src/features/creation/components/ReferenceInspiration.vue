@@ -77,7 +77,7 @@ function resetFilters() {
 
     <div v-if="filteredCases.length" ref="grid" class="reference-grid">
       <article v-for="item in visibleCases" :key="item.id" class="reference-case" :data-case-id="item.id">
-        <button type="button" class="reference-case-image" :aria-label="`${text.preview}: ${item.title[language]}`" @click="selected = item">
+        <button type="button" class="reference-case-image" :title="`${text.preview}: ${item.title[language]}`" :aria-label="`${text.preview}: ${item.title[language]}`" @click="selected = item">
           <span v-if="brokenImages.has(item.id)" class="reference-image-error"><ImageOff :size="24" aria-hidden="true" />{{ text.unavailable }}</span>
           <img v-else :src="item.image" :alt="item.title[language]" :width="item.width" :height="item.height" loading="lazy" decoding="async" @error="brokenImages.add(item.id)" />
         </button>

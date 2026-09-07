@@ -1,5 +1,8 @@
 | 路由 | 原型区块 | 原型呈现 | 实际呈现 | 类型(不符/更优) | 理由 | 截图 |
 |---|---|---|---|---|---|---|
+| 全站导航 | 侧栏合并个人菜单、选中项有边框 | 管理员/用户模式切换，仅管理员可见；创作中心归用户；选中项无边框 | 用户明确变更 | 分类降低混杂；顶栏随滚动变实底，真实父路由面包屑可点击 | `output/playwright/navigation-review/` |
+| `/admin/dashboard`、`/dashboard` | 静态示例指标与装饰折线 | 按真实范围字段/趋势响应呈现；今日/实时/存量单独标注；管理员模型与用户双向展开 | 数据保真 | 成功率/TTFT/新增密钥没有 DashboardStats 字段，不复制示例数；具体保留与缺项见 verification 最新节 | `output/playwright/dashboard-review/` |
+| 全站表格、`/admin/accounts` | 账号固定 11 列挤入一屏 | 单元格最大宽度 + 内容宽度自动布局 + 横向滚动，扩展列不压缩容量数字 | 可读性修正 | 真实账号表默认/用户扩展列数不同，fixed 布局会把容量、分组、用量裁断 | `output/playwright/dashboard-review/accounts-bounded.png` |
 | `/studio/chat`、`/studio/image`、`/studio/video`、`/studio/voice`、`/studio/gallery` | 创作工作台 | 历史记录曾采用独立全屏导航与三列工作台 | 统一 AppLayout，侧栏「创作中心」下五个子菜单，共享顶栏、面包屑与 Glass 控件；用户其他菜单按 API 服务、订阅与账单、账户、支持分类 | 用户明确变更 | 2026-09-06 用户明确不接受独立页面；本行取代下方旧 `/studio` 全屏/三栏呈现记录，原功能与本地数据保留 | `output/playwright/creation-v4/` |
 | `/home` | 顶部导航 | 仅 登录 / 立即开始 | 增加 语言切换 + 主题切换，均为 34px 图标按钮（LocaleSwitcher 用 `:deep()` 隐藏文字/箭头仅留国旗，尺寸与 `.header-icon-btn` 主题按钮对齐） | 不符（项目已有 LocaleSwitcher 与主题切换） | 功能必须保留；5.1 已复核并统一为 34px 图标按钮排版 | reference/light/01_首页.png vs .shots/g5a-home-light.png |
 | `/home` | Hero 副文案 | 固定文案「无需管理多个订阅账号...」 | 站点配置了 `site_subtitle`（mock 值「订阅转 API 转换平台」）时优先展示该值 + `heroDescriptionExt` 固定后缀 | 不符（数据驱动，非代码问题） | 代码按设计接“站点副标题”，无自定义值时才回退到原型默认文案；当前差异来自 mock `site_subtitle` 与原型截图环境不同，非视觉缺陷；建议 lead 视觉核对时使用 `--ignore` 排除该行或让 mock 清空该字段 | reference/light/01_首页.png vs .shots/g5a-home-light.png |

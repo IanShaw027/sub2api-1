@@ -234,6 +234,7 @@ const routes: RouteRecordRaw[] = [
       title: 'Studio',
       titleKey: creationTitleKey(mode),
       parentTitleKey: 'nav.studio',
+      parentPath: '/studio',
       creationMode: mode,
       requiresCreationCenter: true,
     }
@@ -546,6 +547,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin/channels',
+    meta: { titleKey: 'nav.channelManagement' },
     redirect: '/admin/channels/pricing'
   },
   {
@@ -719,6 +721,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/admin/affiliates',
+    meta: { titleKey: 'nav.affiliateManagement' },
     redirect: '/admin/affiliates/invites'
   },
   {

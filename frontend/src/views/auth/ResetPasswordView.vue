@@ -70,6 +70,7 @@
               :disabled="isLoading"
               :aria-label="t('auth.newPassword')"
               :aria-pressed="showPassword"
+              :title="t('auth.passwordLabel')"
               aria-controls="password"
             >
               <Icon v-if="showPassword" name="eyeOff" size="sm" />

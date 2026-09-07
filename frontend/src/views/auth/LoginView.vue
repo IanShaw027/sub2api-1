@@ -41,6 +41,7 @@
             class="login-eye"
             :disabled="authActionDisabled"
             :aria-label="t('auth.passwordLabel')"
+            :title="t('auth.passwordLabel')"
             :aria-pressed="showPassword"
             aria-controls="password"
             @click="showPassword = !showPassword"

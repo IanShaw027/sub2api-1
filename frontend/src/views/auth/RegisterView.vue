@@ -46,6 +46,7 @@
               :disabled="registrationActionDisabled"
               :aria-label="t('auth.passwordLabel')"
               :aria-pressed="showPassword"
+              :title="t('auth.passwordLabel')"
               aria-controls="password"
               @click="showPassword = !showPassword"
             >

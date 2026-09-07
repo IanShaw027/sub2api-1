@@ -312,6 +312,31 @@ const {
   gap: 12px;
 }
 
+/* Chart surface follows the dense glass-light reference while preserving the shared chart components. */
+.usage-page-section :deep(.glass-card) {
+  min-width: 0;
+  border: 1px solid var(--glass-border, var(--border));
+  border-radius: 16px;
+  background: var(--glass, var(--surface));
+  box-shadow: var(--shadow-card, 0 8px 24px rgb(15 23 42 / 6%));
+  backdrop-filter: blur(18px);
+}
+
+.usage-page-section :deep(canvas) {
+  display: block;
+  max-width: 100%;
+}
+
+.usage-page-section :deep(.h-48) {
+  min-height: 192px;
+}
+
+@media (max-width: 640px) {
+  .usage-page-section :deep(.glass-card) {
+    border-radius: 12px;
+  }
+}
+
 .usage-filter-row {
   display: flex;
   flex-wrap: wrap;
