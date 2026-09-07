@@ -562,11 +562,11 @@ onMounted(async () => {
 
 .home-hero {
   display: grid;
-  grid-template-columns: 1.15fr 1fr;
+  grid-template-columns: 1.1fr 1fr;
   gap: 64px;
   align-items: center;
-  padding: 76px 80px 72px;
-  min-height: 520px;
+  padding: 56px 80px 48px;
+  min-height: 500px;
 }
 
 .home-hero-copy {
@@ -590,15 +590,6 @@ onMounted(async () => {
   font-weight: 800;
   letter-spacing: -0.035em;
   text-wrap: balance;
-}
-
-.home-hero-copy::before {
-  content: '';
-  width: 56px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--accent);
-  margin-bottom: -8px;
 }
 
 .home-hero-desc {
