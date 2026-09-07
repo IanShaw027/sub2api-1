@@ -1,14 +1,9 @@
 <template>
  <div :class="bare ? '' : 'glass-card p-4'">
- <div v-if="!bare" class="mb-4 flex items-start justify-between gap-3">
-   <div class="flex min-w-0 flex-col gap-0.5">
+ <div v-if="!bare" class="mb-4 flex flex-wrap items-start justify-between gap-3">
+   <div class="min-w-0 flex-1 flex-col gap-0.5">
      <h3 class="text-sm font-semibold text-foreground">{{ t('admin.dashboard.tokenUsageTrend') }}</h3>
      <span class="text-xs text-muted">{{ trendSubtitle }}</span>
-   </div>
-   <div class="hidden items-center gap-3 text-[11px] text-muted sm:flex">
-     <span v-for="legend in trendLegend" :key="legend.label" class="inline-flex items-center gap-1.5 whitespace-nowrap">
-       <span class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: legend.color }" />{{ legend.label }}
-     </span>
    </div>
  </div>
  <div v-if="!loading && trendData.length" class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -49,7 +44,7 @@ import {
 import { Line } from 'vue-chartjs'
 import Skeleton from '@/components/common/Skeleton.vue'
 import type { TrendDataPoint } from '@/types'
-import { alpha, baseChartOptions, useChartTheme } from '@/utils/chartTheme'
+import { alpha, baseChartOptions, cssVar, useChartTheme } from '@/utils/chartTheme'
 
 ChartJS.register(
  CategoryScale,
@@ -61,6 +56,53 @@ ChartJS.register(
  Legend,
  Filler
 )
+
+const trendAnnotationPlugin = {
+ id: 'sub2apiTrendAnnotations',
+ afterDraw(chart: any) {
+  const { ctx, chartArea, tooltip } = chart
+  if (!chartArea) return
+
+  const active = tooltip?.getActiveElements?.()?.[0]
+  if (active) {
+   const x = active.element.x
+   ctx.save()
+   ctx.strokeStyle = alpha(cssVar('--muted'), 42)
+   ctx.setLineDash([4, 4])
+   ctx.beginPath()
+   ctx.moveTo(x, chartArea.top)
+   ctx.lineTo(x, chartArea.bottom)
+   ctx.stroke()
+   ctx.restore()
+  }
+
+  chart.data.datasets.forEach((dataset: any, datasetIndex: number) => {
+   const meta = chart.getDatasetMeta(datasetIndex)
+   const point = meta?.data?.[meta.data.length - 1]
+   if (!point || meta.hidden || dataset.hidden) return
+   const raw = dataset.data?.[dataset.data.length - 1]
+   if (raw === null || raw === undefined) return
+   const value = dataset.yAxisID === 'yPercent' ? `${Number(raw).toFixed(1)}%` : formatTokens(Number(raw))
+   const color = dataset.borderColor || cssVar('--accent')
+   ctx.save()
+   ctx.font = '10px Inter, sans-serif'
+   const width = ctx.measureText(value).width + 10
+   const x = Math.min(point.x + 6, chartArea.right - width)
+   const offset = (datasetIndex - (chart.data.datasets.length - 1) / 2) * 14
+   const y = Math.min(chartArea.bottom - 18, Math.max(chartArea.top + 2, point.y - 18 + offset))
+   ctx.fillStyle = color
+   ctx.beginPath()
+   ctx.roundRect(x, y, width, 16, 5)
+   ctx.fill()
+   ctx.fillStyle = cssVar('--surface')
+   ctx.textBaseline = 'middle'
+   ctx.fillText(value, x + 5, y + 8)
+   ctx.restore()
+  })
+ }
+}
+
+ChartJS.register(trendAnnotationPlugin)
 
 const { t } = useI18n()
 
@@ -77,16 +119,6 @@ const trendSubtitle = computed(() => {
  const rows = props.trendData ?? []
  if (rows.length < 2) return t('admin.dashboard.tokenUsageTrend')
  return `${t('admin.dashboard.last7Days')} · ${rows[0].date} – ${rows[rows.length - 1].date}`
-})
-
-const trendLegend = computed(() => {
- const colors = theme.value.series
- return [
-   { label: t('admin.dashboard.input'), color: colors[0] },
-   { label: t('admin.dashboard.output'), color: colors[1] },
-   { label: t('admin.dashboard.trendCacheRead'), color: colors[3] },
-   { label: t('admin.dashboard.trendCacheHitRate'), color: theme.value.danger }
- ]
 })
 
 const trendKpis = computed(() => {
@@ -265,8 +297,7 @@ const formatCost = (value: number): string => {
  background: var(--surface-2);
  padding: 8px 10px;
 }
-.trend-kpi-label { color: var(--muted); font-size: 11px; }
-.trend-kpi-label { display: inline-flex; align-items: center; gap: 6px; }
+.trend-kpi-label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
 .trend-kpi-dot { width: 6px; height: 6px; flex: none; border-radius: 999px; background: var(--kpi-color, var(--accent)); }
 .trend-kpi-value { color: var(--foreground); font-family: var(--font-display, Inter, sans-serif); font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 </style>

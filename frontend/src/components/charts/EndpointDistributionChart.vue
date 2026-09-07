@@ -3,7 +3,7 @@
  <div class="mb-4 flex items-center justify-between gap-3">
  <div class="flex min-w-0 flex-col gap-0.5">
    <h3 class="text-sm font-semibold text-foreground">{{ title || t('usage.endpointDistribution') }}</h3>
-   <span class="text-xs text-muted">{{ t('admin.dashboard.last7Days') }} · {{ t('admin.dashboard.metricTokens') }}</span>
+   <span class="text-xs text-muted">{{ periodLabel }}</span>
  </div>
  <div class="flex flex-wrap items-center justify-end gap-2">
  <div
@@ -189,6 +189,16 @@ const emit = defineEmits<{
 const expandedKey = ref<string | null>(null)
 const breakdownItems = ref<UserBreakdownItem[]>([])
 const breakdownLoading = ref(false)
+
+const periodLabel = computed(() => {
+ const range = props.startDate && props.endDate
+   ? (props.startDate === props.endDate ? props.startDate : `${props.startDate} – ${props.endDate}`)
+   : t('admin.dashboard.last7Days')
+ const metricLabel = props.metric === 'actual_cost'
+   ? t('admin.dashboard.metricActualCost')
+   : t('admin.dashboard.metricTokens')
+ return `${range} · ${metricLabel}`
+})
 
 const toggleBreakdown = async (endpoint: string) => {
  if (expandedKey.value === endpoint) {

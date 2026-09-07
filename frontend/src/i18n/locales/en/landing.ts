@@ -131,6 +131,34 @@ export default {
       firstToken: 'First token 620 ms',
       stickyHit: 'Sticky-session hit 98.2%'
     },
+    marquee: {
+      protocols: 'Native protocols',
+      platforms: 'Platforms',
+      modelsLabel: 'Models',
+      clientsLabel: 'Clients'
+    },
+    highlights: {
+      upstream: 'Upstream platforms',
+      upstreamDesc: 'OAuth and API keys',
+      protocols: 'Native protocols',
+      protocolsDesc: 'Anthropic · OpenAI',
+      clients: 'Zero client changes',
+      clientsDesc: 'Change one Base URL',
+      payments: 'Self-serve payments',
+      paymentsDesc: 'Multiple payment methods'
+    },
+    flow: {
+      kicker: 'Built for reliability',
+      title: 'One path keeps every request moving',
+      description: 'Authentication, concurrency, routing, failover and token-level billing happen at the gateway.',
+      nodes: {
+        client: 'Client',
+        gateway: 'Unified gateway',
+        scheduler: 'Smart scheduler',
+        upstream: 'Upstream pool',
+        billing: 'Transparent billing'
+      }
+    },
     steps: {
       kicker: 'Three steps to connect',
       title: 'Change one Base URL, keep everything else',

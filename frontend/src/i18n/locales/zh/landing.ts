@@ -131,6 +131,34 @@ export default {
       firstToken: '首 token 620 ms',
       stickyHit: '会话保持命中 98.2%'
     },
+    marquee: {
+      protocols: '原生兼容',
+      platforms: '支持平台',
+      modelsLabel: '模型',
+      clientsLabel: '客户端'
+    },
+    highlights: {
+      upstream: '上游平台',
+      upstreamDesc: 'OAuth 与 API Key 并存',
+      protocols: '原生协议',
+      protocolsDesc: 'Anthropic · OpenAI',
+      clients: '客户端零改动',
+      clientsDesc: '改一个 Base URL 即可',
+      payments: '自助支付',
+      paymentsDesc: '多种支付方式可选'
+    },
+    flow: {
+      kicker: '企业级稳定',
+      title: '一条链路，把每次调用稳稳送达',
+      description: '鉴权、并发控制、智能调度、故障转移与 token 级计费在网关一次完成。',
+      nodes: {
+        client: '客户端',
+        gateway: '统一网关',
+        scheduler: '智能调度',
+        upstream: '上游账号池',
+        billing: '透明计费'
+      }
+    },
     steps: {
       kicker: '接入只需三步',
       title: '改一个 Base URL，其余照旧',

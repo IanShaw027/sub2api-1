@@ -315,11 +315,12 @@ const {
 /* Chart surface follows the dense glass-light reference while preserving the shared chart components. */
 .usage-page-section :deep(.glass-card) {
   min-width: 0;
-  border: 1px solid var(--glass-border, var(--border));
-  border-radius: 16px;
-  background: var(--glass, var(--surface));
-  box-shadow: var(--shadow-card, 0 8px 24px rgb(15 23 42 / 6%));
-  backdrop-filter: blur(18px);
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
 }
 
 .usage-page-section :deep(canvas) {
@@ -333,7 +334,7 @@ const {
 
 @media (max-width: 640px) {
   .usage-page-section :deep(.glass-card) {
-    border-radius: 12px;
+    border-radius: var(--radius-card);
   }
 }
 

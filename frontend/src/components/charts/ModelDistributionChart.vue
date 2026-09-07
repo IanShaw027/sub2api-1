@@ -7,7 +7,7 @@
    ? t('admin.dashboard.modelDistribution')
    : t('admin.dashboard.spendingRankingTitle') }}
    </h3>
-   <span v-if="!enableRankingView || activeView === 'model_distribution'" class="text-xs text-muted">{{ t('admin.dashboard.last7Days') }} · {{ t('admin.dashboard.metricTokens') }}</span>
+   <span v-if="!enableRankingView || activeView === 'model_distribution'" class="text-xs text-muted">{{ periodLabel }}</span>
  </div>
  <div class="flex flex-wrap items-center justify-end gap-2">
  <div
@@ -343,6 +343,16 @@ const enableRankingView = computed(() => props.enableRankingView)
 const showAccountCost = computed(() => props.showAccountCost)
 const distributionColspan = computed(() => showAccountCost.value ? 6 : 5)
 const activeView = ref<'model_distribution' | 'spending_ranking'>('model_distribution')
+
+const periodLabel = computed(() => {
+ const range = props.startDate && props.endDate
+   ? (props.startDate === props.endDate ? props.startDate : `${props.startDate} – ${props.endDate}`)
+   : t('admin.dashboard.last7Days')
+ const metricLabel = props.metric === 'actual_cost'
+   ? t('admin.dashboard.metricActualCost')
+   : t('admin.dashboard.metricTokens')
+ return `${range} · ${metricLabel}`
+})
 
 /** Cycles through the token series palette so any slice count stays on-brand. */
 const seriesColor = (index: number): string => {

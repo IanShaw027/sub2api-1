@@ -169,6 +169,51 @@
         </div>
       </section>
 
+      <section class="home-marquee" aria-label="Supported protocols, models and clients">
+        <div class="home-marquee-row">
+          <span class="home-marquee-label">{{ t('home.marquee.protocols') }}</span>
+          <strong>Anthropic · OpenAI</strong>
+          <span class="home-marquee-sep" aria-hidden="true">·</span>
+          <span class="home-marquee-label">{{ t('home.marquee.platforms') }}</span>
+          <strong>{{ platformsText }}</strong>
+        </div>
+        <div class="home-marquee-grid">
+          <span class="home-marquee-label">{{ t('home.marquee.modelsLabel') }}</span>
+          <div class="home-chip-track">
+            <span v-for="model in marqueeModels" :key="model" class="home-chip">{{ model }}</span>
+          </div>
+          <span class="home-marquee-label">{{ t('home.marquee.clientsLabel') }}</span>
+          <div class="home-chip-track">
+            <span v-for="client in clients" :key="client" class="home-chip"><i></i>{{ client }}</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="home-facts" aria-label="Platform highlights">
+        <div v-for="fact in highlightFacts" :key="fact.label" class="home-fact">
+          <span class="home-fact-label">{{ fact.label }}</span>
+          <strong class="home-fact-value">{{ fact.value }}</strong>
+          <span class="home-fact-desc">{{ fact.desc }}</span>
+        </div>
+      </section>
+
+      <section class="home-flow">
+        <div class="home-flow-head">
+          <div>
+            <p class="section-kicker">{{ t('home.flow.kicker') }}</p>
+            <h2 class="section-title">{{ t('home.flow.title') }}</h2>
+          </div>
+          <p class="home-flow-desc">{{ t('home.flow.description') }}</p>
+        </div>
+        <ol class="home-flow-track">
+          <li v-for="(node, index) in flowNodes" :key="node" class="home-flow-node">
+            <span class="home-flow-index">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="home-flow-name">{{ node }}</span>
+            <span v-if="index < flowNodes.length - 1" class="home-flow-arrow" aria-hidden="true">→</span>
+          </li>
+        </ol>
+      </section>
+
       <!-- Three steps + code -->
       <section class="home-steps">
         <div class="home-steps-copy">
@@ -317,6 +362,21 @@ const steps = computed(() => [
 ])
 
 const clients = ['Claude Code', 'Codex CLI', 'Cursor', 'Cline', 'Roo Code', 'OpenAI SDK', 'Anthropic SDK']
+const marqueeModels = ['Claude', 'GPT-5', 'Gemini 2.5', 'Grok', 'Kiro']
+const platformsText = computed(() => t('home.providers.line'))
+const highlightFacts = computed(() => [
+  { label: t('home.highlights.upstream'), value: '5', desc: t('home.highlights.upstreamDesc') },
+  { label: t('home.highlights.protocols'), value: '2', desc: t('home.highlights.protocolsDesc') },
+  { label: t('home.highlights.clients'), value: `${clients.length}+`, desc: t('home.highlights.clientsDesc') },
+  { label: t('home.highlights.payments'), value: '5', desc: t('home.highlights.paymentsDesc') }
+])
+const flowNodes = computed(() => [
+  t('home.flow.nodes.client'),
+  t('home.flow.nodes.gateway'),
+  t('home.flow.nodes.scheduler'),
+  t('home.flow.nodes.upstream'),
+  t('home.flow.nodes.billing')
+])
 
 const comparisonRows = computed(() => [
   {
@@ -650,11 +710,197 @@ onMounted(async () => {
   min-width: 0;
 }
 
+.home-marquee {
+  margin: 0 80px 48px;
+  overflow: hidden;
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.home-marquee-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in oklch, var(--surface-secondary) 45%, transparent);
+  color: var(--muted);
+  font-size: var(--fs-12-5);
+}
+
+.home-marquee-row strong {
+  color: var(--foreground);
+  font-weight: var(--fw-semibold);
+}
+
+.home-marquee-label {
+  color: var(--muted);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.home-marquee-grid {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px 16px;
+  padding: 16px 20px;
+}
+
+.home-chip-track {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.home-chip {
+  display: inline-flex;
+  height: 28px;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--surface) 80%, transparent);
+  color: var(--foreground);
+  font-size: var(--fs-12-5);
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+
+.home-chip i {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--success);
+}
+
+.home-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0 80px 64px;
+}
+
+.home-fact {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 20px;
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  box-shadow: var(--shadow);
+}
+
+.home-fact-label,
+.home-fact-desc {
+  color: var(--muted);
+  font-size: var(--fs-12);
+}
+
+.home-fact-label {
+  font-weight: var(--fw-semibold);
+}
+
+.home-fact-value {
+  color: var(--foreground);
+  font-family: var(--display);
+  font-size: var(--fs-30);
+  font-weight: var(--fw-extrabold);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.home-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 0 80px 72px;
+}
+
+.home-flow-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 40px;
+}
+
+.home-flow-desc {
+  max-width: 460px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-14);
+  line-height: 1.65;
+}
+
+.home-flow-track {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 24px;
+  border: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  border-radius: var(--radius-card);
+  background: color-mix(in oklch, var(--surface) 70%, transparent);
+  box-shadow: var(--shadow);
+  list-style: none;
+}
+
+.home-flow-node {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-secondary);
+}
+
+.home-flow-index {
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+}
+
+.home-flow-name {
+  overflow-wrap: anywhere;
+  color: var(--foreground);
+  font-size: var(--fs-13-5);
+  font-weight: var(--fw-semibold);
+}
+
+.home-flow-arrow {
+  position: absolute;
+  top: 50%;
+  right: -18px;
+  z-index: 1;
+  color: var(--accent);
+  font-size: var(--fs-17);
+  transform: translateY(-50%);
+}
+
 /* The shared .section-title class (src/style.css) ships line-height:1.15, tuned
    for other contexts; at this page's 30px section headings (steps/pricing/compare)
    the design reference renders ~1.47x, so we override locally per-section here
    instead of touching the global class. */
 .home-steps .section-title,
+.home-flow .section-title,
 .home-pricing .section-title,
 .home-compare-copy .section-title {
   line-height: 1.467;
@@ -874,6 +1120,7 @@ onMounted(async () => {
 
   .home-hero,
   .home-steps,
+  .home-flow,
   .home-pricing,
   .home-compare {
     padding-left: 40px;
@@ -881,6 +1128,12 @@ onMounted(async () => {
   }
 
   .home-cta-slot {
+    margin-left: 40px;
+    margin-right: 40px;
+  }
+
+  .home-marquee,
+  .home-facts {
     margin-left: 40px;
     margin-right: 40px;
   }
@@ -912,6 +1165,24 @@ onMounted(async () => {
     gap: 28px;
   }
 
+  .home-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-flow-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .home-flow-track {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .home-flow-node:nth-child(3) .home-flow-arrow {
+    display: none;
+  }
+
   .home-hero {
     padding-top: 28px;
   }
@@ -929,10 +1200,44 @@ onMounted(async () => {
   .home-nav-inner,
   .home-hero,
   .home-steps,
+  .home-flow,
   .home-pricing,
   .home-compare {
     padding-left: 20px;
     padding-right: 20px;
+  }
+
+  .home-marquee,
+  .home-facts {
+    margin-left: 20px;
+    margin-right: 20px;
+  }
+
+  .home-marquee-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .home-marquee-sep {
+    display: none;
+  }
+
+  .home-facts {
+    grid-template-columns: 1fr 1fr;
+    margin-bottom: 48px;
+  }
+
+  .home-flow-track {
+    grid-template-columns: 1fr;
+    padding: 16px;
+  }
+
+  .home-flow-arrow,
+  .home-flow-node:nth-child(3) .home-flow-arrow {
+    top: auto;
+    right: 50%;
+    bottom: -19px;
+    display: block;
+    transform: translateX(50%) rotate(90deg);
   }
 
   .home-hero {

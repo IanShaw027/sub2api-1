@@ -453,11 +453,11 @@ describe('mobile shell breakpoints', () => {
     expect(styleSource).not.toMatch(/\.sidebar\.is-mobile-hidden[\s\S]*?@media \(min-width: 1024px\)/)
   })
 
-  it('offsets content 72px on tablet and 224px/72px on desktop', () => {
+  it('offsets content 72px on tablet and 208px/72px on desktop', () => {
     expect(layoutSource).toContain('@media (min-width: 768px) and (max-width: 1023px)')
     expect(layoutSource).toContain('@media (min-width: 1024px)')
     expect(layoutSource).toContain('margin-left: 72px')
-    expect(layoutSource).toContain('margin-left: 224px')
+    expect(layoutSource).toContain('margin-left: 208px')
     expect(layoutSource).toContain('!isDesktop || sidebarCollapsed')
   })
 
