@@ -1,9 +1,10 @@
 <template>
  <div class="glass-card p-4">
  <div class="mb-4 flex items-center justify-between gap-3">
- <h3 class="text-sm font-semibold text-foreground">
- {{ t('admin.dashboard.groupDistribution') }}
- </h3>
+ <div class="flex min-w-0 flex-col gap-0.5">
+   <h3 class="text-sm font-semibold text-foreground">{{ t('admin.dashboard.groupDistribution') }}</h3>
+   <span class="text-xs text-muted">{{ t('admin.dashboard.last7Days') }} · {{ t('admin.dashboard.metricTokens') }}</span>
+ </div>
  <div
  v-if="showMetricToggle"
  class="inline-flex rounded-lg border border-line bg-surface-2 p-0.5"

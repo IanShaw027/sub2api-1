@@ -1,9 +1,10 @@
 <template>
  <div class="glass-card p-4">
  <div class="mb-4 flex items-center justify-between gap-3">
- <h3 class="text-sm font-semibold text-foreground">
- {{ title || t('usage.endpointDistribution') }}
- </h3>
+ <div class="flex min-w-0 flex-col gap-0.5">
+   <h3 class="text-sm font-semibold text-foreground">{{ title || t('usage.endpointDistribution') }}</h3>
+   <span class="text-xs text-muted">{{ t('admin.dashboard.last7Days') }} · {{ t('admin.dashboard.metricTokens') }}</span>
+ </div>
  <div class="flex flex-wrap items-center justify-end gap-2">
  <div
  v-if="showSourceToggle"

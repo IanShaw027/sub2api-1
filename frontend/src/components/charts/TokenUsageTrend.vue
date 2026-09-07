@@ -1,11 +1,19 @@
 <template>
  <div :class="bare ? '' : 'glass-card p-4'">
- <h3 v-if="!bare" class="mb-4 text-sm font-semibold text-foreground">
- {{ t('admin.dashboard.tokenUsageTrend') }}
- </h3>
+ <div v-if="!bare" class="mb-4 flex items-start justify-between gap-3">
+   <div class="flex min-w-0 flex-col gap-0.5">
+     <h3 class="text-sm font-semibold text-foreground">{{ t('admin.dashboard.tokenUsageTrend') }}</h3>
+     <span class="text-xs text-muted">{{ trendSubtitle }}</span>
+   </div>
+   <div class="hidden items-center gap-3 text-[11px] text-muted sm:flex">
+     <span v-for="legend in trendLegend" :key="legend.label" class="inline-flex items-center gap-1.5 whitespace-nowrap">
+       <span class="h-1.5 w-1.5 rounded-full" :style="{ backgroundColor: legend.color }" />{{ legend.label }}
+     </span>
+   </div>
+ </div>
  <div v-if="!loading && trendData.length" class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-   <div v-for="item in trendKpis" :key="item.label" class="trend-kpi">
-     <span class="trend-kpi-label">{{ item.label }}</span>
+   <div v-for="item in trendKpis" :key="item.label" class="trend-kpi" :style="{ '--kpi-color': item.color }">
+     <span class="trend-kpi-label"><span class="trend-kpi-dot" />{{ item.label }}</span>
      <span class="trend-kpi-value">{{ item.value }}</span>
    </div>
  </div>
@@ -65,16 +73,32 @@ const props = defineProps<{
 
 const theme = useChartTheme()
 
+const trendSubtitle = computed(() => {
+ const rows = props.trendData ?? []
+ if (rows.length < 2) return t('admin.dashboard.tokenUsageTrend')
+ return `${t('admin.dashboard.last7Days')} · ${rows[0].date} – ${rows[rows.length - 1].date}`
+})
+
+const trendLegend = computed(() => {
+ const colors = theme.value.series
+ return [
+   { label: t('admin.dashboard.input'), color: colors[0] },
+   { label: t('admin.dashboard.output'), color: colors[1] },
+   { label: t('admin.dashboard.trendCacheRead'), color: colors[3] },
+   { label: t('admin.dashboard.trendCacheHitRate'), color: theme.value.danger }
+ ]
+})
+
 const trendKpis = computed(() => {
  const rows = props.trendData ?? []
  const sum = (key: 'input_tokens' | 'output_tokens' | 'cache_read_tokens') => rows.reduce((total, row) => total + Number(row[key] || 0), 0)
  const hitTokens = sum('cache_read_tokens')
  const promptTokens = rows.reduce((total, row) => total + Number(row.input_tokens || 0) + Number(row.cache_read_tokens || 0) + Number(row.cache_creation_tokens || 0), 0)
  return [
-   { label: t('admin.dashboard.input'), value: formatTokens(sum('input_tokens')) },
-   { label: t('admin.dashboard.output'), value: formatTokens(sum('output_tokens')) },
-   { label: t('admin.dashboard.trendCacheRead'), value: formatTokens(hitTokens) },
-   { label: t('admin.dashboard.trendCacheHitRate'), value: `${promptTokens ? ((hitTokens / promptTokens) * 100).toFixed(1) : '0.0'}%` }
+   { label: t('admin.dashboard.input'), value: formatTokens(sum('input_tokens')), color: theme.value.series[0] },
+   { label: t('admin.dashboard.output'), value: formatTokens(sum('output_tokens')), color: theme.value.series[1] },
+   { label: t('admin.dashboard.trendCacheRead'), value: formatTokens(hitTokens), color: theme.value.series[3] },
+   { label: t('admin.dashboard.trendCacheHitRate'), value: `${promptTokens ? ((hitTokens / promptTokens) * 100).toFixed(1) : '0.0'}%`, color: theme.value.danger }
  ]
 })
 
@@ -242,5 +266,7 @@ const formatCost = (value: number): string => {
  padding: 8px 10px;
 }
 .trend-kpi-label { color: var(--muted); font-size: 11px; }
+.trend-kpi-label { display: inline-flex; align-items: center; gap: 6px; }
+.trend-kpi-dot { width: 6px; height: 6px; flex: none; border-radius: 999px; background: var(--kpi-color, var(--accent)); }
 .trend-kpi-value { color: var(--foreground); font-family: var(--font-display, Inter, sans-serif); font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 </style>
